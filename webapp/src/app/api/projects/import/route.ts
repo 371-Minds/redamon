@@ -8,6 +8,8 @@ export const maxDuration = 300
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
 
+
+
 interface Manifest {
   version: string
   exportDate: string
@@ -106,16 +108,18 @@ export async function POST(request: NextRequest) {
     const importSubdomainList: string[] = (projectFields.subdomainList || []).map((s: string) => s.toLowerCase().trim()).filter(Boolean)
     const isImportFullScan = importSubdomainList.length === 0
 
+    // Domain mode conflict check (IP mode allows overlap — tenant-scoped Neo4j constraints)
     if (targetDomain) {
       const existingProjects = await prisma.project.findMany({
         where: {
           targetDomain: { equals: targetDomain, mode: 'insensitive' },
+          ipMode: false,
         },
         select: { id: true, name: true, targetDomain: true, subdomainList: true },
       })
 
       for (const existing of existingProjects) {
-        const existingSubdomains = (existing.subdomainList || []).map(s => s.toLowerCase().trim()).filter(Boolean)
+        const existingSubdomains = (existing.subdomainList || []).map((s: string) => s.toLowerCase().trim()).filter(Boolean)
         const isExistingFullScan = existingSubdomains.length === 0
 
         if (isExistingFullScan) {

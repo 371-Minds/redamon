@@ -33,6 +33,8 @@ model Project {
   // ========== TARGET CONFIGURATION ==========
   targetDomain                String   @default("") @map("target_domain")
   subdomainList               String[] @default([]) @map("subdomain_list")
+  ipMode                      Boolean  @default(false) @map("ip_mode")
+  targetIps                   String[] @default([]) @map("target_ips")
   verifyDomainOwnership       Boolean  @default(false) @map("verify_domain_ownership")
   ownershipToken              String   @default("your-secret-token-here") @map("ownership_token")
   ownershipTxtPrefix          String   @default("_redamon-verify") @map("ownership_txt_prefix")

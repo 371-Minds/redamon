@@ -499,10 +499,24 @@ def build_targets_from_dns(recon_data: dict) -> List[str]:
             _add_host(domain)
 
     # Add subdomains
+    metadata = recon_data.get("metadata", {})
+    ip_mode = metadata.get("ip_mode", False)
     subdomains_dns = dns_data.get("subdomains", {})
     for subdomain, sub_data in subdomains_dns.items():
         if sub_data.get("has_records", False):
-            _add_host(subdomain)
+            if ip_mode and sub_data.get("is_mock", False):
+                # In IP mode, mock subdomain names aren't valid hostnames.
+                # Use the actual IP address instead.
+                actual_ip = sub_data.get("actual_ip", "")
+                if actual_ip:
+                    _add_host(actual_ip)
+                    continue
+                # Fallback: extract IPs from dns data
+                ips = sub_data.get("ips", {})
+                for ip in (ips.get("ipv4", []) or []) + (ips.get("ipv6", []) or []):
+                    _add_host(ip)
+            else:
+                _add_host(subdomain)
 
     return urls
 
@@ -744,13 +758,17 @@ def parse_httpx_output(output_file: str, root_domain: str = None, allowed_hosts:
 
             # Extract host from URL
             host = extract_host_from_url(url)
-            
+
             # Filter URLs outside target scope
             # In filtered mode: only allow specific hosts from SUBDOMAIN_LIST
             # In full discovery mode: allow any host within root_domain scope
+            # Also check the original input URL host (httpx may follow redirects to a different host)
             if root_domain and not is_host_in_scope(host, root_domain, allowed_hosts):
-                filtered_count += 1
-                continue
+                input_url = entry.get("input", "")
+                input_host = extract_host_from_url(input_url) if input_url else ""
+                if not input_host or not is_host_in_scope(input_host, root_domain, allowed_hosts):
+                    filtered_count += 1
+                    continue
 
             # Status code tracking
             status_code = entry.get("status_code") or entry.get("status-code")
@@ -921,22 +939,24 @@ def is_host_in_scope(host: str, root_domain: str, allowed_hosts: list = None) ->
     """
     if not host or not root_domain:
         return False
-    
+
     host = host.lower().strip()
     root_domain = root_domain.lower().strip()
-    
-    # First, check if host is even within the root domain scope
-    in_root_scope = (host == root_domain or host.endswith(f".{root_domain}"))
-    if not in_root_scope:
-        return False
-    
-    # If allowed_hosts is specified (filtered mode), check against that list
+
+    # If allowed_hosts is specified (filtered mode), check against that list first.
+    # This must come before the root_domain scope check because in IP-mode the
+    # root_domain is a fake placeholder that real hostnames will never match.
     if allowed_hosts:
         allowed_set = {h.lower().strip() for h in allowed_hosts}
         return host in allowed_set
-    
-    # Full discovery mode - allow any host within root domain scope
-    return True
+
+    # IP addresses bypass domain scope check
+    if is_ip(host):
+        return True
+
+    # Check if host is within the root domain scope
+    in_root_scope = (host == root_domain or host.endswith(f".{root_domain}"))
+    return in_root_scope
 
 
 def is_ip(value: str) -> bool:

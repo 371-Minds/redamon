@@ -12,7 +12,7 @@
 <br/>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v2.1.0-release-2E8B57?style=for-the-badge" alt="Version 2.1.0"/>
+  <img src="https://img.shields.io/badge/v2.3.0-release-2E8B57?style=for-the-badge" alt="Version 2.3.0"/>
   <img src="https://img.shields.io/badge/WARNING-SECURITY%20TOOL-B22222?style=for-the-badge" alt="Security Tool Warning"/>
   <img src="https://img.shields.io/badge/LICENSE-MIT-4169A1?style=for-the-badge" alt="MIT License"/>
   <br/>
@@ -21,6 +21,7 @@
   <img src="https://img.shields.io/badge/ZERO-HUMAN%20INTERVENTION-CC7722?style=for-the-badge" alt="Zero Click"/>
   <img src="https://img.shields.io/badge/Kali-Powered-466A7A?style=for-the-badge&logo=kalilinux&logoColor=white" alt="Kali Powered"/>
   <img src="https://img.shields.io/badge/Docker-Compose-1A7EC2?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"/>
+  <img src="https://img.shields.io/badge/IP%2FCIDR-TARGETING-0D7377?style=for-the-badge" alt="IP/CIDR Targeting"/>
   <img src="https://img.shields.io/badge/Stealth-Mode-5B21B6?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MDAgNjAwIiBmaWxsPSJ3aGl0ZSI+PHBvbHlnb24gcG9pbnRzPSI0MDAsODAgODAwLDQyMCA3MjAsNDIwIDY4MCwzODAgNjIwLDQyMCA1NjAsMzgwIDUwMCw0MjAgNDQwLDM4MCAzODAsNDIwIDMyMCwzODAgMjYwLDQyMCAyMDAsMzgwIDEyMCw0MjAgMCw0MjAiLz48L3N2Zz4=&logoColor=white" alt="Stealth Mode"/>
   <img src="https://img.shields.io/badge/30+-SECURITY%20TOOLS-CC8F00?style=for-the-badge&logo=hack-the-box&logoColor=white" alt="30+ Security Tools"/>
   <img src="https://img.shields.io/badge/185,000+-DETECTION%20RULES-8B1142?style=for-the-badge" alt="185,000+ Detection Rules"/>
@@ -290,7 +291,7 @@ The platform is built around six pillars:
 
 | Pillar | What it does |
 |--------|-------------|
-| **Reconnaissance Pipeline** | Six sequential scanning phases that map your target's entire attack surface — from subdomain discovery to vulnerability detection — and store the results as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
+| **Reconnaissance Pipeline** | Six sequential scanning phases that map your target's entire attack surface — starting from a domain **or IP addresses / CIDR ranges** — from subdomain discovery to vulnerability detection — and store the results as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding — and the primary data source the AI agent queries before every decision. |
 | **EvoGraph** | A persistent, evolutionary attack chain graph in Neo4j that tracks every step, finding, decision, and failure across the attack lifecycle — bridging the recon graph and enabling cross-session intelligence accumulation. |
@@ -301,7 +302,19 @@ The platform is built around six pillars:
 
 ### Reconnaissance Pipeline
 
-The recon pipeline is a fully automated, six-phase scanning engine that runs inside a Kali Linux container. Given a single root domain (or a specific subdomain list), it progressively builds a complete picture of the target's external attack surface. Each phase feeds its output into the next, and the final result is both a structured JSON file and a populated Neo4j graph.
+The recon pipeline is a fully automated, six-phase scanning engine that runs inside a Kali Linux container. Given a single root domain, a specific subdomain list, or a set of **IP addresses / CIDR ranges**, it progressively builds a complete picture of the target's external attack surface. Each phase feeds its output into the next, and the final result is both a structured JSON file and a populated Neo4j graph.
+
+#### IP/CIDR Targeting Mode
+
+When a project is created with **"Start from IP"** enabled, the pipeline starts from IP addresses instead of a domain. It accepts individual IPs (`192.168.1.1`), IPv6 addresses, and CIDR ranges (`10.0.0.0/24`, max /24 = 256 hosts). The pipeline:
+
+1. **Expands CIDRs** into individual host IPs (network and broadcast addresses excluded)
+2. **Reverse DNS (PTR)** resolves each IP to its hostname — when no PTR exists, a mock hostname is generated
+3. **IP WHOIS** retrieves organization, country, and ASN data for each IP
+4. Creates a **mock Domain node** (`ip-targets.{project_id}`) in Neo4j as the graph root, with Subdomain nodes for each resolved hostname
+5. Continues the normal pipeline: port scan → HTTP probe → resource enumeration → vulnerability scan → MITRE enrichment
+
+GAU (passive URL archives) is automatically skipped in IP mode since archives index by domain. All other tools work unchanged.
 
 <p align="center">
   <img src="assets/recon.gif" alt="RedAmon Reconnaissance Pipeline" width="100%"/>
@@ -370,7 +383,7 @@ All results are combined into a single JSON file (`recon/output/recon_{PROJECT_I
 
 #### Running Reconnaissance
 
-1. Create a project with target domain and settings
+1. Create a project with a target domain (or enable "Start from IP" and enter IPs/CIDRs)
 2. Navigate to Graph page
 3. Click "Start Recon" button
 4. Watch real-time logs in the drawer
@@ -921,7 +934,7 @@ Every project in RedAmon has **180+ configurable parameters** across 11 setting 
 
 | Category | Key Settings |
 |----------|-------------|
-| **Target & Modules** | Target domain, subdomain list, stealth mode, scan module toggles, Tor routing |
+| **Target & Modules** | Target domain or IP/CIDR targets, subdomain list, IP mode toggle, stealth mode, scan module toggles, Tor routing |
 | **Port Scanning** | Naabu scan type, top-N ports, rate limiting, CDN exclusion, passive mode |
 | **HTTP Probing** | httpx 25+ probe toggles, TLS inspection, redirect following |
 | **Resource Enumeration** | Katana depth/max URLs, GAU passive discovery, Kiterunner API brute-forcing |

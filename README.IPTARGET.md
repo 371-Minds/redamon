@@ -1,8 +1,10 @@
-# Plan: IP-Based Targeting + Input Validation for RedAmon
+# IP-Based Targeting + Input Validation for RedAmon
+
+> **Status: IMPLEMENTED** (v2.3.0 — 2026-03-05)
 
 ## Context
 
-Currently, the recon pipeline always starts from a target **domain**. This change adds:
+This document describes the design and implementation of IP/CIDR-based targeting. Originally a planning document, now serves as architectural reference. The feature adds:
 
 1. **IP-based targeting mode**: Start from IP addresses (individual or CIDR ranges) instead of a domain. The pipeline attempts reverse DNS to discover hostnames, creates mock Domain/Subdomain graph nodes when none are found, then continues the normal pipeline.
 2. **Input validation**: Add regex-based format validation before saving for all fields that expect specific formats (IPs, domains, ports, status codes, headers, etc.).

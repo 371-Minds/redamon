@@ -15,6 +15,8 @@ interface ReconConfirmModalProps {
   onConfirm: () => void
   projectName: string
   targetDomain: string
+  ipMode?: boolean
+  targetIps?: string[]
   stats: GraphStats | null
   isLoading: boolean
 }
@@ -25,9 +27,14 @@ export function ReconConfirmModal({
   onConfirm,
   projectName,
   targetDomain,
+  ipMode,
+  targetIps,
   stats,
   isLoading,
 }: ReconConfirmModalProps) {
+  const targetDisplay = ipMode && targetIps?.length
+    ? targetIps.slice(0, 5).join(', ') + (targetIps.length > 5 ? ` (+${targetIps.length - 5} more)` : '')
+    : targetDomain
   const hasExistingData = stats && stats.totalNodes > 0
 
   return (
@@ -43,7 +50,7 @@ export function ReconConfirmModal({
             <strong>Project:</strong> {projectName}
           </p>
           <p className={styles.projectInfo}>
-            <strong>Target:</strong> {targetDomain}
+            <strong>Target:</strong> {targetDisplay}
           </p>
         </div>
 
@@ -84,7 +91,7 @@ export function ReconConfirmModal({
           <div className={styles.ready}>
             <p>No existing data found. Ready to start reconnaissance.</p>
             <p className={styles.readyNote}>
-              This will scan <strong>{targetDomain}</strong> and populate the graph database
+              This will scan <strong>{targetDisplay}</strong> and populate the graph database
               with discovered subdomains, ports, services, and vulnerabilities.
             </p>
           </div>

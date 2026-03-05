@@ -764,6 +764,8 @@ export default function GraphPage() {
         onConfirm={handleConfirmRecon}
         projectName={currentProject?.name || 'Unknown'}
         targetDomain={currentProject?.targetDomain || 'Unknown'}
+        ipMode={currentProject?.ipMode}
+        targetIps={currentProject?.targetIps}
         stats={graphStats}
         isLoading={isReconLoading}
       />
