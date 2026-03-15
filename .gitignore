@@ -128,13 +128,11 @@ out/
 docker-compose.override.yml
 
 # Private strategy docs
-LAUNCHPLAN.md
-GAP.md
 agentic/readmes/README.EMPOWER.md
 agentic/readmes/README.CYPHERFIX.md
 agentic/readmes/README.FULLFIX.md
 agentic/readmes/README.TOOL_PLUGINS.md
-cai/
+
 
 # Claude Code config
 .claude/

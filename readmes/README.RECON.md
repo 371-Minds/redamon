@@ -595,7 +595,7 @@ NAABU_RATE_LIMIT = 1000         # Packets per second
 NAABU_SCAN_TYPE = "s"           # SYN scan
 ```
 
-📖 **Detailed documentation:** [readmes/README.PORT_SCAN.md](readmes/README.PORT_SCAN.md)
+📖 **Detailed documentation:** [readmes/README.PORT_SCAN.md](README.PORT_SCAN.md)
 
 ---
 
@@ -651,7 +651,7 @@ flowchart LR
 | **CMS Plugins** | Yoast SEO, WooCommerce (via Wappalyzer) |
 | **TLS certificates** | Issuer, expiry, SANs |
 
-📖 **Detailed documentation:** [readmes/README.HTTP_PROBE.md](readmes/README.HTTP_PROBE.md)
+📖 **Detailed documentation:** [readmes/README.HTTP_PROBE.md](README.HTTP_PROBE.md)
 
 ---
 
@@ -711,7 +711,7 @@ flowchart TB
 | **GAU** | Passive archives | Historical/deleted pages |
 | **Kiterunner** | API bruteforce | Hidden API routes |
 
-📖 **Detailed documentation:** [readmes/README.RESOURCE_ENUM.md](readmes/README.RESOURCE_ENUM.md)
+📖 **Detailed documentation:** [readmes/README.RESOURCE_ENUM.md](README.RESOURCE_ENUM.md)
 
 ---
 
@@ -782,7 +782,7 @@ flowchart TB
 | **CWE Weaknesses** | Weakness hierarchy |
 | **CAPEC Attacks** | Attack techniques |
 
-📖 **Detailed documentation:** [readmes/README.VULN_SCAN.md](readmes/README.VULN_SCAN.md) | [readmes/README.MITRE.md](readmes/README.MITRE.md)
+📖 **Detailed documentation:** [readmes/README.VULN_SCAN.md](README.VULN_SCAN.md) | [readmes/README.MITRE.md](README.MITRE.md)
 
 ---
 
@@ -1043,8 +1043,8 @@ Unauthorized scanning is illegal. RedAmon is intended for:
 
 | Module | Documentation |
 |--------|---------------|
-| Port Scan | [readmes/README.PORT_SCAN.md](readmes/README.PORT_SCAN.md) |
-| HTTP Probe | [readmes/README.HTTP_PROBE.md](readmes/README.HTTP_PROBE.md) |
-| Vuln Scan | [readmes/README.VULN_SCAN.md](readmes/README.VULN_SCAN.md) |
-| MITRE CWE/CAPEC | [readmes/README.MITRE.md](readmes/README.MITRE.md) |
-| GVM/OpenVAS | [../gvm_scan/README.GVM.md](../gvm_scan/README.GVM.md) |
+| Port Scan | [readmes/README.PORT_SCAN.md](README.PORT_SCAN.md) |
+| HTTP Probe | [readmes/README.HTTP_PROBE.md](README.HTTP_PROBE.md) |
+| Vuln Scan | [readmes/README.VULN_SCAN.md](README.VULN_SCAN.md) |
+| MITRE CWE/CAPEC | [readmes/README.MITRE.md](README.MITRE.md) |
+| GVM/OpenVAS | [README.GVM.md](README.GVM.md) |
