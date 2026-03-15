@@ -83,6 +83,7 @@ Three starting points, ordered by difficulty:
 1. **Good First Issues** — look for the `good-first-issue` label on [GitHub Issues](https://github.com/samugit83/redamon/issues)
 2. **"Up for Grabs" column** on the [Project Board](https://github.com/users/samugit83/projects/1)
 3. **Bug you found** — file an issue first, then fix it
+4. **Your own idea** — have a feature or improvement that's not on the roadmap? Just open a PR! All contributions are welcome, even if they're outside the current project plan
 
 ### Step 2 — Claim it
 
