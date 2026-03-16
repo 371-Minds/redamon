@@ -358,10 +358,19 @@ model Project {
   shodanEnabled                         Boolean  @default(true) @map("shodan_enabled")
 
   // Shodan Pipeline Enrichment (per-feature toggles, gated by global API key)
-  shodanHostLookup                      Boolean  @default(false) @map("shodan_host_lookup")
-  shodanReverseDns                      Boolean  @default(false) @map("shodan_reverse_dns")
+  shodanHostLookup                      Boolean  @default(true)  @map("shodan_host_lookup")
+  shodanReverseDns                      Boolean  @default(true)  @map("shodan_reverse_dns")
   shodanDomainDns                       Boolean  @default(false) @map("shodan_domain_dns")
-  shodanPassiveCves                     Boolean  @default(false) @map("shodan_passive_cves")
+  shodanPassiveCves                     Boolean  @default(true)  @map("shodan_passive_cves")
+
+  // URLScan.io Passive Enrichment
+  urlscanEnabled                        Boolean  @default(true)  @map("urlscan_enabled")
+  urlscanMaxResults                     Int      @default(1000)  @map("urlscan_max_results")
+
+  // Subdomain Discovery Tool Toggles
+  crtshEnabled                          Boolean  @default(true)  @map("crtsh_enabled")
+  hackerTargetEnabled                   Boolean  @default(true)  @map("hacker_target_enabled")
+  knockpyReconEnabled                   Boolean  @default(true)  @map("knockpy_recon_enabled")
 
   // ========== PHISHING / SOCIAL ENGINEERING SETTINGS ==========
   phishingSmtpConfig                    String   @default("") @map("phishing_smtp_config")

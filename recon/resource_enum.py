@@ -107,7 +107,13 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     ip_mode = recon_data.get("metadata", {}).get("ip_mode", False)
     GAU_ENABLED = False if ip_mode else settings.get('GAU_ENABLED', False)
     GAU_DOCKER_IMAGE = settings.get('GAU_DOCKER_IMAGE', 'sxcurity/gau:latest')
-    GAU_PROVIDERS = settings.get('GAU_PROVIDERS', ['wayback', 'commoncrawl', 'otx', 'urlscan'])
+    GAU_PROVIDERS = list(settings.get('GAU_PROVIDERS', ['wayback', 'commoncrawl', 'otx', 'urlscan']))
+
+    # If URLScan enrichment already ran and returned data, remove urlscan from GAU
+    # providers to avoid duplicate API calls and wasted rate limits (same data source)
+    if recon_data.get('urlscan', {}).get('results_count', 0) > 0 and 'urlscan' in GAU_PROVIDERS:
+        GAU_PROVIDERS = [p for p in GAU_PROVIDERS if p != 'urlscan']
+        print(f"    [*] Removed 'urlscan' from GAU providers (already fetched by URLScan enrichment)")
     GAU_THREADS = settings.get('GAU_THREADS', 2)
     GAU_TIMEOUT = settings.get('GAU_TIMEOUT', 60)
     GAU_BLACKLIST_EXTENSIONS = settings.get('GAU_BLACKLIST_EXTENSIONS', ['png', 'jpg', 'jpeg', 'gif', 'css', 'woff', 'woff2', 'ttf', 'svg', 'ico', 'eot'])
@@ -516,8 +522,28 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     # Get in-scope GAU URLs (already filtered if GAU was enabled)
     in_scope_gau = gau_urls_to_process if GAU_ENABLED and gau_urls else []
 
+    # Merge URLScan discovered URLs into the pipeline (passive URL source, like GAU)
+    # Scope-filter against target_domains to prevent out-of-scope URL leakage
+    urlscan_urls = []
+    urlscan_data = recon_data.get("urlscan", {})
+    if urlscan_data:
+        urlscan_skipped = 0
+        for entry in urlscan_data.get("urls_with_paths", []):
+            full_url = entry.get("full_url", "")
+            if full_url:
+                parsed = urlparse(full_url)
+                host = parsed.netloc.split(':')[0] if ':' in parsed.netloc else parsed.netloc
+                if host in target_domains:
+                    urlscan_urls.append(full_url)
+                else:
+                    urlscan_skipped += 1
+        if urlscan_urls:
+            print(f"    [+] URLScan contributed {len(urlscan_urls)} in-scope URLs with paths")
+        if urlscan_skipped:
+            print(f"    [-] URLScan skipped {urlscan_skipped} out-of-scope URLs")
+
     # Combine all discovered URLs (deduplicated, in-scope only)
-    all_discovered_urls = sorted(set(katana_urls + in_scope_gau))
+    all_discovered_urls = sorted(set(katana_urls + in_scope_gau + urlscan_urls))
 
     # Build result structure
     resource_enum_result = {

@@ -57,42 +57,58 @@ def get_proxychains_prefix(anonymous: bool) -> list:
     return []
 
 
-def get_passive_subdomains(domain: str, session) -> set:
+def get_passive_subdomains(domain: str, session, settings: dict = None) -> set:
     """Combine crt.sh and HackerTarget passive discovery."""
+    if settings is None:
+        settings = {}
     subdomains = set()
-    
+
     # crt.sh
-    print(f"[*] Querying crt.sh...")
-    try:
-        resp = session.get(f"https://crt.sh/?q=%.{domain}&output=json", timeout=30)
-        if resp.status_code == 200:
-            for entry in resp.json():
-                for sub in entry['name_value'].lower().split('\n'):
-                    if not sub.startswith('*.'):
-                        subdomains.add(sub.strip())
-            print(f"[+] crt.sh: {len(subdomains)} found")
-    except Exception as e:
-        print(f"[!] crt.sh error: {e}")
+    if settings.get('CRTSH_ENABLED', True):
+        print(f"[*] Querying crt.sh...")
+        try:
+            resp = session.get(f"https://crt.sh/?q=%.{domain}&output=json", timeout=30)
+            if resp.status_code == 200:
+                for entry in resp.json():
+                    for sub in entry['name_value'].lower().split('\n'):
+                        if not sub.startswith('*.'):
+                            subdomains.add(sub.strip())
+                print(f"[+] crt.sh: {len(subdomains)} found")
+        except Exception as e:
+            print(f"[!] crt.sh error: {e}")
+    else:
+        print(f"[-] crt.sh: disabled")
 
     # HackerTarget
-    print(f"[*] Querying HackerTarget...")
-    try:
-        resp = session.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=30)
-        if resp.status_code == 200 and "error" not in resp.text.lower():
-            count = 0
-            for line in resp.text.strip().split('\n'):
-                if ',' in line:
-                    subdomains.add(line.split(',')[0].strip())
-                    count += 1
-            print(f"[+] HackerTarget: {count} found")
-    except Exception as e:
-        print(f"[!] HackerTarget error: {e}")
-    
+    if settings.get('HACKERTARGET_ENABLED', True):
+        print(f"[*] Querying HackerTarget...")
+        try:
+            resp = session.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=30)
+            if resp.status_code == 200 and "error" not in resp.text.lower():
+                count = 0
+                for line in resp.text.strip().split('\n'):
+                    if ',' in line:
+                        subdomains.add(line.split(',')[0].strip())
+                        count += 1
+                print(f"[+] HackerTarget: {count} found")
+        except Exception as e:
+            print(f"[!] HackerTarget error: {e}")
+    else:
+        print(f"[-] HackerTarget: disabled")
+
     return subdomains
 
 
-def run_knockpy(domain: str, proxychains_prefix: list, bruteforce: bool = False) -> set:
+def run_knockpy(domain: str, proxychains_prefix: list, bruteforce: bool = False, settings: dict = None) -> set:
     """Run Knockpy to get subdomains."""
+    if settings is None:
+        settings = {}
+
+    # Check if Knockpy recon mode is enabled
+    if not settings.get('KNOCKPY_RECON_ENABLED', True) and not bruteforce:
+        print(f"[-] Knockpy recon: disabled")
+        return set()
+
     subdomains = set()
     mode = "recon + bruteforce" if bruteforce else "recon only"
     print(f"[*] Running Knockpy ({mode})...")
@@ -313,7 +329,8 @@ def resolve_all_dns(domain: str, subdomains: list) -> dict:
 
 
 def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool = False,
-                        resolve: bool = True, save_output: bool = True, project_id: str = None) -> dict:
+                        resolve: bool = True, save_output: bool = True, project_id: str = None,
+                        settings: dict = None) -> dict:
     """
     Main discovery function - subdomain enumeration + DNS resolution.
 
@@ -324,6 +341,7 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
         resolve: Whether to resolve DNS for all hosts
         save_output: Whether to save JSON report
         project_id: Project ID for filename (if None, falls back to domain)
+        settings: Project settings dict for tool toggles
 
     Returns:
         Complete reconnaissance data for domain and subdomains
@@ -341,12 +359,12 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
     pc_prefix = get_proxychains_prefix(anonymous)
     
     # Subdomain Discovery
-    passive = get_passive_subdomains(domain, session)
-    active = run_knockpy(domain, pc_prefix, bruteforce)
+    passive = get_passive_subdomains(domain, session, settings=settings)
+    active = run_knockpy(domain, pc_prefix, bruteforce, settings=settings)
     
     # Combine, filter, sort
     all_subs = passive.union(active)
-    all_subs = sorted([s for s in all_subs if s.endswith(domain)])
+    all_subs = sorted([s for s in all_subs if s == domain or s.endswith("." + domain)])
     
     # Build result structure
     result = {

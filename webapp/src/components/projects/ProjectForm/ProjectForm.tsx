@@ -22,6 +22,8 @@ import { GithubSection } from './sections/GithubSection'
 import { AgentBehaviourSection } from './sections/AgentBehaviourSection'
 import { AttackSkillsSection } from './sections/AttackSkillsSection'
 import { ShodanSection } from './sections/ShodanSection'
+import { UrlscanSection } from './sections/UrlscanSection'
+import { SubdomainDiscoverySection } from './sections/SubdomainDiscoverySection'
 import { ToolMatrixSection } from './sections/ToolMatrixSection'
 import { GvmScanSection } from './sections/GvmScanSection'
 import { CypherFixSettingsSection } from './sections/CypherFixSettingsSection'
@@ -63,6 +65,7 @@ const TAB_GROUPS = [
     style: 'tabGroupRecon',
     tabs: [
       { id: 'target', label: 'Target & Modules' },
+      { id: 'discovery', label: 'Discovery & OSINT' },
       { id: 'port', label: 'Port Scanning' },
       { id: 'http', label: 'HTTP Probing' },
       { id: 'resource', label: 'Resource Enumeration' },
@@ -378,6 +381,14 @@ export function ProjectForm({
           </>
         )}
 
+        {activeTab === 'discovery' && (
+          <>
+            <SubdomainDiscoverySection data={formData} updateField={updateField} />
+            <ShodanSection data={formData} updateField={updateField} />
+            <UrlscanSection data={formData} updateField={updateField} />
+          </>
+        )}
+
         {activeTab === 'port' && (
           <NaabuSection data={formData} updateField={updateField} />
         )}
@@ -410,10 +421,7 @@ export function ProjectForm({
         )}
 
         {activeTab === 'integrations' && (
-          <>
-            <GithubSection data={formData} updateField={updateField} />
-            <ShodanSection data={formData} updateField={updateField} />
-          </>
+          <GithubSection data={formData} updateField={updateField} />
         )}
 
         {activeTab === 'gvm' && (

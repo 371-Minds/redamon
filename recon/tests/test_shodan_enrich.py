@@ -419,26 +419,26 @@ class TestExtractPassiveCves(unittest.TestCase):
         cves = _extract_passive_cves(hosts, ["1.1.1.1"], "test-key")
         self.assertEqual(len(cves), 1)
 
-    @patch('shodan_enrich._shodan_get')
+    @patch('shodan_enrich._internetdb_get')
     @patch('shodan_enrich.time.sleep')
-    def test_does_lookups_when_no_hosts(self, mock_sleep, mock_get):
-        """When no host data, performs its own host lookups for CVEs."""
-        mock_get.return_value = {
-            "vulns": {"CVE-2023-99999": {}},
-            "ports": [80], "data": [],
+    def test_does_lookups_when_no_hosts(self, mock_sleep, mock_idb):
+        """When no host data, queries InternetDB directly for CVEs."""
+        mock_idb.return_value = {
+            "vulns": ["CVE-2023-99999"],
+            "ports": [80], "hostnames": [], "cpes": [], "tags": [],
         }
         cves = _extract_passive_cves([], ["10.0.0.1"], "test-key")
         self.assertEqual(len(cves), 1)
         self.assertEqual(cves[0]["cve_id"], "CVE-2023-99999")
-        self.assertEqual(cves[0]["source"], "shodan_passive")
+        self.assertEqual(cves[0]["source"], "internetdb")
 
-    @patch('shodan_enrich._shodan_get')
+    @patch('shodan_enrich._internetdb_get')
     @patch('shodan_enrich.time.sleep')
-    def test_handles_vulns_as_list_in_standalone(self, mock_sleep, mock_get):
-        """Standalone CVE lookups handle vulns as list format."""
-        mock_get.return_value = {
+    def test_handles_vulns_as_list_in_standalone(self, mock_sleep, mock_idb):
+        """Standalone CVE lookups via InternetDB handle vulns as list format."""
+        mock_idb.return_value = {
             "vulns": ["CVE-2023-11111", "CVE-2023-22222"],
-            "ports": [443], "data": [],
+            "ports": [443], "hostnames": [], "cpes": [], "tags": [],
         }
         cves = _extract_passive_cves([], ["10.0.0.1"], "test-key")
         self.assertEqual(len(cves), 2)
@@ -524,10 +524,12 @@ class TestRunShodanEnrichment(unittest.TestCase):
 
         mock_ddns.assert_not_called()
 
-    def test_no_api_key_skips_entirely(self):
-        """No API key → enrichment skipped, combined_result unchanged."""
+    @patch('shodan_enrich._internetdb_get')
+    @patch('shodan_enrich.time.sleep')
+    def test_no_api_key_falls_back_to_internetdb(self, mock_sleep, mock_idb):
+        """No API key → falls back to InternetDB (free), enrichment still runs."""
+        mock_idb.return_value = {"ports": [80], "vulns": [], "hostnames": [], "cpes": [], "tags": []}
         result = _make_domain_combined_result()
-        original_keys = set(result.keys())
         settings = {
             "SHODAN_API_KEY": "",
             "SHODAN_HOST_LOOKUP": True,
@@ -536,8 +538,11 @@ class TestRunShodanEnrichment(unittest.TestCase):
             "SHODAN_PASSIVE_CVES": True,
         }
         result = run_shodan_enrichment(result, settings)
-        self.assertNotIn("shodan", result)
-        self.assertEqual(set(result.keys()), original_keys)
+        # Enrichment runs via InternetDB fallback — shodan key IS present
+        self.assertIn("shodan", result)
+        self.assertIsInstance(result["shodan"]["hosts"], list)
+        # InternetDB was called (for host lookup and/or reverse DNS)
+        self.assertTrue(mock_idb.called)
 
     def test_all_toggles_off_skips(self):
         """All toggles off → enrichment skipped."""
@@ -760,18 +765,25 @@ class TestGracefulErrorHandling(unittest.TestCase):
         self.assertEqual(len(result["shodan"]["hosts"]), 1)
         self.assertEqual(result["shodan"]["hosts"][0]["ip"], "1.1.1.1")
 
+    @patch('shodan_enrich._internetdb_get')
     @patch('shodan_enrich._shodan_get')
     @patch('shodan_enrich.time.sleep')
-    def test_401_on_first_ip_aborts_remaining(self, mock_sleep, mock_get):
-        """401 on first IP aborts host lookup immediately (no wasted calls)."""
+    def test_401_on_first_ip_falls_back_to_internetdb(self, mock_sleep, mock_get, mock_idb):
+        """401 on first IP falls back to InternetDB for remaining IPs."""
         from shodan_enrich import ShodanApiKeyError
         mock_get.side_effect = ShodanApiKeyError("401")
+        mock_idb.return_value = {"ports": [22], "vulns": [], "hostnames": [], "cpes": [], "tags": []}
 
-        with self.assertRaises(ShodanApiKeyError):
-            _run_host_lookup(["1.1.1.1", "2.2.2.2", "3.3.3.3"], "bad-key")
+        hosts = _run_host_lookup(["1.1.1.1", "2.2.2.2", "3.3.3.3"], "bad-key")
 
-        # Should have only tried the first IP
+        # Should have tried Shodan API only once (first IP), then switched to InternetDB
         self.assertEqual(mock_get.call_count, 1)
+        # InternetDB should be called for all 3 IPs (first IP retried via InternetDB after fallback)
+        self.assertEqual(mock_idb.call_count, 3)
+        # All hosts should be returned from InternetDB
+        self.assertEqual(len(hosts), 3)
+        for host in hosts:
+            self.assertEqual(host["source"], "internetdb")
 
 
 if __name__ == '__main__':

@@ -4349,7 +4349,7 @@ class Neo4jClient:
                                 "banner": svc.get("banner"),
                                 "source": "shodan",
                                 "module": svc.get("module"),
-                            }.items() if v}
+                            }.items() if v is not None}
 
                             session.run(
                                 """
@@ -4477,6 +4477,7 @@ class Neo4jClient:
             for cve_entry in shodan_data.get("cves", []):
                 cve_id = cve_entry.get("cve_id", "")
                 ip = cve_entry.get("ip", "")
+                cve_source = cve_entry.get("source", "shodan")
                 if not cve_id or not ip:
                     continue
                 vuln_id = f"shodan-{cve_id}-{ip}"
@@ -4484,11 +4485,11 @@ class Neo4jClient:
                     session.run(
                         """
                         MERGE (v:Vulnerability {id: $vuln_id})
-                        ON CREATE SET v.source = 'shodan', v.name = $cve_id,
+                        ON CREATE SET v.source = $source, v.name = $cve_id,
                                       v.cves = [$cve_id], v.user_id = $user_id,
                                       v.project_id = $project_id, v.updated_at = datetime()
                         """,
-                        vuln_id=vuln_id, cve_id=cve_id,
+                        vuln_id=vuln_id, cve_id=cve_id, source=cve_source,
                         user_id=user_id, project_id=project_id
                     )
                     stats["vulnerabilities_created"] += 1
@@ -4496,10 +4497,11 @@ class Neo4jClient:
                     session.run(
                         """
                         MERGE (c:CVE {id: $cve_id})
-                        ON CREATE SET c.source = 'shodan', c.user_id = $user_id,
+                        ON CREATE SET c.source = $source, c.user_id = $user_id,
                                       c.project_id = $project_id, c.updated_at = datetime()
                         """,
-                        cve_id=cve_id, user_id=user_id, project_id=project_id
+                        cve_id=cve_id, source=cve_source,
+                        user_id=user_id, project_id=project_id
                     )
                     stats["cves_created"] += 1
 
@@ -4538,6 +4540,272 @@ class Neo4jClient:
             print(f"[+] Created {stats['cves_created']} CVE nodes")
             print(f"[+] Created {stats['relationships_created']} relationships")
 
+            if stats["errors"]:
+                print(f"[!] {len(stats['errors'])} errors occurred")
+
+        return stats
+
+
+    def update_graph_from_urlscan_discovery(self, recon_data: dict, user_id: str, project_id: str) -> dict:
+        """
+        Phase A: Update graph with URLScan discovery data (before port scan).
+
+        Creates/updates:
+        - Subdomain nodes discovered by URLScan
+        - IP nodes with ASN/country enrichment
+        - Domain node with domain_age_days
+        """
+        stats = {
+            "subdomains_created": 0,
+            "ips_enriched": 0,
+            "domain_enriched": False,
+            "relationships_created": 0,
+            "errors": [],
+        }
+
+        urlscan_data = recon_data.get("urlscan", {})
+        if not urlscan_data or urlscan_data.get("results_count", 0) == 0:
+            return stats
+
+        domain = recon_data.get("domain", "")
+
+        with self.driver.session() as session:
+
+            # ── 1. Subdomain + IP discovery ──
+            seen_subs = set()
+            seen_ips = set()
+            seen_sub_ip_links = set()
+            for entry in urlscan_data.get("entries", []):
+                subdomain = entry.get("domain", "")
+                ip = entry.get("ip", "")
+                asn = entry.get("asn", "")
+                asn_name = entry.get("asn_name", "")
+                country = entry.get("country", "")
+
+                # Create/update subdomain node
+                if subdomain and subdomain != domain and subdomain not in seen_subs:
+                    seen_subs.add(subdomain)
+                    try:
+                        session.run(
+                            """
+                            MERGE (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                            MERGE (s:Subdomain {name: $subdomain, user_id: $uid, project_id: $pid})
+                            ON CREATE SET s.discovered_by = 'urlscan', s.updated_at = datetime()
+                            MERGE (d)-[:HAS_SUBDOMAIN]->(s)
+                            """,
+                            domain=domain, subdomain=subdomain,
+                            uid=user_id, pid=project_id
+                        )
+                        stats["subdomains_created"] += 1
+                        stats["relationships_created"] += 1
+                    except Exception as e:
+                        stats["errors"].append(f"Subdomain {subdomain}: {e}")
+
+                # Enrich IP with ASN/country (deduplicate — many entries share the same IP)
+                if ip and ip not in seen_ips:
+                    seen_ips.add(ip)
+                    try:
+                        props = {k: v for k, v in {
+                            "country": country or None,
+                            "asn": asn or None,
+                            "asn_name": asn_name or None,
+                            "urlscan_enriched": True,
+                        }.items() if v is not None}
+
+                        session.run(
+                            """
+                            MERGE (i:IP {address: $ip, user_id: $uid, project_id: $pid})
+                            SET i += $props, i.updated_at = datetime()
+                            """,
+                            ip=ip, uid=user_id, pid=project_id, props=props
+                        )
+                        stats["ips_enriched"] += 1
+                    except Exception as e:
+                        stats["errors"].append(f"IP {ip}: {e}")
+
+                # Link subdomain -> IP (deduplicate the pair, skip root domain)
+                if subdomain and ip and subdomain != domain:
+                    link_key = (subdomain, ip)
+                    if link_key not in seen_sub_ip_links:
+                        seen_sub_ip_links.add(link_key)
+                        try:
+                            session.run(
+                                """
+                                MATCH (s:Subdomain {name: $subdomain, user_id: $uid, project_id: $pid})
+                                MERGE (i:IP {address: $ip, user_id: $uid, project_id: $pid})
+                                MERGE (s)-[:RESOLVES_TO]->(i)
+                                """,
+                                subdomain=subdomain, ip=ip,
+                                uid=user_id, pid=project_id
+                            )
+                            stats["relationships_created"] += 1
+                        except Exception as e:
+                            stats["errors"].append(f"Link {subdomain}->{ip}: {e}")
+
+            # ── 2. Domain age enrichment ──
+            domain_age = urlscan_data.get("domain_age_days")
+            apex_age = urlscan_data.get("apex_domain_age_days")
+            if domain and (domain_age is not None or apex_age is not None):
+                try:
+                    props = {k: v for k, v in {
+                        "domain_age_days": domain_age,
+                        "apex_domain_age_days": apex_age,
+                        "urlscan_enriched": True,
+                    }.items() if v is not None}
+
+                    session.run(
+                        """
+                        MATCH (d:Domain {name: $domain, user_id: $uid, project_id: $pid})
+                        SET d += $props, d.updated_at = datetime()
+                        """,
+                        domain=domain, uid=user_id, pid=project_id, props=props
+                    )
+                    stats["domain_enriched"] = True
+                except Exception as e:
+                    stats["errors"].append(f"Domain age: {e}")
+
+            print(f"[+] URLScan discovery: {stats['subdomains_created']} subdomains, "
+                  f"{stats['ips_enriched']} IPs enriched")
+            if stats["errors"]:
+                print(f"[!] {len(stats['errors'])} errors occurred")
+
+        return stats
+
+    def update_graph_from_urlscan_enrichment(self, recon_data: dict, user_id: str, project_id: str) -> dict:
+        """
+        Phase B: Enrich existing graph nodes with URLScan data (after http_probe).
+
+        MATCH-only for BaseURL/Certificate (never creates from stale data).
+        Creates Endpoint/Parameter nodes only where parent BaseURL exists.
+        """
+        stats = {
+            "baseurls_enriched": 0,
+            "baseurls_not_found": 0,
+            "endpoints_created": 0,
+            "endpoints_skipped": 0,
+            "parameters_created": 0,
+            "relationships_created": 0,
+            "errors": [],
+        }
+
+        urlscan_data = recon_data.get("urlscan", {})
+        if not urlscan_data or urlscan_data.get("results_count", 0) == 0:
+            return stats
+
+        with self.driver.session() as session:
+
+            # ── 1. Enrich existing BaseURL nodes with screenshot/server/title ──
+            # Group entries by base_url for efficient enrichment
+            from urllib.parse import urlparse as _urlparse
+            baseurl_data: dict[str, dict] = {}
+            for entry in urlscan_data.get("entries", []):
+                url = entry.get("url", "")
+                if not url:
+                    continue
+                try:
+                    parsed = _urlparse(url)
+                    base_url = f"{parsed.scheme}://{parsed.netloc}"
+                except Exception:
+                    continue
+
+                if base_url not in baseurl_data:
+                    baseurl_data[base_url] = {
+                        "screenshot_url": entry.get("screenshot_url", ""),
+                        "server": entry.get("server", ""),
+                        "title": entry.get("title", ""),
+                    }
+
+            for base_url, data in baseurl_data.items():
+                try:
+                    props = {k: v for k, v in {
+                        "urlscan_screenshot_url": data["screenshot_url"] or None,
+                        "urlscan_server": data["server"] or None,
+                        "urlscan_title": data["title"] or None,
+                        "urlscan_enriched": True,
+                    }.items() if v is not None}
+
+                    if props:
+                        result = session.run(
+                            """
+                            MATCH (bu:BaseURL {url: $base_url, user_id: $uid, project_id: $pid})
+                            SET bu += $props, bu.updated_at = datetime()
+                            RETURN bu.url AS url
+                            """,
+                            base_url=base_url, uid=user_id, pid=project_id, props=props
+                        )
+                        if result.single():
+                            stats["baseurls_enriched"] += 1
+                        else:
+                            stats["baseurls_not_found"] += 1
+                except Exception as e:
+                    stats["errors"].append(f"BaseURL {base_url}: {e}")
+
+            # ── 2. Create Endpoint + Parameter nodes for URLs with paths ──
+            for url_entry in urlscan_data.get("urls_with_paths", []):
+                base_url = url_entry.get("base_url", "")
+                path = url_entry.get("path", "")
+                full_url = url_entry.get("full_url", "")
+                params = url_entry.get("params", {})
+
+                if not base_url or not path:
+                    continue
+
+                try:
+                    has_params = bool(params)
+                    # Only create endpoint if BaseURL exists (confirmed live by http_probe)
+                    result = session.run(
+                        """
+                        MATCH (bu:BaseURL {url: $base_url, user_id: $uid, project_id: $pid})
+                        MERGE (e:Endpoint {path: $path, method: 'GET', baseurl: $base_url,
+                                           user_id: $uid, project_id: $pid})
+                        ON CREATE SET e.source = 'urlscan', e.full_url = $full_url,
+                                      e.has_parameters = $has_params, e.updated_at = datetime()
+                        MERGE (bu)-[:HAS_ENDPOINT]->(e)
+                        RETURN e.path AS path
+                        """,
+                        base_url=base_url, path=path, full_url=full_url,
+                        has_params=has_params, uid=user_id, pid=project_id
+                    )
+                    record = result.single()
+                    if record:
+                        stats["endpoints_created"] += 1
+                        stats["relationships_created"] += 1
+
+                        # Create Parameter nodes from query string
+                        for param_name, param_value in params.items():
+                            try:
+                                sample_val = param_value if isinstance(param_value, str) else str(param_value)
+                                session.run(
+                                    """
+                                    MATCH (e:Endpoint {path: $path, method: 'GET', baseurl: $base_url,
+                                                       user_id: $uid, project_id: $pid})
+                                    MERGE (p:Parameter {name: $param_name, position: 'query',
+                                                        endpoint_path: $path, baseurl: $base_url,
+                                                        user_id: $uid, project_id: $pid})
+                                    ON CREATE SET p.source = 'urlscan', p.sample_value = $sample_val,
+                                                  p.is_injectable = false, p.updated_at = datetime()
+                                    MERGE (e)-[:HAS_PARAMETER]->(p)
+                                    """,
+                                    path=path, base_url=base_url, param_name=param_name,
+                                    sample_val=sample_val[:500],
+                                    uid=user_id, pid=project_id
+                                )
+                                stats["parameters_created"] += 1
+                                stats["relationships_created"] += 1
+                            except Exception as e:
+                                stats["errors"].append(f"Parameter {param_name}: {e}")
+                    else:
+                        stats["endpoints_skipped"] += 1
+
+                except Exception as e:
+                    stats["errors"].append(f"Endpoint {path}: {e}")
+
+            print(f"[+] URLScan enrichment: {stats['baseurls_enriched']} BaseURLs enriched, "
+                  f"{stats['endpoints_created']} endpoints, {stats['parameters_created']} parameters")
+            if stats["baseurls_not_found"]:
+                print(f"[*] {stats['baseurls_not_found']} BaseURLs not in graph (stale URLScan data, expected)")
+            if stats["endpoints_skipped"]:
+                print(f"[*] {stats['endpoints_skipped']} endpoints skipped (BaseURL not live)")
             if stats["errors"]:
                 print(f"[!] {len(stats['errors'])} errors occurred")
 

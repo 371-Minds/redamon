@@ -419,7 +419,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="URLScan API Key"
-              hint="Optional — used by GAU passive URL discovery for higher rate limits and more URLScan results"
+              hint="Optional — used by URLScan.io OSINT enrichment for higher rate limits. Works without key (public results only)"
               signupUrl="https://urlscan.io/user/signup"
               badges={['Recon Pipeline']}
               value={settings.urlscanApiKey}

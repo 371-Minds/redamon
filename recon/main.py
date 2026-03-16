@@ -409,6 +409,7 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     shodan_enabled = any([
         settings.get('SHODAN_HOST_LOOKUP'),
         settings.get('SHODAN_REVERSE_DNS'),
+        settings.get('SHODAN_DOMAIN_DNS'),
         settings.get('SHODAN_PASSIVE_CVES'),
     ])
     if shodan_enabled:
@@ -454,6 +455,16 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
                         graph_client.update_graph_from_http_probe(combined_result, USER_ID, PROJECT_ID)
             except Exception as e:
                 print(f"[!] HTTP probe graph update failed: {e}")
+
+        # URLScan Phase B: Enrich BaseURLs + create Endpoints (only after http_probe)
+        if 'urlscan' in combined_result and UPDATE_GRAPH_DB:
+            try:
+                from graph_db import Neo4jClient
+                with Neo4jClient() as graph_client:
+                    if graph_client.verify_connection():
+                        graph_client.update_graph_from_urlscan_enrichment(combined_result, USER_ID, PROJECT_ID)
+            except Exception as e:
+                print(f"[!] URLScan enrichment graph update failed: {e}")
 
     # Check if active scans should be skipped
     skip_active_scans, skip_reason = should_skip_active_scans(combined_result)
@@ -648,7 +659,8 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             anonymous=anonymous,
             bruteforce=bruteforce,
             resolve=True,
-            save_output=False
+            save_output=False,
+            settings=_settings
         )
 
         discovered_subs = recon_result.get("subdomains", [])
@@ -729,6 +741,38 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
 
             save_recon_file(combined_result, output_file)
 
+    # URLScan.io Passive Enrichment (after domain discovery, before port scan)
+    if _settings.get('URLSCAN_ENABLED'):
+        from recon.urlscan_enrich import run_urlscan_enrichment
+        combined_result = run_urlscan_enrichment(combined_result, _settings)
+        combined_result["metadata"]["modules_executed"].append("urlscan_enrich")
+        save_recon_file(combined_result, output_file)
+
+        # Phase A: Subdomain/IP discovery graph update
+        if UPDATE_GRAPH_DB:
+            print(f"\n[GRAPH UPDATE] URLScan Discovery Data")
+            print("-" * 40)
+            try:
+                from graph_db import Neo4jClient
+                with Neo4jClient() as graph_client:
+                    if graph_client.verify_connection():
+                        urlscan_disc_stats = graph_client.update_graph_from_urlscan_discovery(combined_result, USER_ID, PROJECT_ID)
+                        combined_result["metadata"]["graph_db_urlscan_discovery_updated"] = True
+                        combined_result["metadata"]["graph_db_urlscan_discovery_stats"] = urlscan_disc_stats
+                        print(f"[+] Graph database updated with URLScan discovery data")
+                    else:
+                        print(f"[!] Could not connect to Neo4j - skipping URLScan discovery graph update")
+                        combined_result["metadata"]["graph_db_urlscan_discovery_updated"] = False
+            except ImportError:
+                print(f"[!] Neo4j client not available - skipping URLScan discovery graph update")
+                combined_result["metadata"]["graph_db_urlscan_discovery_updated"] = False
+            except Exception as e:
+                print(f"[!] URLScan discovery graph update failed: {e}")
+                combined_result["metadata"]["graph_db_urlscan_discovery_updated"] = False
+                combined_result["metadata"]["graph_db_urlscan_discovery_error"] = str(e)
+
+            save_recon_file(combined_result, output_file)
+
     # Step 3: Port scanning (fast port discovery)
     if "port_scan" in SCAN_MODULES:
         combined_result = run_port_scan(combined_result, output_file=output_file, settings=_settings)
@@ -788,6 +832,31 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 print(f"[!] HTTP probe graph update failed: {e}")
                 combined_result["metadata"]["graph_db_http_probe_updated"] = False
                 combined_result["metadata"]["graph_db_http_probe_error"] = str(e)
+
+            save_recon_file(combined_result, output_file)
+
+        # URLScan Phase B: Enrich BaseURLs + create Endpoints (only after http_probe confirmed live URLs)
+        if 'urlscan' in combined_result and UPDATE_GRAPH_DB:
+            print(f"\n[GRAPH UPDATE] URLScan Enrichment Data (Phase B)")
+            print("-" * 40)
+            try:
+                from graph_db import Neo4jClient
+                with Neo4jClient() as graph_client:
+                    if graph_client.verify_connection():
+                        urlscan_enrich_stats = graph_client.update_graph_from_urlscan_enrichment(combined_result, USER_ID, PROJECT_ID)
+                        combined_result["metadata"]["graph_db_urlscan_enrichment_updated"] = True
+                        combined_result["metadata"]["graph_db_urlscan_enrichment_stats"] = urlscan_enrich_stats
+                        print(f"[+] Graph database updated with URLScan enrichment data")
+                    else:
+                        print(f"[!] Could not connect to Neo4j - skipping URLScan enrichment graph update")
+                        combined_result["metadata"]["graph_db_urlscan_enrichment_updated"] = False
+            except ImportError:
+                print(f"[!] Neo4j client not available - skipping URLScan enrichment graph update")
+                combined_result["metadata"]["graph_db_urlscan_enrichment_updated"] = False
+            except Exception as e:
+                print(f"[!] URLScan enrichment graph update failed: {e}")
+                combined_result["metadata"]["graph_db_urlscan_enrichment_updated"] = False
+                combined_result["metadata"]["graph_db_urlscan_enrichment_error"] = str(e)
 
             save_recon_file(combined_result, output_file)
 

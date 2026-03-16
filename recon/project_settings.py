@@ -292,12 +292,21 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'SECURITY_CHECK_MAX_WORKERS': 10,
 
     # Shodan Pipeline Enrichment
-    'SHODAN_HOST_LOOKUP': False,
-    'SHODAN_REVERSE_DNS': False,
+    'SHODAN_HOST_LOOKUP': True,
+    'SHODAN_REVERSE_DNS': True,
     'SHODAN_DOMAIN_DNS': False,
-    'SHODAN_PASSIVE_CVES': False,
+    'SHODAN_PASSIVE_CVES': True,
     'SHODAN_API_KEY': '',
     'URLSCAN_API_KEY': '',
+
+    # URLScan.io Passive Enrichment
+    'URLSCAN_ENABLED': True,
+    'URLSCAN_MAX_RESULTS': 1000,
+
+    # Subdomain Discovery Tool Toggles
+    'CRTSH_ENABLED': True,
+    'HACKER_TARGET_ENABLED': True,
+    'KNOCKPY_RECON_ENABLED': True,
 
     # Rules of Engagement (recon-relevant fields only)
     'ROE_ENABLED': False,
@@ -574,6 +583,15 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['SHODAN_DOMAIN_DNS'] = project.get('shodanDomainDns', DEFAULT_SETTINGS['SHODAN_DOMAIN_DNS'])
     settings['SHODAN_PASSIVE_CVES'] = project.get('shodanPassiveCves', DEFAULT_SETTINGS['SHODAN_PASSIVE_CVES'])
 
+    # URLScan.io Passive Enrichment
+    settings['URLSCAN_ENABLED'] = project.get('urlscanEnabled', DEFAULT_SETTINGS['URLSCAN_ENABLED'])
+    settings['URLSCAN_MAX_RESULTS'] = project.get('urlscanMaxResults', DEFAULT_SETTINGS['URLSCAN_MAX_RESULTS'])
+
+    # Subdomain Discovery Tool Toggles
+    settings['CRTSH_ENABLED'] = project.get('crtshEnabled', DEFAULT_SETTINGS['CRTSH_ENABLED'])
+    settings['HACKERTARGET_ENABLED'] = project.get('hackerTargetEnabled', DEFAULT_SETTINGS['HACKER_TARGET_ENABLED'])
+    settings['KNOCKPY_RECON_ENABLED'] = project.get('knockpyReconEnabled', DEFAULT_SETTINGS['KNOCKPY_RECON_ENABLED'])
+
     # Fetch Shodan API key from user's global settings
     shodan_any = any([
         settings['SHODAN_HOST_LOOKUP'], settings['SHODAN_REVERSE_DNS'],
@@ -582,12 +600,14 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     if shodan_any and settings.get('USER_ID'):
         settings['SHODAN_API_KEY'] = _fetch_shodan_api_key(settings['USER_ID'], webapp_url)
 
-    # Fetch URLScan API key from user's global settings (used by GAU)
+    # Fetch URLScan API key from user's global settings
+    # Used by urlscan_enrich.py OR GAU's urlscan provider
+    urlscan_enrichment = settings.get('URLSCAN_ENABLED', False)
     gau_uses_urlscan = (
         settings.get('GAU_ENABLED', False)
         and 'urlscan' in settings.get('GAU_PROVIDERS', [])
     )
-    if gau_uses_urlscan and settings.get('USER_ID'):
+    if (urlscan_enrichment or gau_uses_urlscan) and settings.get('USER_ID'):
         settings['URLSCAN_API_KEY'] = _fetch_urlscan_api_key(settings['USER_ID'], webapp_url)
 
     # Rules of Engagement
@@ -742,6 +762,9 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
 
     # --- Subdomain Brute Force: DISABLED ---
     settings['USE_BRUTEFORCE_FOR_SUBDOMAINS'] = False
+
+    # --- URLScan: keep enabled (passive) but reduce results ---
+    settings['URLSCAN_MAX_RESULTS'] = min(settings.get('URLSCAN_MAX_RESULTS', 1000), 100)
 
     # --- Security Checks: disable active checks, keep passive ones ---
     # Active checks (make network connections to target)
