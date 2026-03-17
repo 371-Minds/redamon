@@ -385,6 +385,8 @@ When `NAABU_EXCLUDE_CDN = True`:
 
 ## Architecture & Flow
 
+> **Pipeline context:** Port scanning runs in **GROUP 3** of the parallelized recon pipeline, concurrently with Shodan enrichment via `ThreadPoolExecutor`. The `run_port_scan_isolated()` function accepts a read-only snapshot of recon data and returns only the port scan results, making it thread-safe for parallel execution.
+
 ### Execution Flow
 
 ```

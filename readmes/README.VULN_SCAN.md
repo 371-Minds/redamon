@@ -466,6 +466,8 @@ docker run --rm \
 
 ## Architecture & Flow
 
+> **Pipeline context:** Vulnerability scanning runs in **GROUP 6** of the parallelized recon pipeline, the final group. It depends on resource enumeration (GROUP 5) output. MITRE CWE/CAPEC enrichment runs automatically after Nuclei completes. Graph DB updates happen in a background thread.
+
 ### Execution Flow
 
 ```

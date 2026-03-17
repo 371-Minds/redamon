@@ -61,13 +61,13 @@ def run_katana_crawler(
     # Idle timeout: kill if no output for 5 minutes (crawl is stuck/done)
     idle_timeout = 300
 
-    print(f"\n[*] Running Katana crawler for endpoint discovery...")
-    print(f"    Crawl depth: {depth}")
-    print(f"    Max URLs: {max_urls}")
-    print(f"    Rate limit: {rate_limit} req/s")
-    print(f"    Crawl duration: {crawl_duration}")
-    print(f"    Params only: {params_only}")
-    print(f"    Allowed hosts: {len(allowed_hosts)} ({', '.join(sorted(allowed_hosts)[:5])}{'...' if len(allowed_hosts) > 5 else ''})")
+    print(f"\n[*][Katana] Running Katana crawler for endpoint discovery...")
+    print(f"[*][Katana] Crawl depth: {depth}")
+    print(f"[*][Katana] Max URLs: {max_urls}")
+    print(f"[*][Katana] Rate limit: {rate_limit} req/s")
+    print(f"[*][Katana] Crawl duration: {crawl_duration}")
+    print(f"[*][Katana] Params only: {params_only}")
+    print(f"[*][Katana] Allowed hosts: {len(allowed_hosts)} ({', '.join(sorted(allowed_hosts)[:5])}{'...' if len(allowed_hosts) > 5 else ''})")
 
     discovered_urls = set()
     filtered_out_of_scope = 0
@@ -132,13 +132,13 @@ def run_katana_crawler(
                 while True:
                     # Check overall deadline
                     if time.time() > deadline:
-                        print(f"    [!] Katana overall timeout for {base_url}")
+                        print(f"[!][Katana] Overall timeout for {base_url}")
                         process.kill()
                         break
 
                     # Check idle timeout (no output for too long)
                     if time.time() - last_output_time > idle_timeout:
-                        print(f"    [!] Katana idle timeout ({idle_timeout}s with no output) for {base_url}")
+                        print(f"[!][Katana] Idle timeout ({idle_timeout}s with no output) for {base_url}")
                         process.kill()
                         break
 
@@ -188,7 +188,7 @@ def run_katana_crawler(
 
                     # Enforce max_urls: kill process early
                     if len(discovered_urls) >= max_urls:
-                        print(f"    [+] Reached max URL limit ({max_urls}), stopping Katana")
+                        print(f"[+][Katana] Reached max URL limit ({max_urls}), stopping Katana")
                         process.kill()
                         break
 
@@ -199,15 +199,15 @@ def run_katana_crawler(
                 process.wait()
 
         except Exception as e:
-            print(f"    [!] Katana error for {base_url}: {e}")
+            print(f"[!][Katana] Error for {base_url}: {e}")
 
         if len(discovered_urls) >= max_urls:
             break
 
     urls_list = sorted(list(discovered_urls))
-    print(f"    [+] Katana discovered {len(urls_list)} URLs")
+    print(f"[+][Katana] Discovered {len(urls_list)} URLs")
     if filtered_out_of_scope > 0:
-        print(f"    [+] Filtered {filtered_out_of_scope} out-of-scope URLs")
+        print(f"[+][Katana] Filtered {filtered_out_of_scope} out-of-scope URLs")
 
     return urls_list, {"external_domains": external_domain_entries}
 
@@ -247,7 +247,7 @@ def fetch_forms_from_urls(
     if not html_urls:
         return all_forms
 
-    print(f"    [*] Fetching HTML from {len(html_urls)} URLs to extract forms...")
+    print(f"[*][Katana] Fetching HTML from {len(html_urls)} URLs to extract forms...")
 
     # Create SSL context that doesn't verify certificates (for testing)
     ssl_context = ssl.create_default_context()
@@ -285,7 +285,7 @@ def fetch_forms_from_urls(
         except Exception:
             continue
 
-    print(f"    [+] Extracted {len(all_forms)} forms from HTML pages")
+    print(f"[+][Katana] Extracted {len(all_forms)} forms from HTML pages")
     return all_forms
 
 
@@ -300,7 +300,7 @@ def pull_katana_docker_image(docker_image: str) -> bool:
         True if successful, False otherwise
     """
     try:
-        print(f"    [*] Pulling Katana image: {docker_image}...")
+        print(f"[*][Katana] Pulling Katana image: {docker_image}...")
         result = subprocess.run(
             ["docker", "pull", docker_image],
             capture_output=True,

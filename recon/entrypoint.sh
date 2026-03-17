@@ -12,10 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║           RedAmon Reconnaissance Module                    ║${NC}"
-echo -e "${BLUE}║              Containerized OSINT Framework                 ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}[*] RedAmon Automated Reconnaissance Pipeline${NC}"
 echo ""
 
 # =============================================================================

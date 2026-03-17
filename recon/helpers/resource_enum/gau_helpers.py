@@ -50,7 +50,7 @@ def pull_gau_docker_image(docker_image: str) -> bool:
         True if successful, False otherwise
     """
     try:
-        print(f"    [*] Pulling GAU image: {docker_image}...")
+        print(f"[*][GAU] Pulling GAU image: {docker_image}...")
         pull_cmd = ["docker", "pull"]
         if _is_arm64_host():
             pull_cmd.extend(["--platform", "linux/amd64"])
@@ -230,12 +230,12 @@ def _run_gau_docker(
                         break
 
         if result.stderr and verbose:
-            print(f"    [*] GAU stderr: {result.stderr[:200]}")
+            print(f"[*][GAU] GAU stderr: {result.stderr[:200]}")
 
     except subprocess.TimeoutExpired:
-        print(f"    [!] GAU timeout for {domain}")
+        print(f"[!][GAU] Timeout for {domain}")
     except Exception as e:
-        print(f"    [!] GAU error for {domain}: {e}")
+        print(f"[!][GAU] Error for {domain}: {e}")
 
     return sorted(list(discovered_urls))
 
@@ -265,17 +265,17 @@ def run_gau_discovery(
     Returns:
         Tuple of (all_discovered_urls, urls_by_domain)
     """
-    print(f"\n[*] Running GAU passive URL discovery...")
-    print(f"    Providers: {', '.join(providers)}")
-    print(f"    Max URLs per domain: {max_urls if max_urls > 0 else 'unlimited'}")
+    print(f"\n[*][GAU] Running GAU passive URL discovery...")
+    print(f"[*][GAU] Providers: {', '.join(providers)}")
+    print(f"[*][GAU] Max URLs per domain: {max_urls if max_urls > 0 else 'unlimited'}")
     if urlscan_api_key:
-        print(f"    URLScan API key: configured")
+        print(f"[*][GAU] URLScan API key: configured")
 
     all_discovered_urls = set()
     urls_by_domain = {}
 
     for i, domain in enumerate(sorted(target_domains), 1):
-        print(f"    [{i}/{len(target_domains)}] Querying GAU for: {domain}...")
+        print(f"[*][GAU] [{i}/{len(target_domains)}] Querying GAU for: {domain}...")
 
         domain_urls = run_gau_for_domain(
             domain=domain,
@@ -293,10 +293,10 @@ def run_gau_discovery(
         urls_by_domain[domain] = domain_urls
         all_discovered_urls.update(domain_urls)
 
-        print(f"        [+] Found {len(domain_urls)} URLs")
+        print(f"[+][GAU] Found {len(domain_urls)} URLs")
 
     urls_list = sorted(list(all_discovered_urls))
-    print(f"    [+] GAU discovered {len(urls_list)} total URLs")
+    print(f"[+][GAU] Discovered {len(urls_list)} total URLs")
 
     return urls_list, urls_by_domain
 
@@ -367,7 +367,7 @@ def verify_gau_urls(
     if not urls:
         return set()
 
-    print(f"\n[*] Verifying {len(urls)} GAU URLs...")
+    print(f"\n[*][GAU] Verifying {len(urls)} GAU URLs...")
 
     # Create temp directory for httpx input/output (Docker-in-Docker compatible)
     temp_dir = _create_temp_dir("gau_verify")
@@ -401,10 +401,10 @@ def verify_gau_urls(
         try:
             subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except subprocess.TimeoutExpired:
-            print("    [!] URL verification timeout")
+            print("[!][GAU] URL verification timeout")
             return set(urls)
         except Exception as e:
-            print(f"    [!] URL verification error: {e}")
+            print(f"[!][GAU] URL verification error: {e}")
             return set(urls)
 
         # Parse results
@@ -423,7 +423,7 @@ def verify_gau_urls(
                     except json.JSONDecodeError:
                         continue
 
-        print(f"    [+] Verified: {len(live_urls)}/{len(urls)} URLs are live")
+        print(f"[+][GAU] Verified: {len(live_urls)}/{len(urls)} URLs are live")
         return live_urls
     finally:
         _cleanup_temp_dir(temp_dir)
@@ -456,7 +456,7 @@ def detect_gau_methods(
     if not urls:
         return {}
 
-    print(f"\n[*] Detecting HTTP methods for {len(urls)} GAU endpoints...")
+    print(f"\n[*][GAU] Detecting HTTP methods for {len(urls)} GAU endpoints...")
 
     url_methods: Dict[str, List[str]] = {}
 
@@ -492,10 +492,10 @@ def detect_gau_methods(
         try:
             subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except subprocess.TimeoutExpired:
-            print("    [!] Method detection timeout")
+            print("[!][GAU] Method detection timeout")
             return {url: ["GET"] for url in urls}
         except Exception as e:
-            print(f"    [!] Method detection error: {e}")
+            print(f"[!][GAU] Method detection error: {e}")
             return {url: ["GET"] for url in urls}
 
         options_responded = set()
@@ -540,7 +540,7 @@ def detect_gau_methods(
         urls_needing_get_check = [url for url in urls if url not in options_responded]
 
         if urls_needing_get_check and filter_dead:
-            print(f"    [*] Checking {len(urls_needing_get_check)} endpoints with GET fallback...")
+            print(f"[*][GAU] Checking {len(urls_needing_get_check)} endpoints with GET fallback...")
 
             get_urls_file = temp_dir / "get_urls.txt"
             get_output_file = temp_dir / "get_output.json"
@@ -582,7 +582,7 @@ def detect_gau_methods(
                             except json.JSONDecodeError:
                                 continue
             except Exception as e:
-                print(f"    [!] GET fallback error: {e}")
+                print(f"[!][GAU] GET fallback error: {e}")
                 for url in urls_needing_get_check:
                     if url not in url_methods:
                         url_methods[url] = ["GET"]
@@ -593,11 +593,11 @@ def detect_gau_methods(
         with_methods = sum(1 for methods in url_methods.values() if len(methods) > 1)
         filtered_out = len(urls) - len(url_methods)
 
-        print(f"    [+] Method detection complete:")
-        print(f"        - Endpoints with multiple methods: {with_methods}")
-        print(f"        - Endpoints with GET only: {len(url_methods) - with_methods}")
+        print(f"[+][GAU] Method detection complete:")
+        print(f"[*][GAU]   - Endpoints with multiple methods: {with_methods}")
+        print(f"[*][GAU]   - Endpoints with GET only: {len(url_methods) - with_methods}")
         if filter_dead:
-            print(f"        - Dead endpoints filtered out: {filtered_out}")
+            print(f"[*][GAU]   - Dead endpoints filtered out: {filtered_out}")
 
         return url_methods
     finally:

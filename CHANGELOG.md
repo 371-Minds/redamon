@@ -84,6 +84,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Entrypoint**: `caffix/amass:latest` added to Docker image pre-pull list
   - Results merge into existing subdomain flow with per-source attribution — no graph schema changes needed
 
+- **Parallelized Recon Pipeline (Fan-Out / Fan-In)** — the reconnaissance pipeline now uses `concurrent.futures.ThreadPoolExecutor` to run independent modules concurrently, significantly reducing total scan time while respecting data dependencies between groups:
+  - **GROUP 1**: WHOIS + Subdomain Discovery + URLScan run in parallel (3 concurrent tasks). Within subdomain discovery, all 5 tools (crt.sh, HackerTarget, Subfinder, Amass, Knockpy) run concurrently via `ThreadPoolExecutor(max_workers=5)`. Each tool refactored into a thread-safe function with its own `requests.Session`
+  - **GROUP 3**: Shodan Enrichment + Port Scan (Naabu) run in parallel (2 concurrent tasks). New `_isolated` function variants (`run_port_scan_isolated`, `run_shodan_enrichment_isolated`) accept a read-only snapshot and return only their data section
+  - **DNS Resolution**: parallelized with 20 concurrent workers via `ThreadPoolExecutor(max_workers=20)` in `resolve_all_dns()`
+  - **Background Graph DB Updates**: all Neo4j graph writes now run in a dedicated single-writer background thread (`_graph_update_bg`). The main pipeline submits deep-copy snapshots and continues immediately. `_graph_wait_all()` ensures completion before pipeline exit
+  - **Structured Logging**: all log messages standardized to `[level][Module]` prefix format (e.g., `[+][crt.sh] Found 42 subdomains`) for clarity in concurrent output
+  - Resource Enumeration (Katana, GAU, Kiterunner) was already internally parallel; Groups 4 (HTTP Probe) and 6 (Vuln Scan + MITRE) remain sequential as they depend on prior group results
+
 - **Per-source Subdomain Attribution** — subdomain discovery now tracks which tool found each subdomain (crt.sh, hackertarget, subfinder, amass, knockpy). External domain entries carry accurate per-source labels instead of generic `cert_discovery`. `get_passive_subdomains()` returns `dict{subdomain: set_of_sources}` instead of a flat set
 
 - **Compact Subdomain Discovery UI** — passive subdomain source toggles (crt.sh, HackerTarget, Subfinder, Amass, Knockpy) now display the tool name, max results input, and toggle on a single row instead of separate expandable sections

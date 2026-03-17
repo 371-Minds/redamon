@@ -118,7 +118,7 @@ def _run_host_lookup(ips: list[str], api_key: str) -> list[dict]:
 
     if use_internetdb:
         logger.info("No Shodan API key — using InternetDB (free, no key required)")
-        print("[*] No Shodan API key — using InternetDB (free, no key required)")
+        print("[*][Shodan] No API key — using InternetDB (free, no key required)")
 
     for ip in ips:
         if not use_internetdb:
@@ -126,7 +126,7 @@ def _run_host_lookup(ips: list[str], api_key: str) -> list[dict]:
                 data = _shodan_get(f"/shodan/host/{ip}", api_key)
             except ShodanApiKeyError:
                 logger.info("Paid API unavailable — falling back to InternetDB (free)")
-                print("[*] Falling back to Shodan InternetDB (free, no key required)")
+                print("[*][Shodan] Falling back to InternetDB (free, no key required)")
                 use_internetdb = True
                 data = None
 
@@ -207,10 +207,10 @@ def _run_reverse_dns(ips: list[str], api_key: str, hosts: list[dict] | None = No
             return results
         except ShodanApiKeyError:
             logger.info("Paid DNS API unavailable — extracting hostnames from InternetDB data")
-            print("[*] Falling back to InternetDB for reverse DNS")
+            print("[*][Shodan] Falling back to InternetDB for reverse DNS")
     else:
         logger.info("No Shodan API key — using InternetDB for reverse DNS")
-        print("[*] No Shodan API key — using InternetDB for reverse DNS")
+        print("[*][Shodan] No API key — using InternetDB for reverse DNS")
 
     # Fallback: extract hostnames from existing InternetDB host data
     if hosts:
@@ -240,13 +240,13 @@ def _run_domain_dns(domain: str, api_key: str) -> dict:
     empty dict and logs a clear message (no abort — pipeline continues).
     """
     if not api_key:
-        print("[!] Domain DNS requires a Shodan API key — skipping")
+        print("[!][Shodan] Domain DNS requires an API key — skipping")
         return {}
 
     try:
         data = _shodan_get(f"/dns/domain/{domain}", api_key)
     except ShodanApiKeyError:
-        print("[!] Domain DNS requires a paid Shodan plan — skipping (other features continue)")
+        print("[!][Shodan] Domain DNS requires a paid plan — skipping (other features continue)")
         return {}
 
     if not data:
@@ -295,7 +295,7 @@ def _extract_passive_cves(hosts: list[dict], ips: list[str], api_key: str) -> li
                     })
     else:
         # No host data — query InternetDB directly (free, no key needed)
-        print("[*] Querying InternetDB for passive CVEs (free)")
+        print("[*][Shodan] Querying InternetDB for passive CVEs (free)")
         for ip in ips:
             idb = _internetdb_get(ip)
             if idb:
@@ -345,7 +345,7 @@ def run_shodan_enrichment(combined_result: dict, settings: dict[str, Any]) -> di
     domain = combined_result.get("domain", "")
     is_ip_mode = combined_result.get("metadata", {}).get("ip_mode", False)
 
-    print(f"[+] Extracted {len(ips)} unique IPs for Shodan enrichment")
+    print(f"[+][Shodan] Extracted {len(ips)} unique IPs for enrichment")
 
     shodan_data: dict[str, Any] = {
         "hosts": [],
@@ -357,40 +357,61 @@ def run_shodan_enrichment(combined_result: dict, settings: dict[str, Any]) -> di
     try:
         # 1. Host Lookup (falls back to InternetDB on 403)
         if do_host and ips:
-            print(f"[+] Running Shodan host lookup on {len(ips)} IPs...")
+            print(f"[*][Shodan] Running host lookup on {len(ips)} IPs...")
             shodan_data["hosts"] = _run_host_lookup(ips, api_key)
-            print(f"[+] Host lookup complete: {len(shodan_data['hosts'])} hosts enriched")
+            print(f"[+][Shodan] Host lookup complete: {len(shodan_data['hosts'])} hosts enriched")
 
         # 2. Reverse DNS (falls back to InternetDB hostnames on 403)
         if do_rdns and ips:
-            print(f"[+] Running Shodan reverse DNS on {len(ips)} IPs...")
+            print(f"[*][Shodan] Running reverse DNS on {len(ips)} IPs...")
             shodan_data["reverse_dns"] = _run_reverse_dns(ips, api_key, shodan_data["hosts"])
-            print(f"[+] Reverse DNS complete: {len(shodan_data['reverse_dns'])} IPs resolved")
+            print(f"[+][Shodan] Reverse DNS complete: {len(shodan_data['reverse_dns'])} IPs resolved")
 
         # 3. Domain DNS (domain mode only, paid Shodan plan — no free fallback)
         if do_ddns and domain and not is_ip_mode:
-            print(f"[+] Running Shodan domain DNS for {domain}...")
+            print(f"[*][Shodan] Running domain DNS for {domain}...")
             shodan_data["domain_dns"] = _run_domain_dns(domain, api_key)
             sub_count = len(shodan_data["domain_dns"].get("subdomains", []))
-            print(f"[+] Domain DNS complete: {sub_count} subdomains found")
+            print(f"[+][Shodan] Domain DNS complete: {sub_count} subdomains found")
 
         # 4. Passive CVEs (reuses host data, falls back with hosts to InternetDB)
         if do_cves and ips:
-            print(f"[+] Extracting passive CVEs from Shodan data...")
+            print(f"[*][Shodan] Extracting passive CVEs...")
             shodan_data["cves"] = _extract_passive_cves(
                 shodan_data["hosts"], ips, api_key
             )
-            print(f"[+] Passive CVEs complete: {len(shodan_data['cves'])} CVEs found")
+            print(f"[+][Shodan] Passive CVEs complete: {len(shodan_data['cves'])} CVEs found")
 
     except ShodanApiKeyError as e:
         # Only reaches here for 401 (invalid key) — 403 is handled per-function
-        print(f"[!] Shodan API key error: {e}")
-        print(f"[!] Aborting Shodan enrichment — pipeline continues")
+        print(f"[!][Shodan] API key error: {e}")
+        print(f"[!][Shodan] Aborting enrichment — pipeline continues")
 
     except Exception as e:
         logger.error(f"Shodan enrichment failed: {e}")
-        print(f"[!] Shodan enrichment error: {e}")
-        print(f"[!] Pipeline continues without Shodan data")
+        print(f"[!][Shodan] Enrichment error: {e}")
+        print(f"[!][Shodan] Pipeline continues without Shodan data")
 
     combined_result["shodan"] = shodan_data
     return combined_result
+
+
+def run_shodan_enrichment_isolated(combined_result: dict, settings: dict[str, Any]) -> dict:
+    """
+    Run Shodan enrichment and return only the 'shodan' data dict.
+
+    Thread-safe: does not mutate combined_result. Reads DNS/IP data from
+    it but writes nothing back. Designed for parallel execution alongside
+    other modules (e.g., port scan).
+
+    Args:
+        combined_result: The pipeline's combined result dictionary (read-only)
+        settings: Project settings dict
+
+    Returns:
+        The 'shodan' data dictionary (just the enrichment payload)
+    """
+    import copy
+    snapshot = copy.copy(combined_result)  # shallow copy — safe for read-only access
+    run_shodan_enrichment(snapshot, settings)
+    return snapshot.get("shodan", {})

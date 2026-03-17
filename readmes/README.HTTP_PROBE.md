@@ -808,6 +808,8 @@ Wappalyzer-detected technologies are automatically included in CVE lookup:
 
 ## Architecture & Flow
 
+> **Pipeline context:** HTTP probing runs in **GROUP 4** of the parallelized recon pipeline, sequentially after GROUP 3 (Shodan + Port Scan). It depends on port scan results to build probe targets. While the module itself runs sequentially in the pipeline, httpx internally uses parallel threads for probing multiple targets.
+
 ### Execution Flow
 
 ```

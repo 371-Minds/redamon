@@ -80,7 +80,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         Updated recon_data with nuclei results added
     """
     print("\n" + "=" * 70)
-    print("         RedAmon - Nuclei Vulnerability Scanner")
+    print("[*][Nuclei] RedAmon - Nuclei Vulnerability Scanner")
     print("=" * 70)
 
     # Use passed settings or empty dict as fallback
@@ -151,13 +151,13 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
     # Docker mode is required
     if not is_docker_installed():
-        print("[!] Docker not found. Please install Docker to use Nuclei scanner.")
-        print("[!] Skipping nuclei scan.")
+        print("[!][Nuclei] Docker not found. Please install Docker to use Nuclei scanner.")
+        print("[!][Nuclei] Skipping nuclei scan.")
         return recon_data
     
     if not is_docker_running():
-        print("[!] Docker daemon is not running. Start it with: sudo systemctl start docker")
-        print("[!] Skipping nuclei scan.")
+        print("[!][Nuclei] Docker daemon is not running. Start it with: sudo systemctl start docker")
+        print("[!][Nuclei] Skipping nuclei scan.")
         return recon_data
     
     # Pull image if needed (will skip if already present)
@@ -165,31 +165,31 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     
     # Ensure templates volume exists and has templates
     if not ensure_templates_volume(NUCLEI_DOCKER_IMAGE, NUCLEI_AUTO_UPDATE_TEMPLATES):
-        print("[!] Could not setup nuclei templates. Skipping scan.")
+        print("[!][Nuclei] Could not setup nuclei templates. Skipping scan.")
         return recon_data
     
-    print(f"  Execution Mode: DOCKER ({NUCLEI_DOCKER_IMAGE})")
+    print(f"[*][Nuclei] Execution Mode: DOCKER ({NUCLEI_DOCKER_IMAGE})")
     nuclei_version = f"Docker: {NUCLEI_DOCKER_IMAGE}"
     template_count = 8000  # Approximate, Docker image includes templates
-    
-    print(f"  Nuclei Version: {nuclei_version}")
-    print(f"  Templates Available: ~{template_count}")
+
+    print(f"[*][Nuclei] Nuclei Version: {nuclei_version}")
+    print(f"[*][Nuclei] Templates Available: ~{template_count}")
     
     # Check Tor status
     use_proxy = False
     if USE_TOR_FOR_RECON:
         if is_tor_running():
             use_proxy = True
-            print(f"  [🧅] ANONYMOUS MODE: Using Tor SOCKS proxy")
+            print(f"[*][Nuclei] ANONYMOUS MODE: Using Tor SOCKS proxy")
         else:
-            print("  [!] USE_TOR_FOR_RECON enabled but Tor not running")
-            print("  [!] Falling back to direct scanning")
+            print("[!][Nuclei] USE_TOR_FOR_RECON enabled but Tor not running")
+            print("[!][Nuclei] Falling back to direct scanning")
     
     # Extract targets
     ips, hostnames, ip_to_hostnames = extract_targets_from_recon(recon_data)
     
     if not hostnames and not ips:
-        print("[!] No targets found in recon data")
+        print("[!][Nuclei] No targets found in recon data")
         return recon_data
     
     # Build target URLs using httpx/naabu data if available
@@ -198,7 +198,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     # For DAST mode, we need URLs with parameters from resource_enum
     dast_urls = []
     if NUCLEI_DAST_MODE:
-        print(f"  DAST Mode: ENABLED (active fuzzing for XSS, SQLi, etc.)")
+        print(f"[*][Nuclei] DAST Mode: ENABLED (active fuzzing for XSS, SQLi, etc.)")
 
         # Get URLs with parameters from resource_enum (must be run before vuln_scan)
         resource_enum_data = recon_data.get("resource_enum")
@@ -207,45 +207,45 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             # Filter for URLs with parameters
             dast_urls = [url for url in discovered_urls if '?' in url and '=' in url]
             if dast_urls:
-                print(f"  [*] Using {len(dast_urls)} URLs with parameters from resource_enum")
+                print(f"[*][Nuclei] Using {len(dast_urls)} URLs with parameters from resource_enum")
             else:
-                print(f"  [!] No URLs with parameters found in resource_enum - DAST scan may not find vulnerabilities")
+                print(f"[!][Nuclei] No URLs with parameters found in resource_enum - DAST scan may not find vulnerabilities")
         else:
-            print(f"  [!] resource_enum not found - run resource_enum before vuln_scan for DAST mode")
+            print(f"[!][Nuclei] resource_enum not found - run resource_enum before vuln_scan for DAST mode")
     
-    print(f"  Unique Hostnames: {len(hostnames)}")
-    print(f"  Unique IPs: {len(ips)}")
-    print(f"  Base URLs: {len(target_urls)}")
+    print(f"[*][Nuclei] Unique Hostnames: {len(hostnames)}")
+    print(f"[*][Nuclei] Unique IPs: {len(ips)}")
+    print(f"[*][Nuclei] Base URLs: {len(target_urls)}")
     if NUCLEI_DAST_MODE and dast_urls:
-        print(f"  DAST URLs (with params): {len(dast_urls)}")
-    print(f"  Scan IPs: {'YES' if NUCLEI_SCAN_ALL_IPS else 'NO (hostnames only)'}")
-    print(f"  Severity Filter: {', '.join(NUCLEI_SEVERITY) if NUCLEI_SEVERITY else 'ALL'}")
-    print(f"  Rate Limit: {NUCLEI_RATE_LIMIT} req/s")
-    print(f"  Bulk Size: {NUCLEI_BULK_SIZE}")
-    print(f"  Concurrency: {NUCLEI_CONCURRENCY}")
-    print(f"  Timeout: {NUCLEI_TIMEOUT}s")
-    print(f"  Retries: {NUCLEI_RETRIES}")
+        print(f"[*][Nuclei] DAST URLs (with params): {len(dast_urls)}")
+    print(f"[*][Nuclei] Scan IPs: {'YES' if NUCLEI_SCAN_ALL_IPS else 'NO (hostnames only)'}")
+    print(f"[*][Nuclei] Severity Filter: {', '.join(NUCLEI_SEVERITY) if NUCLEI_SEVERITY else 'ALL'}")
+    print(f"[*][Nuclei] Rate Limit: {NUCLEI_RATE_LIMIT} req/s")
+    print(f"[*][Nuclei] Bulk Size: {NUCLEI_BULK_SIZE}")
+    print(f"[*][Nuclei] Concurrency: {NUCLEI_CONCURRENCY}")
+    print(f"[*][Nuclei] Timeout: {NUCLEI_TIMEOUT}s")
+    print(f"[*][Nuclei] Retries: {NUCLEI_RETRIES}")
     if NUCLEI_TAGS:
-        print(f"  Tags: {', '.join(NUCLEI_TAGS)}")
+        print(f"[*][Nuclei] Tags: {', '.join(NUCLEI_TAGS)}")
     if NUCLEI_EXCLUDE_TAGS:
-        print(f"  Exclude Tags: {', '.join(NUCLEI_EXCLUDE_TAGS)}")
+        print(f"[*][Nuclei] Exclude Tags: {', '.join(NUCLEI_EXCLUDE_TAGS)}")
     if NUCLEI_TEMPLATES:
-        print(f"  Templates: {', '.join(NUCLEI_TEMPLATES)}")
+        print(f"[*][Nuclei] Templates: {', '.join(NUCLEI_TEMPLATES)}")
     if NUCLEI_EXCLUDE_TEMPLATES:
-        print(f"  Exclude Templates: {', '.join(NUCLEI_EXCLUDE_TEMPLATES)}")
-    print(f"  Headless: {NUCLEI_HEADLESS}")
-    print(f"  Interactsh: {NUCLEI_INTERACTSH}")
-    print(f"  Follow Redirects: {NUCLEI_FOLLOW_REDIRECTS} (max {NUCLEI_MAX_REDIRECTS})")
-    print(f"  New Templates Only: {NUCLEI_NEW_TEMPLATES_ONLY}")
-    print(f"  Auto Update Templates: {NUCLEI_AUTO_UPDATE_TEMPLATES}")
+        print(f"[*][Nuclei] Exclude Templates: {', '.join(NUCLEI_EXCLUDE_TEMPLATES)}")
+    print(f"[*][Nuclei] Headless: {NUCLEI_HEADLESS}")
+    print(f"[*][Nuclei] Interactsh: {NUCLEI_INTERACTSH}")
+    print(f"[*][Nuclei] Follow Redirects: {NUCLEI_FOLLOW_REDIRECTS} (max {NUCLEI_MAX_REDIRECTS})")
+    print(f"[*][Nuclei] New Templates Only: {NUCLEI_NEW_TEMPLATES_ONLY}")
+    print(f"[*][Nuclei] Auto Update Templates: {NUCLEI_AUTO_UPDATE_TEMPLATES}")
     # CVE lookup settings
-    print(f"  CVE Lookup: {CVE_LOOKUP_ENABLED}")
+    print(f"[*][Nuclei] CVE Lookup: {CVE_LOOKUP_ENABLED}")
     if CVE_LOOKUP_ENABLED:
-        print(f"    Source: {CVE_LOOKUP_SOURCE}")
-        print(f"    Max CVEs: {CVE_LOOKUP_MAX_CVES}")
-        print(f"    Min CVSS: {CVE_LOOKUP_MIN_CVSS}")
+        print(f"[*][Nuclei]   Source: {CVE_LOOKUP_SOURCE}")
+        print(f"[*][Nuclei]   Max CVEs: {CVE_LOOKUP_MAX_CVES}")
+        print(f"[*][Nuclei]   Min CVSS: {CVE_LOOKUP_MIN_CVSS}")
     # Security checks summary
-    print(f"  Security Checks: {SECURITY_CHECK_ENABLED}")
+    print(f"[*][Nuclei] Security Checks: {SECURITY_CHECK_ENABLED}")
     if SECURITY_CHECK_ENABLED:
         sec_checks_count = sum(1 for v in [
             SECURITY_CHECK_DIRECT_IP_HTTP, SECURITY_CHECK_DIRECT_IP_HTTPS,
@@ -263,9 +263,9 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             SECURITY_CHECK_CSP_UNSAFE_INLINE, SECURITY_CHECK_INSECURE_FORM_ACTION,
             SECURITY_CHECK_NO_RATE_LIMITING,
         ] if v)
-        print(f"    Active checks: {sec_checks_count}/27")
-        print(f"    Timeout: {SECURITY_CHECK_TIMEOUT}s")
-        print(f"    Max workers: {SECURITY_CHECK_MAX_WORKERS}")
+        print(f"[*][Nuclei]   Active checks: {sec_checks_count}/27")
+        print(f"[*][Nuclei]   Timeout: {SECURITY_CHECK_TIMEOUT}s")
+        print(f"[*][Nuclei]   Max workers: {SECURITY_CHECK_MAX_WORKERS}")
     print("=" * 70 + "\n")
     
     # Create a temporary directory for nuclei files
@@ -279,7 +279,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     if NUCLEI_DAST_MODE and dast_urls:
         # Combine DAST URLs with base URLs for comprehensive coverage
         scan_urls = list(set(target_urls + dast_urls))
-        print(f"[*] DAST scan will test {len(dast_urls)} URLs with parameters + {len(target_urls)} base URLs")
+        print(f"[*][Nuclei] DAST scan will test {len(dast_urls)} URLs with parameters + {len(target_urls)} base URLs")
     
     targets_file = str(nuclei_temp_dir / "targets.txt")
     with open(targets_file, 'w') as f:
@@ -316,8 +316,8 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             interactsh=NUCLEI_INTERACTSH,
         )
         
-        print(f"[*] Running nuclei scan [DOCKER]...")
-        print(f"[*] Command: {' '.join(cmd[:12])}...")
+        print(f"[*][Nuclei] Running nuclei scan [DOCKER]...")
+        print(f"[*][Nuclei] Command: {' '.join(cmd[:12])}...")
         
         # Run nuclei
         start_time = datetime.now()
@@ -339,7 +339,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             # Filter out common non-error messages
             error_lines = [l for l in stderr.split('\n') if l and 'WRN' not in l and 'INF' not in l]
             if error_lines:
-                print(f"[!] Nuclei warnings: {error_lines[0][:100]}")
+                print(f"[!][Nuclei] Nuclei warnings: {error_lines[0][:100]}")
         
         # Parse results and filter false positives
         findings = []
@@ -373,11 +373,11 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         
         # Log filtered false positives
         if false_positives_filtered:
-            print(f"    [*] Filtered {len(false_positives_filtered)} false positive(s):")
+            print(f"[*][Nuclei] Filtered {len(false_positives_filtered)} false positive(s):")
             for fp in false_positives_filtered[:5]:  # Show first 5
-                print(f"        - {fp['template_id']}: {fp['reason'][:60]}...")
+                print(f"[*][Nuclei]   - {fp['template_id']}: {fp['reason'][:60]}...")
             if len(false_positives_filtered) > 5:
-                print(f"        ... and {len(false_positives_filtered) - 5} more")
+                print(f"[*][Nuclei]   ... and {len(false_positives_filtered) - 5} more")
         
         # Organize results
         nuclei_results = {
@@ -512,45 +512,45 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         
         # Print summary
         print(f"\n{'=' * 70}")
-        print(f"[+] NUCLEI SCAN COMPLETE")
-        print(f"[+] Duration: {duration:.2f} seconds")
-        print(f"[+] Execution mode: DOCKER")
+        print(f"[+][Nuclei] NUCLEI SCAN COMPLETE")
+        print(f"[+][Nuclei] Duration: {duration:.2f} seconds")
+        print(f"[+][Nuclei] Execution mode: DOCKER")
         if use_proxy:
-            print(f"[+] Anonymous mode: YES (via Tor)")
-        print(f"[+] URLs scanned: {len(target_urls)}")
-        print(f"[+] Total findings: {len(findings)}")
+            print(f"[+][Nuclei] Anonymous mode: YES (via Tor)")
+        print(f"[+][Nuclei] URLs scanned: {len(target_urls)}")
+        print(f"[+][Nuclei] Total findings: {len(findings)}")
         
         # Vulnerability summary
         summary = nuclei_results["summary"]
         vuln_total = summary["total_findings"]
 
         if vuln_total > 0:
-            print(f"\n[+] VULNERABILITY SUMMARY:")
+            print(f"\n[+][Nuclei] VULNERABILITY SUMMARY:")
             if summary['critical'] > 0:
-                print(f"    🔴 CRITICAL: {summary['critical']}")
+                print(f"[+][Nuclei]   CRITICAL: {summary['critical']}")
             if summary['high'] > 0:
-                print(f"    🟠 HIGH: {summary['high']}")
+                print(f"[+][Nuclei]   HIGH: {summary['high']}")
             if summary['medium'] > 0:
-                print(f"    🟡 MEDIUM: {summary['medium']}")
+                print(f"[+][Nuclei]   MEDIUM: {summary['medium']}")
             if summary['low'] > 0:
-                print(f"    🔵 LOW: {summary['low']}")
-        
+                print(f"[+][Nuclei]   LOW: {summary['low']}")
+
         if summary['info'] > 0:
-            print(f"    ⚪ INFO: {summary['info']}")
+            print(f"[*][Nuclei]   INFO: {summary['info']}")
         
         # CVE summary
         cve_count = len(unique_cves)
         if cve_count > 0:
-            print(f"\n[+] CVEs FOUND: {cve_count}")
+            print(f"\n[+][Nuclei] CVEs FOUND: {cve_count}")
             for cve in unique_cves[:5]:
                 cvss_str = f"CVSS {cve['cvss']}" if cve.get('cvss') else "CVSS N/A"
-                print(f"    - {cve['id']} ({cvss_str})")
+                print(f"[+][Nuclei]   - {cve['id']} ({cvss_str})")
             if cve_count > 5:
-                print(f"    ... and {cve_count - 5} more")
+                print(f"[+][Nuclei]   ... and {cve_count - 5} more")
         
         # Top affected targets
         if nuclei_results["by_target"]:
-            print(f"\n[+] FINDINGS BY TARGET:")
+            print(f"\n[+][Nuclei] FINDINGS BY TARGET:")
             sorted_targets = sorted(
                 nuclei_results["by_target"].items(),
                 key=lambda x: len(x[1]["findings"]),
@@ -563,18 +563,18 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     for s in ["critical", "high", "medium", "low", "info"] 
                     if counts.get(s, 0) > 0
                 ])
-                print(f"    - {target[:50]}: {len(data['findings'])} findings ({count_str})")
+                print(f"[+][Nuclei]   - {target[:50]}: {len(data['findings'])} findings ({count_str})")
         
         # Top categories
         if nuclei_results["by_category"]:
-            print(f"\n[+] TOP VULNERABILITY CATEGORIES:")
+            print(f"\n[+][Nuclei] TOP VULNERABILITY CATEGORIES:")
             sorted_cats = sorted(
                 nuclei_results["by_category"].items(),
                 key=lambda x: len(x[1]),
                 reverse=True
             )[:5]
             for cat, findings_list in sorted_cats:
-                print(f"    - {cat}: {len(findings_list)} findings")
+                print(f"[+][Nuclei]   - {cat}: {len(findings_list)} findings")
         
         print(f"{'=' * 70}")
         
@@ -600,7 +600,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         # Run custom security checks (Direct IP Access, TLS/SSL, Security Headers)
         # Skip entirely if global switch is disabled
         if not SECURITY_CHECK_ENABLED:
-            print(f"\n[*] Custom security checks disabled (SECURITY_CHECK_ENABLED=False)")
+            print(f"\n[-][Nuclei] Custom security checks disabled (SECURITY_CHECK_ENABLED=False)")
         else:
             security_checks_enabled = {
                 # Direct IP Access checks (unique - not covered by Nuclei)
@@ -713,7 +713,7 @@ def enrich_recon_file(recon_file: Path) -> dict:
     with open(recon_file, 'w') as f:
         json.dump(enriched_data, f, indent=2)
 
-    print(f"[+] Enriched data saved to: {recon_file}")
+    print(f"[+][Nuclei] Enriched data saved to: {recon_file}")
 
     return enriched_data
 

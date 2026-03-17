@@ -82,8 +82,8 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         Updated recon_data with resource_enum results
     """
     print("\n" + "=" * 70)
-    print("         RedAmon - Resource Enumeration")
-    print("         (Katana + GAU + Kiterunner Parallel Discovery)")
+    print("[*][ResourceEnum] RedAmon - Resource Enumeration")
+    print("[*][ResourceEnum] (Katana + GAU + Kiterunner Parallel Discovery)")
     print("=" * 70)
 
     # Use passed settings or empty dict as fallback
@@ -113,7 +113,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     # providers to avoid duplicate API calls and wasted rate limits (same data source)
     if recon_data.get('urlscan', {}).get('results_count', 0) > 0 and 'urlscan' in GAU_PROVIDERS:
         GAU_PROVIDERS = [p for p in GAU_PROVIDERS if p != 'urlscan']
-        print(f"    [*] Removed 'urlscan' from GAU providers (already fetched by URLScan enrichment)")
+        print(f"[*][GAU] Removed 'urlscan' from GAU providers (already fetched by URLScan enrichment)")
     GAU_THREADS = settings.get('GAU_THREADS', 2)
     GAU_TIMEOUT = settings.get('GAU_TIMEOUT', 60)
     GAU_BLACKLIST_EXTENSIONS = settings.get('GAU_BLACKLIST_EXTENSIONS', ['png', 'jpg', 'jpeg', 'gif', 'css', 'woff', 'woff2', 'ttf', 'svg', 'ico', 'eot'])
@@ -157,15 +157,15 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
 
     # Check Docker
     if not is_docker_installed():
-        print("[!] Docker not found. Please install Docker.")
+        print("[!][ResourceEnum] Docker not found. Please install Docker.")
         return recon_data
 
     if not is_docker_running():
-        print("[!] Docker daemon is not running.")
+        print("[!][ResourceEnum] Docker daemon is not running.")
         return recon_data
 
     # Pull Docker images and ensure Kiterunner binary in parallel
-    print("\n[*] Setting up tools...")
+    print("\n[*][ResourceEnum] Setting up tools...")
     kr_binary_path = None
 
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -188,9 +188,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     if USE_TOR_FOR_RECON:
         if is_tor_running():
             use_proxy = True
-            print(f"  [*] Anonymous mode: Using Tor SOCKS proxy")
+            print(f"[*][ResourceEnum] Anonymous mode: Using Tor SOCKS proxy")
         else:
-            print("  [!] Tor not running, falling back to direct connection")
+            print("[!][ResourceEnum] Tor not running, falling back to direct connection")
 
     # Get target URLs from http_probe
     http_probe_data = recon_data.get('http_probe', {})
@@ -228,51 +228,51 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                 target_domains.add(subdomain)
 
     if not target_urls:
-        print("[!] No target URLs found")
+        print("[!][ResourceEnum] No target URLs found")
         return recon_data
 
-    print(f"\n  Target URLs: {len(target_urls)}")
-    print(f"  Target domains (for GAU): {len(target_domains)}")
-    print(f"  Tor proxy: {use_proxy}")
+    print(f"\n[*][ResourceEnum] Target URLs: {len(target_urls)}")
+    print(f"[*][ResourceEnum] Target domains (for GAU): {len(target_domains)}")
+    print(f"[*][ResourceEnum] Tor proxy: {use_proxy}")
     # Katana settings
-    print(f"  Katana enabled: {KATANA_ENABLED}")
+    print(f"[*][Katana] Enabled: {KATANA_ENABLED}")
     if KATANA_ENABLED:
-        print(f"    Crawl depth: {KATANA_DEPTH}")
-        print(f"    Max URLs: {KATANA_MAX_URLS}")
-        print(f"    Rate limit: {KATANA_RATE_LIMIT} req/s")
-        print(f"    Timeout: {KATANA_TIMEOUT}s")
-        print(f"    JS crawl: {KATANA_JS_CRAWL}")
-        print(f"    Params only: {KATANA_PARAMS_ONLY}")
+        print(f"[*][Katana] Crawl depth: {KATANA_DEPTH}")
+        print(f"[*][Katana] Max URLs: {KATANA_MAX_URLS}")
+        print(f"[*][Katana] Rate limit: {KATANA_RATE_LIMIT} req/s")
+        print(f"[*][Katana] Timeout: {KATANA_TIMEOUT}s")
+        print(f"[*][Katana] JS crawl: {KATANA_JS_CRAWL}")
+        print(f"[*][Katana] Params only: {KATANA_PARAMS_ONLY}")
         if KATANA_CUSTOM_HEADERS:
-            print(f"    Custom headers: {len(KATANA_CUSTOM_HEADERS)}")
+            print(f"[*][Katana] Custom headers: {len(KATANA_CUSTOM_HEADERS)}")
         if KATANA_EXCLUDE_PATTERNS:
-            print(f"    Exclude patterns: {len(KATANA_EXCLUDE_PATTERNS)}")
+            print(f"[*][Katana] Exclude patterns: {len(KATANA_EXCLUDE_PATTERNS)}")
     # GAU settings
-    print(f"  GAU enabled: {GAU_ENABLED}")
+    print(f"[*][GAU] Enabled: {GAU_ENABLED}")
     if GAU_ENABLED:
-        print(f"    Providers: {', '.join(GAU_PROVIDERS)}")
-        print(f"    Threads: {GAU_THREADS}")
-        print(f"    Timeout: {GAU_TIMEOUT}s")
-        print(f"    Max URLs: {GAU_MAX_URLS}")
-        print(f"    URL verification: {GAU_VERIFY_URLS}")
+        print(f"[*][GAU] Providers: {', '.join(GAU_PROVIDERS)}")
+        print(f"[*][GAU] Threads: {GAU_THREADS}")
+        print(f"[*][GAU] Timeout: {GAU_TIMEOUT}s")
+        print(f"[*][GAU] Max URLs: {GAU_MAX_URLS}")
+        print(f"[*][GAU] URL verification: {GAU_VERIFY_URLS}")
         if GAU_VERIFY_URLS:
-            print(f"    Verify rate limit: {GAU_VERIFY_RATE_LIMIT} req/s")
-            print(f"    Verify threads: {GAU_VERIFY_THREADS}")
-            print(f"    Verify timeout: {GAU_VERIFY_TIMEOUT}s")
-        print(f"    Detect methods: {GAU_DETECT_METHODS}")
-        print(f"    Filter dead endpoints: {GAU_FILTER_DEAD_ENDPOINTS}")
+            print(f"[*][GAU] Verify rate limit: {GAU_VERIFY_RATE_LIMIT} req/s")
+            print(f"[*][GAU] Verify threads: {GAU_VERIFY_THREADS}")
+            print(f"[*][GAU] Verify timeout: {GAU_VERIFY_TIMEOUT}s")
+        print(f"[*][GAU] Detect methods: {GAU_DETECT_METHODS}")
+        print(f"[*][GAU] Filter dead endpoints: {GAU_FILTER_DEAD_ENDPOINTS}")
     # Kiterunner settings
-    print(f"  Kiterunner enabled: {KITERUNNER_ENABLED}")
+    print(f"[*][Kiterunner] Enabled: {KITERUNNER_ENABLED}")
     if KITERUNNER_ENABLED:
-        print(f"    Wordlists: {', '.join(KITERUNNER_WORDLISTS)}")
-        print(f"    Rate limit: {KITERUNNER_RATE_LIMIT} req/s")
-        print(f"    Connections: {KITERUNNER_CONNECTIONS}")
-        print(f"    Timeout: {KITERUNNER_TIMEOUT}s")
-        print(f"    Scan timeout: {KITERUNNER_SCAN_TIMEOUT}s")
-        print(f"    Threads: {KITERUNNER_THREADS}")
-        print(f"    Detect methods: {KITERUNNER_DETECT_METHODS}")
+        print(f"[*][Kiterunner] Wordlists: {', '.join(KITERUNNER_WORDLISTS)}")
+        print(f"[*][Kiterunner] Rate limit: {KITERUNNER_RATE_LIMIT} req/s")
+        print(f"[*][Kiterunner] Connections: {KITERUNNER_CONNECTIONS}")
+        print(f"[*][Kiterunner] Timeout: {KITERUNNER_TIMEOUT}s")
+        print(f"[*][Kiterunner] Scan timeout: {KITERUNNER_SCAN_TIMEOUT}s")
+        print(f"[*][Kiterunner] Threads: {KITERUNNER_THREADS}")
+        print(f"[*][Kiterunner] Detect methods: {KITERUNNER_DETECT_METHODS}")
         if KITERUNNER_DETECT_METHODS:
-            print(f"    Method detection mode: {KITERUNNER_METHOD_DETECTION_MODE}")
+            print(f"[*][Kiterunner] Method detection mode: {KITERUNNER_METHOD_DETECTION_MODE}")
     print("=" * 70)
 
     start_time = datetime.now()
@@ -291,9 +291,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             tools_running.append("Katana")
         if GAU_ENABLED:
             tools_running.append("GAU")
-        print(f"\n[*] Running URL discovery ({' + '.join(tools_running)})...")
+        print(f"\n[*][ResourceEnum] Running URL discovery ({' + '.join(tools_running)})...")
     elif not KITERUNNER_ENABLED:
-        print("\n[*] All URL discovery tools disabled (Katana, GAU, Kiterunner)")
+        print("\n[-][ResourceEnum] All URL discovery tools disabled (Katana, GAU, Kiterunner)")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {}
@@ -338,23 +338,23 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             try:
                 if name == 'katana':
                     katana_urls, katana_meta = future.result(timeout=KATANA_TIMEOUT + 120)
-                    print(f"\n[+] Katana completed: {len(katana_urls)} URLs")
+                    print(f"\n[+][Katana] Completed: {len(katana_urls)} URLs")
                 elif name == 'gau':
                     gau_urls, gau_urls_by_domain = future.result(timeout=GAU_TIMEOUT * len(GAU_PROVIDERS) + 180)
-                    print(f"[+] GAU completed: {len(gau_urls)} URLs")
+                    print(f"[+][GAU] Completed: {len(gau_urls)} URLs")
             except Exception as e:
-                print(f"[!] {name} failed: {e}")
+                print(f"[!][ResourceEnum] {name} failed: {e}")
 
     # Run Kiterunner sequentially for each wordlist
     if KITERUNNER_ENABLED and target_urls and kr_binary_path and KITERUNNER_WORDLISTS:
-        print(f"\n[*] Running Kiterunner API discovery ({len(KITERUNNER_WORDLISTS)} wordlists sequentially)...")
+        print(f"\n[*][Kiterunner] Running API discovery ({len(KITERUNNER_WORDLISTS)} wordlists sequentially)...")
         for wordlist_name in KITERUNNER_WORDLISTS:
-            print(f"\n    [*] Processing wordlist: {wordlist_name}")
+            print(f"\n[*][Kiterunner] Processing wordlist: {wordlist_name}")
             try:
                 # Get the proper wordlist path (downloads if needed, or returns ASSETNOTE: prefix)
                 _, wordlist_path = ensure_kiterunner_binary(wordlist_name)
                 if not wordlist_path:
-                    print(f"    [!] Could not get wordlist: {wordlist_name}")
+                    print(f"[!][Kiterunner] Could not get wordlist: {wordlist_name}")
                     continue
                 wordlist_results = run_kiterunner_discovery(
                     target_urls,
@@ -378,13 +378,13 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                     if (result['url'], result['method']) not in existing_urls:
                         kr_results.append(result)
                         existing_urls.add((result['url'], result['method']))
-                print(f"    [+] {wordlist_name}: {len(wordlist_results)} endpoints found, {len(kr_results)} total unique")
+                print(f"[+][Kiterunner] {wordlist_name}: {len(wordlist_results)} endpoints found, {len(kr_results)} total unique")
             except Exception as e:
-                print(f"    [!] Kiterunner failed for {wordlist_name}: {e}")
+                print(f"[!][Kiterunner] Failed for {wordlist_name}: {e}")
 
     # Organize discovered endpoints
     if katana_urls:
-        print("\n[*] Organizing Katana endpoints...")
+        print("\n[*][Katana] Organizing endpoints...")
     organized_data = organize_endpoints(katana_urls, use_proxy=use_proxy)
 
     # Mark all Katana endpoints with sources=['katana'] (array format)
@@ -420,8 +420,8 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                     gau_external_domains.append({"domain": host, "source": "gau", "url": url})
 
         if out_of_scope_count > 0:
-            print(f"\n[*] Filtered {out_of_scope_count} GAU URLs (out of scan scope)")
-            print(f"    [+] In-scope GAU URLs: {len(in_scope_gau_urls)}")
+            print(f"\n[*][GAU] Filtered {out_of_scope_count} URLs (out of scan scope)")
+            print(f"[+][GAU] In-scope URLs: {len(in_scope_gau_urls)}")
 
         # Use filtered URLs for the rest of processing
         gau_urls_to_process = in_scope_gau_urls
@@ -454,7 +454,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             )
 
         # Merge GAU into by_base_url (use in-scope URLs only)
-        print("\n[*] Merging GAU endpoints into results...")
+        print("\n[*][GAU] Merging endpoints into results...")
         organized_data['by_base_url'], gau_stats = merge_gau_into_by_base_url(
             gau_urls_to_process,
             organized_data['by_base_url'],
@@ -465,19 +465,19 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         # Add out-of-scope count to stats
         gau_stats['gau_out_of_scope'] = out_of_scope_count
 
-        print(f"    [+] GAU in-scope URLs: {gau_stats['gau_total']}")
+        print(f"[+][GAU] In-scope URLs: {gau_stats['gau_total']}")
         if out_of_scope_count > 0:
-            print(f"    [+] GAU out-of-scope (filtered): {out_of_scope_count}")
-        print(f"    [+] GAU parsed: {gau_stats['gau_parsed']}")
-        print(f"    [+] GAU new endpoints: {gau_stats['gau_new']}")
-        print(f"    [+] GAU overlap with Katana: {gau_stats['gau_overlap']}")
+            print(f"[+][GAU] Out-of-scope (filtered): {out_of_scope_count}")
+        print(f"[+][GAU] Parsed: {gau_stats['gau_parsed']}")
+        print(f"[+][GAU] New endpoints: {gau_stats['gau_new']}")
+        print(f"[+][GAU] Overlap with Katana: {gau_stats['gau_overlap']}")
         if GAU_VERIFY_URLS:
-            print(f"    [+] GAU skipped (unverified): {gau_stats['gau_skipped_unverified']}")
+            print(f"[+][GAU] Skipped (unverified): {gau_stats['gau_skipped_unverified']}")
         if GAU_DETECT_METHODS:
-            print(f"    [+] GAU with POST method: {gau_stats.get('gau_with_post', 0)}")
-            print(f"    [+] GAU with multiple methods: {gau_stats.get('gau_with_multiple_methods', 0)}")
+            print(f"[+][GAU] With POST method: {gau_stats.get('gau_with_post', 0)}")
+            print(f"[+][GAU] With multiple methods: {gau_stats.get('gau_with_multiple_methods', 0)}")
         if GAU_FILTER_DEAD_ENDPOINTS:
-            print(f"    [+] GAU dead endpoints filtered: {gau_stats.get('gau_skipped_dead', 0)}")
+            print(f"[+][GAU] Dead endpoints filtered: {gau_stats.get('gau_skipped_dead', 0)}")
 
     # Merge Kiterunner results if available
     kr_stats = {
@@ -505,21 +505,21 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                 use_proxy
             )
 
-        print("\n[*] Merging Kiterunner API endpoints into results...")
+        print("\n[*][Kiterunner] Merging API endpoints into results...")
         organized_data['by_base_url'], kr_stats = merge_kiterunner_into_by_base_url(
             kr_results,
             organized_data['by_base_url'],
             kr_url_methods
         )
 
-        print(f"    [+] Kiterunner total: {kr_stats['kr_total']} endpoints")
-        print(f"    [+] Kiterunner parsed: {kr_stats['kr_parsed']}")
-        print(f"    [+] Kiterunner new endpoints: {kr_stats['kr_new']}")
-        print(f"    [+] Overlap with Katana/GAU: {kr_stats['kr_overlap']}")
+        print(f"[+][Kiterunner] Total: {kr_stats['kr_total']} endpoints")
+        print(f"[+][Kiterunner] Parsed: {kr_stats['kr_parsed']}")
+        print(f"[+][Kiterunner] New endpoints: {kr_stats['kr_new']}")
+        print(f"[+][Kiterunner] Overlap with Katana/GAU: {kr_stats['kr_overlap']}")
         if kr_stats['kr_methods']:
-            print(f"    [+] Methods found: {kr_stats['kr_methods']}")
+            print(f"[+][Kiterunner] Methods found: {kr_stats['kr_methods']}")
         if KITERUNNER_DETECT_METHODS and kr_stats.get('kr_with_multiple_methods', 0) > 0:
-            print(f"    [+] Endpoints with multiple methods: {kr_stats['kr_with_multiple_methods']}")
+            print(f"[+][Kiterunner] Endpoints with multiple methods: {kr_stats['kr_with_multiple_methods']}")
 
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -543,9 +543,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                 else:
                     urlscan_skipped += 1
         if urlscan_urls:
-            print(f"    [+] URLScan contributed {len(urlscan_urls)} in-scope URLs with paths")
+            print(f"[+][ResourceEnum] URLScan contributed {len(urlscan_urls)} in-scope URLs with paths")
         if urlscan_skipped:
-            print(f"    [-] URLScan skipped {urlscan_skipped} out-of-scope URLs")
+            print(f"[-][ResourceEnum] URLScan skipped {urlscan_skipped} out-of-scope URLs")
 
     # Combine all discovered URLs (deduplicated, in-scope only)
     all_discovered_urls = sorted(set(katana_urls + in_scope_gau + urlscan_urls))
@@ -639,36 +639,36 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
 
     # Print summary
     print(f"\n{'=' * 70}")
-    print(f"[+] RESOURCE ENUMERATION COMPLETE")
-    print(f"[+] Duration: {duration:.2f} seconds")
-    print(f"[+] Total URLs discovered: {len(all_discovered_urls)}")
-    print(f"    - Katana (active crawl): {len(katana_urls) if KATANA_ENABLED else 'disabled'}")
-    print(f"    - GAU (passive archive): {len(gau_urls) if GAU_ENABLED else 'disabled'}")
+    print(f"[✓][ResourceEnum] RESOURCE ENUMERATION COMPLETE")
+    print(f"[+][ResourceEnum] Duration: {duration:.2f} seconds")
+    print(f"[+][ResourceEnum] Total URLs discovered: {len(all_discovered_urls)}")
+    print(f"[+][Katana] Active crawl: {len(katana_urls) if KATANA_ENABLED else 'disabled'}")
+    print(f"[+][GAU] Passive archive: {len(gau_urls) if GAU_ENABLED else 'disabled'}")
     if GAU_ENABLED and gau_urls:
-        print(f"      - GAU new endpoints: {gau_stats['gau_new']}")
-        print(f"      - GAU overlap: {gau_stats['gau_overlap']}")
-    print(f"    - Kiterunner (API bruteforce): {len(kr_results) if KITERUNNER_ENABLED else 'disabled'}")
+        print(f"[+][GAU] New endpoints: {gau_stats['gau_new']}")
+        print(f"[+][GAU] Overlap: {gau_stats['gau_overlap']}")
+    print(f"[+][Kiterunner] API bruteforce: {len(kr_results) if KITERUNNER_ENABLED else 'disabled'}")
     if KITERUNNER_ENABLED and kr_results:
-        print(f"      - Kiterunner new endpoints: {kr_stats['kr_new']}")
-        print(f"      - Kiterunner overlap: {kr_stats['kr_overlap']}")
-    print(f"[+] Base URLs: {resource_enum_result['summary']['total_base_urls']}")
-    print(f"[+] Endpoints: {resource_enum_result['summary']['total_endpoints']}")
-    print(f"[+] Parameters: {resource_enum_result['summary']['total_parameters']}")
-    print(f"[+] Forms (POST): {resource_enum_result['summary']['total_forms']}")
+        print(f"[+][Kiterunner] New endpoints: {kr_stats['kr_new']}")
+        print(f"[+][Kiterunner] Overlap: {kr_stats['kr_overlap']}")
+    print(f"[+][ResourceEnum] Base URLs: {resource_enum_result['summary']['total_base_urls']}")
+    print(f"[+][ResourceEnum] Endpoints: {resource_enum_result['summary']['total_endpoints']}")
+    print(f"[+][ResourceEnum] Parameters: {resource_enum_result['summary']['total_parameters']}")
+    print(f"[+][ResourceEnum] Forms (POST): {resource_enum_result['summary']['total_forms']}")
 
     # Methods breakdown
     methods = resource_enum_result['summary']['methods']
     if methods:
-        print(f"\n[+] HTTP Methods:")
+        print(f"\n[+][ResourceEnum] HTTP Methods:")
         for method, count in sorted(methods.items()):
-            print(f"    {method}: {count}")
+            print(f"[*][ResourceEnum] {method}: {count}")
 
     # Categories breakdown
     categories = resource_enum_result['summary']['categories']
     if categories:
-        print(f"\n[+] Endpoint Categories:")
+        print(f"\n[+][ResourceEnum] Endpoint Categories:")
         for category, count in sorted(categories.items(), key=lambda x: -x[1]):
-            print(f"    {category}: {count}")
+            print(f"[*][ResourceEnum] {category}: {count}")
 
     print(f"{'=' * 70}")
 
@@ -690,8 +690,8 @@ if __name__ == "__main__":
                 recon_data = json.load(f)
 
             result = run_resource_enum(recon_data, output_file=recon_file, settings=settings)
-            print(f"\n[+] Results saved to: {recon_file}")
+            print(f"\n[+][ResourceEnum] Results saved to: {recon_file}")
         else:
-            print(f"[!] File not found: {recon_file}")
+            print(f"[!][ResourceEnum] File not found: {recon_file}")
     else:
-        print("Usage: python resource_enum.py <recon_file.json>")
+        print("[*][ResourceEnum] Usage: python resource_enum.py <recon_file.json>")

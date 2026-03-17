@@ -195,7 +195,9 @@ flowchart TB
     Recon --> Volume
 ```
 
-### Container Execution Flow
+### Container Execution Flow (Parallelized)
+
+The pipeline uses a **fan-out / fan-in** pattern with `ThreadPoolExecutor` to run independent modules concurrently, significantly reducing total scan time while respecting data dependencies between groups.
 
 ```mermaid
 sequenceDiagram
@@ -206,61 +208,72 @@ sequenceDiagram
     participant Httpx as httpx container
     participant Katana as katana container
     participant GAU as gau container
+    participant KR as kiterunner container
     participant Nuclei as nuclei container
+    participant GraphBG as Graph DB (background)
 
     User->>Recon: docker-compose run recon python main.py
     activate Recon
 
-    Note over Recon: Phase 1: Domain Discovery (Python native)
-    Recon->>Recon: WHOIS lookup
-    Recon->>Recon: crt.sh + HackerTarget + Subfinder + Amass
-    Recon->>Recon: DNS resolution
+    Note over Recon: GROUP 1 — Fan-Out (parallel)
+    par WHOIS + Discovery + URLScan
+        Recon->>Recon: WHOIS lookup
+    and
+        Recon->>Recon: 5 discovery tools in parallel<br/>(crt.sh ∥ HackerTarget ∥ Subfinder ∥ Amass ∥ Knockpy)
+    and
+        Recon->>Recon: URLScan.io enrichment
+    end
+    Note over Recon: Fan-In — merge results + DNS (20 parallel workers)
+    Recon->>GraphBG: Background: domain discovery graph update
 
-    Note over Recon: Phase 1b: OSINT Enrichment (Python native)
-    Recon->>Recon: Shodan enrichment (if enabled)
-    Recon->>Recon: URLScan.io enrichment (if enabled)
-    Recon->>Recon: External domain aggregation
+    Note over Recon,Naabu: GROUP 3 — Fan-Out (parallel)
+    par Shodan + Port Scan
+        Recon->>Recon: Shodan enrichment
+    and
+        Recon->>Docker: docker run naabu
+        Docker->>Naabu: Start container
+        activate Naabu
+        Naabu-->>Recon: JSON output (open ports)
+        deactivate Naabu
+    end
+    Note over Recon: Fan-In — merge Shodan + port scan
+    Recon->>GraphBG: Background: shodan + port scan graph update
 
-    Note over Recon,Naabu: Phase 2: Port Scan
-    Recon->>Docker: docker run projectdiscovery/naabu
-    Docker->>Naabu: Start container
-    activate Naabu
-    Naabu->>Naabu: SYN scan targets
-    Naabu-->>Recon: JSON output (open ports)
-    deactivate Naabu
-
-    Note over Recon,Httpx: Phase 3: HTTP Probe
-    Recon->>Docker: docker run projectdiscovery/httpx
+    Note over Recon,Httpx: GROUP 4 — HTTP Probe (sequential)
+    Recon->>Docker: docker run httpx
     Docker->>Httpx: Start container
     activate Httpx
-    Httpx->>Httpx: Probe HTTP/HTTPS
-    Httpx->>Httpx: Detect technologies
-    Httpx-->>Recon: JSON output (live URLs)
+    Httpx-->>Recon: JSON output (live URLs + tech)
     deactivate Httpx
+    Recon->>GraphBG: Background: http probe graph update
 
-    Note over Recon,GAU: Phase 4: Resource Enumeration
-    Recon->>Docker: docker run projectdiscovery/katana
-    Docker->>Katana: Start container
-    activate Katana
-    Katana->>Katana: Crawl live URLs
-    Katana-->>Recon: JSON output (endpoints)
-    deactivate Katana
-    Recon->>Docker: docker run sxcurity/gau
-    Docker->>GAU: Start container
-    activate GAU
-    GAU->>GAU: Fetch archived URLs
-    GAU-->>Recon: JSON output (historical URLs)
-    deactivate GAU
+    Note over Recon,KR: GROUP 5 — Resource Enum (internally parallel)
+    par Katana ∥ GAU ∥ Kiterunner
+        Recon->>Docker: docker run katana
+        Docker->>Katana: Crawl live URLs
+        Katana-->>Recon: endpoints
+    and
+        Recon->>Docker: docker run gau
+        Docker->>GAU: Fetch archived URLs
+        GAU-->>Recon: historical URLs
+    and
+        Recon->>Docker: docker run kiterunner
+        Docker->>KR: API bruteforce
+        KR-->>Recon: hidden APIs
+    end
     Recon->>Recon: Merge & classify endpoints
+    Recon->>GraphBG: Background: resource enum graph update
 
-    Note over Recon,Nuclei: Phase 5: Vuln Scan
-    Recon->>Docker: docker run projectdiscovery/nuclei
+    Note over Recon,Nuclei: GROUP 6 — Vuln Scan + MITRE
+    Recon->>Docker: docker run nuclei
     Docker->>Nuclei: Start container
     activate Nuclei
-    Nuclei->>Nuclei: Run 9000+ templates
     Nuclei-->>Recon: JSON output (vulns)
     deactivate Nuclei
+    Recon->>Recon: MITRE CWE/CAPEC enrichment
+    Recon->>GraphBG: Background: vuln scan graph update
 
+    Note over Recon,GraphBG: Wait for all background graph updates
     Recon->>Recon: Save recon_domain.json
     Recon-->>User: Scan complete
     deactivate Recon
@@ -280,7 +293,7 @@ sequenceDiagram
 
 ## 🔄 Scanning Pipeline Overview
 
-RedAmon executes scans in a modular pipeline. Each module adds data to a single JSON output file.
+RedAmon executes scans in a **parallelized pipeline** using a fan-out / fan-in pattern. Independent modules within each group run concurrently via `ThreadPoolExecutor`, while groups that depend on prior results run sequentially. Graph DB updates happen in a dedicated background thread so the main pipeline is never blocked.
 
 ### High-Level Pipeline
 
@@ -290,42 +303,61 @@ flowchart LR
         Domain[🌐 Target Domain]
     end
 
-    subgraph Pipeline["🔄 Recon Pipeline"]
-        DD[1️⃣ domain_discovery<br/>WHOIS + Subdomains + DNS]
-        OSINT[1b️ osint_enrichment<br/>Shodan + URLScan]
-        PS[2️⃣ port_scan<br/>Naabu]
-        HP[3️⃣ http_probe<br/>Httpx + Wappalyzer]
-        RE[4️⃣ resource_enum<br/>Katana + GAU]
-        VS[5️⃣ vuln_scan<br/>Nuclei + MITRE]
-        GH[6️⃣ github<br/>Secret Hunting]
+    subgraph G1["GROUP 1 — parallel fan-out"]
+        DD[WHOIS]
+        SUB[Subdomain Discovery<br/>5 tools in parallel]
+        URLSCAN[URLScan.io]
+    end
+
+    subgraph G3["GROUP 3 — parallel fan-out"]
+        SHODAN[Shodan Enrichment]
+        PS[Port Scan — Naabu]
+    end
+
+    subgraph G4["GROUP 4 — sequential"]
+        HP[HTTP Probe<br/>Httpx + Wappalyzer]
+    end
+
+    subgraph G5["GROUP 5 — internally parallel"]
+        RE[Resource Enum<br/>Katana ∥ GAU ∥ Kiterunner]
+    end
+
+    subgraph G6["GROUP 6 — sequential"]
+        VS[Vuln Scan — Nuclei<br/>+ MITRE Enrichment]
     end
 
     subgraph Output["📤 Output"]
         JSON[(recon_domain.json)]
-        Graph[(Neo4j Graph)]
+        Graph[(Neo4j Graph<br/>background updates)]
     end
 
-    Domain --> DD
-    DD --> OSINT
-    OSINT --> PS
-    PS --> HP
-    HP --> RE
-    RE --> VS
-    VS --> GH
-    GH --> JSON
+    Domain --> G1
+    G1 -->|fan-in: merge| G3
+    G3 -->|fan-in: merge| G4
+    G4 --> G5
+    G5 --> G6
+    G6 --> JSON
     JSON --> Graph
 ```
 
-### Detailed Module Flow
+### Detailed Module Flow (Parallelized)
+
+The pipeline uses **fan-out / fan-in** concurrency: modules within each group run in parallel threads, and results are merged before the next group starts. Graph DB writes happen in a single-writer background thread that never blocks the main pipeline.
 
 ```mermaid
 flowchart TB
-    subgraph Phase1["Phase 1: Domain Discovery"]
+    subgraph Phase1["GROUP 1 — Fan-Out: WHOIS + Discovery + URLScan (parallel)"]
         direction TB
-        Start([🌐 TARGET_DOMAIN]) --> WHOIS[WHOIS Lookup<br/>Registrar, dates, contacts]
-        WHOIS --> SubD[Subdomain Discovery]
+        Start([🌐 TARGET_DOMAIN]) --> FanOut1
 
-        subgraph SubSources["Subdomain Sources"]
+        subgraph FanOut1["ThreadPoolExecutor — 3 parallel tasks"]
+            direction LR
+            WHOIS[WHOIS Lookup<br/>Registrar, dates, contacts]
+            SubD[Subdomain Discovery]
+            URLScanE[URLScan.io Enrichment<br/>Historical scans]
+        end
+
+        subgraph SubSources["5 Discovery Tools (parallel — ThreadPoolExecutor)"]
             CRT[crt.sh<br/>Certificate Transparency]
             HT[HackerTarget API<br/>DNS records]
             SF[Subfinder<br/>50+ passive sources]
@@ -339,49 +371,30 @@ flowchart TB
         SubD --> Amass
         SubD --> Knock
 
-        CRT --> Merge[Merge & Dedupe]
+        CRT --> Merge[Fan-In: Merge & Dedupe]
         HT --> Merge
         SF --> Merge
         Amass --> Merge
         Knock --> Merge
 
-        Merge --> DNS[DNS Resolution<br/>A, AAAA, MX, NS, TXT, CNAME]
+        Merge --> DNS[DNS Resolution<br/>20 parallel workers<br/>A, AAAA, MX, NS, TXT, CNAME]
         DNS --> Out1[(Subdomains + IPs)]
     end
 
-    subgraph Phase1b["Phase 1b: OSINT Enrichment"]
+    subgraph Phase2["GROUP 3 — Fan-Out: Shodan + Port Scan (parallel)"]
         direction TB
-        Out1 --> ShodanE[Shodan Enrichment<br/>Host, DNS, CVEs]
-        Out1 --> URLScanE[URLScan.io Enrichment<br/>Historical scans]
-        ShodanE --> ExtAgg[Aggregate External Domains]
-        URLScanE --> ExtAgg
-        ExtAgg --> Out1b[(Enriched IPs + ExternalDomains)]
-    end
+        Out1 --> FanOut3
 
-    subgraph Phase2["Phase 2: Port Scanning"]
-        direction TB
-        Out1b --> Naabu[Naabu Port Scanner]
-
-        subgraph NaabuOpts["Scan Options"]
-            SYN[SYN Scan<br/>Fast, requires root]
-            Connect[CONNECT Scan<br/>Slower, no root needed]
-            Passive[Shodan InternetDB<br/>No packets sent]
+        subgraph FanOut3["ThreadPoolExecutor — 2 parallel tasks"]
+            direction LR
+            ShodanE[Shodan Enrichment<br/>Host, DNS, CVEs]
+            Naabu[Naabu Port Scanner<br/>SYN/CONNECT/Passive]
         end
 
-        Naabu --> SYN
-        Naabu --> Connect
-        Naabu -.-> Passive
-
-        SYN --> CDN{CDN Detected?}
-        Connect --> CDN
-        Passive --> CDN
-
-        CDN -->|Yes| Skip[Skip CDN IPs]
-        CDN -->|No| Out2[(Open Ports + Services)]
-        Skip --> Out2
+        FanOut3 --> Out2[Fan-In: Merge Shodan + Ports]
     end
 
-    subgraph Phase3["Phase 3: HTTP Probing"]
+    subgraph Phase3["GROUP 4 — HTTP Probing (sequential, internally parallel)"]
         direction TB
         Out2 --> Httpx[Httpx HTTP Prober]
 
@@ -403,12 +416,12 @@ flowchart TB
         Headers --> Out3
     end
 
-    subgraph Phase4["Phase 4: Resource Enumeration"]
+    subgraph Phase4["GROUP 5 — Resource Enumeration (internally parallel)"]
         direction TB
         Out3 --> ResEnum[Resource Enumeration]
 
-        subgraph EnumTools["Discovery Methods (Parallel)"]
-            Katana[Katana<br/>Active Crawling<br/>Current site structure]
+        subgraph EnumTools["3 Tools in Parallel"]
+            Katana[Katana<br/>Active Crawling<br/>Current endpoints]
             GAU[GAU<br/>Passive Archives<br/>Historical URLs]
             KR[Kiterunner<br/>API Bruteforce<br/>Hidden endpoints]
         end
@@ -424,7 +437,7 @@ flowchart TB
         MergeURL --> Out4[(Endpoints + Parameters)]
     end
 
-    subgraph Phase5["Phase 5: Vulnerability Scanning"]
+    subgraph Phase5["GROUP 6 — Vulnerability Scanning"]
         direction TB
         Out4 --> Nuclei[Nuclei Scanner]
 
@@ -472,7 +485,7 @@ flowchart TB
 
     subgraph FinalOutput["📤 Final Output"]
         Out6 --> FinalJSON[(recon_domain.json)]
-        FinalJSON --> Neo4j[(Neo4j Graph DB)]
+        FinalJSON --> Neo4j[(Neo4j Graph DB<br/>background thread writes)]
     end
 ```
 
@@ -506,6 +519,39 @@ flowchart LR
 
 ---
 
+## ⚡ Parallelization Architecture
+
+The recon pipeline uses a **fan-out / fan-in** pattern with Python's `concurrent.futures.ThreadPoolExecutor` to run independent modules concurrently, significantly reducing total scan time while respecting data dependencies.
+
+### Execution Groups
+
+| Group | Modules | Parallelism | Dependencies |
+|-------|---------|-------------|--------------|
+| **GROUP 1** | WHOIS + Subdomain Discovery + URLScan | 3 parallel tasks | Only needs `root_domain` |
+| *Discovery* | crt.sh + HackerTarget + Subfinder + Amass + Knockpy | 5 parallel tools | Part of GROUP 1 |
+| *DNS* | DNS resolution for all subdomains | 20 parallel workers | After discovery fan-in |
+| **GROUP 3** | Shodan Enrichment + Port Scan (Naabu) | 2 parallel tasks | Needs IPs from GROUP 1 |
+| **GROUP 4** | HTTP Probe (httpx) | Sequential (internally parallel) | Needs ports from GROUP 3 |
+| **GROUP 5** | Resource Enum (Katana + GAU + Kiterunner) | 3 tools internally parallel | Needs live URLs from GROUP 4 |
+| **GROUP 6** | Vuln Scan (Nuclei) + MITRE Enrichment | Sequential | Needs endpoints from GROUP 5 |
+
+### Background Graph DB Updates
+
+All Neo4j graph updates run in a **dedicated single-writer background thread** (`ThreadPoolExecutor(max_workers=1)`). The main pipeline submits deep-copy snapshots of recon data and continues immediately. A final `_graph_wait_all()` ensures all updates complete before the pipeline exits.
+
+### Structured Logging
+
+All log messages use a consistent `[level][Module]` prefix format (e.g., `[+][crt.sh] Found 42 subdomains`) for clarity when multiple tools produce interleaved output from concurrent threads.
+
+### Thread Safety
+
+Each parallelized tool function is thread-safe:
+- Discovery tools (`query_crtsh`, `query_hackertarget`, etc.) create their own `requests.Session` instances
+- Module `_isolated` variants (e.g., `run_port_scan_isolated`, `run_shodan_enrichment_isolated`) accept a read-only snapshot of `combined_result` and return only their data section
+- The main thread handles all merging — no shared mutable state between workers
+
+---
+
 ## 📋 Scan Modules Explained
 
 ### Configure Which Modules to Run
@@ -525,20 +571,28 @@ SCAN_MODULES="domain_discovery,port_scan,http_probe"
 
 ### Module 1: `domain_discovery`
 
+All 5 subdomain discovery tools run **concurrently** via `ThreadPoolExecutor(max_workers=5)`. Each tool is a thread-safe function with its own HTTP session. DNS resolution is also parallelized with **20 concurrent workers**. WHOIS and URLScan run in a separate parallel group alongside discovery.
+
 ```mermaid
 flowchart LR
     subgraph Input
         Domain[example.com]
     end
 
-    subgraph Discovery["Domain Discovery"]
-        WHOIS[WHOIS<br/>Registrar info]
+    subgraph Discovery["Domain Discovery (5 tools in parallel)"]
         CRT[crt.sh<br/>CT logs]
         HT[HackerTarget<br/>DNS search]
         SF[Subfinder<br/>50+ sources]
         Amass[Amass<br/>50+ data sources]
         Knock[Knockpy<br/>Bruteforce]
-        DNS[DNS Resolver<br/>All record types]
+    end
+
+    subgraph Merge["Fan-In"]
+        MergeDedupe[Merge & Dedupe]
+    end
+
+    subgraph DNSPhase["DNS Resolution (20 parallel workers)"]
+        DNS[DNS Resolver<br/>A, AAAA, MX, NS, TXT, CNAME]
     end
 
     subgraph Output
@@ -547,17 +601,19 @@ flowchart LR
         Records[DNS Records]
     end
 
-    Domain --> WHOIS
     Domain --> CRT
     Domain --> HT
+    Domain --> SF
     Domain --> Amass
     Domain --> Knock
 
-    WHOIS --> DNS
-    CRT --> DNS
-    HT --> DNS
-    Amass --> DNS
-    Knock --> DNS
+    CRT --> MergeDedupe
+    HT --> MergeDedupe
+    SF --> MergeDedupe
+    Amass --> MergeDedupe
+    Knock --> MergeDedupe
+
+    MergeDedupe --> DNS
 
     DNS --> Subs
     DNS --> IPs
@@ -567,8 +623,8 @@ flowchart LR
 | What It Does | Output |
 |--------------|--------|
 | **WHOIS lookup** | Registrar, creation date, owner info |
-| **Subdomain discovery** | Finds subdomains via passive sources (crt.sh, HackerTarget, Subfinder, Amass) |
-| **DNS enumeration** | A, AAAA, MX, NS, TXT, CNAME records |
+| **Subdomain discovery** | Finds subdomains via 5 parallel sources (crt.sh, HackerTarget, Subfinder, Amass, Knockpy) |
+| **DNS enumeration** | A, AAAA, MX, NS, TXT, CNAME records (20 parallel workers) |
 | **IP resolution** | Maps all discovered hostnames to IPs |
 
 📖 **Key Parameters:**

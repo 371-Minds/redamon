@@ -50,14 +50,14 @@ def get_whois_data(domain: str, max_retries: int = None, settings: Optional[dict
             # If data is empty, treat as failure and retry
             if attempt < max_retries - 1:
                 delay = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"[!] WHOIS returned empty data, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                print(f"[!][WHOIS] Returned empty data, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
                 continue
         except Exception as e:
             last_error = e
             if attempt < max_retries - 1:
                 delay = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"[!] WHOIS failed: {str(e)}, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                print(f"[!][WHOIS] Failed: {str(e)}, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
             continue
     
@@ -166,7 +166,7 @@ def whois_lookup(domain: str, save_output: bool = True, settings: Optional[dict]
 
     if save_output:
         filepath = save_json_report(result, domain)
-        print(f"✓ WHOIS report saved to: {filepath}")
+        print(f"[✓][WHOIS] Report saved to: {filepath}")
 
     return result
 

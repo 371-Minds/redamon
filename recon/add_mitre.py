@@ -103,20 +103,20 @@ def mark_database_updated(settings: Optional[Dict] = None):
 def download_file(url: str, dest_path: Path) -> bool:
     """Download a file from URL to destination path."""
     try:
-        print(f"    Downloading: {dest_path.name}...", end=" ", flush=True)
+        print(f"[*][MITRE] Downloading: {dest_path.name}...", end=" ", flush=True)
         response = requests.get(url, timeout=60)
         response.raise_for_status()
         dest_path.write_bytes(response.content)
         print("OK")
         return True
     except Exception as e:
-        print(f"FAILED ({e})")
+        print(f"[!][MITRE] FAILED ({e})")
         return False
 
 
 def download_resource_files(db_path: Path) -> bool:
     """Download resource files from CVE2CAPEC repository."""
-    print("[*] Downloading MITRE resource files...")
+    print("[*][MITRE] Downloading resource files...")
 
     success = True
     for resource in RESOURCE_FILES:
@@ -149,12 +149,12 @@ def download_cwe_metadata(db_path: Path, settings: Optional[Dict] = None) -> boo
         try:
             mtime = datetime.fromtimestamp(dest_file.stat().st_mtime)
             if (datetime.now() - mtime).total_seconds() / 3600 < cache_ttl:
-                print("    CWE metadata: cached (skipping download)")
+                print("[-][MITRE] CWE metadata: cached (skipping download)")
                 return True
         except Exception:
             pass
 
-    print("    Downloading official MITRE CWE data...", end=" ", flush=True)
+    print("[*][MITRE] Downloading official CWE data...", end=" ", flush=True)
 
     try:
         # Download the ZIP file
@@ -165,7 +165,7 @@ def download_cwe_metadata(db_path: Path, settings: Optional[Dict] = None) -> boo
         with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
             xml_files = [f for f in zf.namelist() if f.endswith('.xml')]
             if not xml_files:
-                print("FAILED (no XML in ZIP)")
+                print("[!][MITRE] FAILED (no XML in ZIP)")
                 return False
             xml_content = zf.read(xml_files[0])
 
@@ -311,11 +311,11 @@ def download_cwe_metadata(db_path: Path, settings: Optional[Dict] = None) -> boo
         with open(dest_file, 'w') as f:
             json.dump(cwe_metadata, f)
 
-        print(f"OK ({len(cwe_metadata)} CWEs)")
+        print(f"[+][MITRE] OK ({len(cwe_metadata)} CWEs)")
         return True
 
     except Exception as e:
-        print(f"FAILED ({e})")
+        print(f"[!][MITRE] FAILED ({e})")
         return False
 
 
@@ -336,12 +336,12 @@ def download_capec_metadata(db_path: Path, settings: Optional[Dict] = None) -> b
         try:
             mtime = datetime.fromtimestamp(dest_file.stat().st_mtime)
             if (datetime.now() - mtime).total_seconds() / 3600 < cache_ttl:
-                print("    CAPEC metadata: cached (skipping download)")
+                print("[-][MITRE] CAPEC metadata: cached (skipping download)")
                 return True
         except Exception:
             pass
 
-    print("    Downloading official MITRE CAPEC data...", end=" ", flush=True)
+    print("[*][MITRE] Downloading official CAPEC data...", end=" ", flush=True)
 
     try:
         # Download the XML file
@@ -449,11 +449,11 @@ def download_capec_metadata(db_path: Path, settings: Optional[Dict] = None) -> b
         with open(dest_file, 'w') as f:
             json.dump(capec_metadata, f)
 
-        print(f"OK ({len(capec_metadata)} CAPECs)")
+        print(f"[+][MITRE] OK ({len(capec_metadata)} CAPECs)")
         return True
 
     except Exception as e:
-        print(f"FAILED ({e})")
+        print(f"[!][MITRE] FAILED ({e})")
         return False
 
 
@@ -498,18 +498,18 @@ def update_database(cve_ids: List[str] = None, force: bool = False, settings: Op
 
     # Check if update is needed
     if not force and is_database_fresh(settings):
-        print("[*] MITRE database is up to date (within TTL)")
+        print("[*][MITRE] Database is up to date (within TTL)")
         return True
 
     print("\n" + "=" * 60)
-    print("MITRE ATT&CK Database Update")
+    print("[*][MITRE] ATT&CK Database Update")
     print("=" * 60)
-    print(f"    Source: CVE2CAPEC (github.com/Galeax/CVE2CAPEC)")
-    print(f"    Cache path: {db_path}")
+    print(f"[*][MITRE] Source: CVE2CAPEC (github.com/Galeax/CVE2CAPEC)")
+    print(f"[*][MITRE] Cache path: {db_path}")
 
     # Download resource files (always needed)
     if not download_resource_files(db_path):
-        print("[!] Failed to download some resource files")
+        print("[!][MITRE] Failed to download some resource files")
         return False
 
     # Download official MITRE CWE metadata (names, abstraction, mapping status)
@@ -521,7 +521,7 @@ def update_database(cve_ids: List[str] = None, force: bool = False, settings: Op
     # Download CVE database files for needed years
     if cve_ids:
         years = get_needed_years(cve_ids)
-        print(f"[*] Downloading CVE database for years: {sorted(years)}")
+        print(f"[*][MITRE] Downloading CVE database for years: {sorted(years)}")
         for year in sorted(years):
             db_file = db_path / "database" / f"CVE-{year}.jsonl"
             if not db_file.exists() or force:
@@ -529,14 +529,14 @@ def update_database(cve_ids: List[str] = None, force: bool = False, settings: Op
     else:
         # Download recent years by default (last 10 years)
         current_year = datetime.now().year
-        print(f"[*] Downloading CVE database for recent years...")
+        print(f"[*][MITRE] Downloading CVE database for recent years...")
         for year in range(current_year - 10, current_year + 1):
             db_file = db_path / "database" / f"CVE-{year}.jsonl"
             if not db_file.exists() or force:
                 download_cve_database_year(db_path, year)
 
     mark_database_updated(settings)
-    print("[+] Database update complete")
+    print("[+][MITRE] Database update complete")
     print("=" * 60)
 
     return True
@@ -567,31 +567,31 @@ class MITREDatabase:
             capec_file = self.db_path / "resources" / "capec_db.json"
             if capec_file.exists():
                 self.capec_db = json.loads(capec_file.read_text())
-                print(f"    Loaded {len(self.capec_db)} CAPEC patterns")
+                print(f"[*][MITRE] Loaded {len(self.capec_db)} CAPEC patterns")
 
             # Load CWE database (cwe_id -> hierarchy and related CAPECs)
             cwe_file = self.db_path / "resources" / "cwe_db.json"
             if cwe_file.exists():
                 self.cwe_db = json.loads(cwe_file.read_text())
-                print(f"    Loaded {len(self.cwe_db)} CWE entries")
+                print(f"[*][MITRE] Loaded {len(self.cwe_db)} CWE entries")
 
             # Load CWE metadata (name, abstraction, mapping status from official MITRE data)
             metadata_file = self.db_path / "resources" / "cwe_metadata.json"
             if metadata_file.exists():
                 self.cwe_metadata = json.loads(metadata_file.read_text())
-                print(f"    Loaded {len(self.cwe_metadata)} CWE metadata entries")
+                print(f"[*][MITRE] Loaded {len(self.cwe_metadata)} CWE metadata entries")
 
             # Load CAPEC metadata (description, severity, execution flow from official MITRE data)
             capec_metadata_file = self.db_path / "resources" / "capec_metadata.json"
             if capec_metadata_file.exists():
                 self.capec_metadata = json.loads(capec_metadata_file.read_text())
-                print(f"    Loaded {len(self.capec_metadata)} CAPEC metadata entries")
+                print(f"[*][MITRE] Loaded {len(self.capec_metadata)} CAPEC metadata entries")
 
             self._loaded = True
             return True
 
         except Exception as e:
-            print(f"[!] Error loading resources: {e}")
+            print(f"[!][MITRE] Error loading resources: {e}")
             return False
 
     def load_cve_year(self, year: int) -> Dict:
@@ -601,7 +601,7 @@ class MITREDatabase:
 
         cve_file = self.db_path / "database" / f"CVE-{year}.jsonl"
         if not cve_file.exists():
-            print(f"    [!] CVE database for {year} not found")
+            print(f"[!][MITRE] CVE database for {year} not found")
             return {}
 
         year_data = {}
@@ -621,10 +621,10 @@ class MITREDatabase:
                             continue
 
             self.cve_cache[year] = year_data
-            print(f"    Loaded {len(year_data)} CVEs from {year}")
+            print(f"[*][MITRE] Loaded {len(year_data)} CVEs from {year}")
 
         except Exception as e:
-            print(f"    [!] Error loading {year}: {e}")
+            print(f"[!][MITRE] Error loading {year}: {e}")
 
         return year_data
 
@@ -937,7 +937,7 @@ def enrich_recon_data(recon_data: Dict, mitre_db: MITREDatabase, settings: Optio
     if vuln_scan and vuln_scan.get("all_cves"):
         all_cves = vuln_scan["all_cves"]
         total_cves += len(all_cves)
-        print(f"    Enriching vuln_scan.all_cves ({len(all_cves)} CVEs)...")
+        print(f"[*][MITRE] Enriching vuln_scan.all_cves ({len(all_cves)} CVEs)...")
 
         enriched_cves, count = enrich_cve_list(
             all_cves, mitre_db,
@@ -946,7 +946,7 @@ def enrich_recon_data(recon_data: Dict, mitre_db: MITREDatabase, settings: Optio
         )
         recon_data["vuln_scan"]["all_cves"] = enriched_cves
         total_enriched += count
-        print(f"    -> Enriched {count}/{len(all_cves)} CVEs with CWE/CAPEC data")
+        print(f"[+][MITRE] Enriched {count}/{len(all_cves)} CVEs with CWE/CAPEC data")
 
     # Enrich technology_cves.by_technology.<tech>.cves (NVD lookup)
     # CVEs are stored directly inside each technology entry
@@ -970,8 +970,8 @@ def enrich_recon_data(recon_data: Dict, mitre_db: MITREDatabase, settings: Optio
         if tech_cve_count > 0:
             total_cves += tech_cve_count
             total_enriched += tech_enriched_count
-            print(f"    Enriching technology_cves.by_technology ({tech_cve_count} CVEs across {len(by_technology)} technologies)...")
-            print(f"    -> Enriched {tech_enriched_count}/{tech_cve_count} CVEs with CWE/CAPEC data")
+            print(f"[*][MITRE] Enriching technology_cves.by_technology ({tech_cve_count} CVEs across {len(by_technology)} technologies)...")
+            print(f"[+][MITRE] Enriched {tech_enriched_count}/{tech_cve_count} CVEs with CWE/CAPEC data")
 
     # Add enrichment metadata
     if "metadata" not in recon_data:
@@ -1016,7 +1016,7 @@ def enrich_gvm_data(gvm_data: Dict, mitre_db: MITREDatabase, settings: Optional[
         unique_cves = scan.get("unique_cves", [])
         if unique_cves:
             total_cves += len(unique_cves)
-            print(f"    Enriching scan[{i}].unique_cves ({len(unique_cves)} CVEs)...")
+            print(f"[*][MITRE] Enriching scan[{i}].unique_cves ({len(unique_cves)} CVEs)...")
 
             # GVM CVEs are just IDs, convert to dict format
             cve_dicts = []
@@ -1035,7 +1035,7 @@ def enrich_gvm_data(gvm_data: Dict, mitre_db: MITREDatabase, settings: Optional[
             # Update the scan data
             gvm_data["scans"][i]["unique_cves_enriched"] = enriched_cves
             total_enriched += count
-            print(f"    -> Enriched {count}/{len(unique_cves)} CVEs with CWE/CAPEC data")
+            print(f"[+][MITRE] Enriched {count}/{len(unique_cves)} CVEs with CWE/CAPEC data")
 
     # Add enrichment metadata
     if "metadata" not in gvm_data:
@@ -1075,13 +1075,13 @@ def run_mitre_enrichment(recon_data: Dict = None, output_file: Path = None, sett
     auto_update = settings.get('MITRE_AUTO_UPDATE_DB', DEFAULT_MITRE_SETTINGS['MITRE_AUTO_UPDATE_DB'])
 
     print("\n" + "=" * 60)
-    print("         RedAmon - MITRE CWE/CAPEC Enrichment")
+    print("[*][MITRE] RedAmon - CWE/CAPEC Enrichment")
     print("=" * 60)
-    print(f"    Include CWE: {include_cwe}")
-    print(f"    Include CAPEC: {include_capec}")
-    print(f"    Enrich Recon: {enrich_recon}")
-    print(f"    Enrich GVM: {enrich_gvm}")
-    print(f"    Auto Update DB: {auto_update}")
+    print(f"[*][MITRE] Include CWE: {include_cwe}")
+    print(f"[*][MITRE] Include CAPEC: {include_capec}")
+    print(f"[*][MITRE] Enrich Recon: {enrich_recon}")
+    print(f"[*][MITRE] Enrich GVM: {enrich_gvm}")
+    print(f"[*][MITRE] Auto Update DB: {auto_update}")
 
     # Collect all CVE IDs to download only needed years
     all_cve_ids = []
@@ -1098,41 +1098,41 @@ def run_mitre_enrichment(recon_data: Dict = None, output_file: Path = None, sett
                 if isinstance(cve, dict) and cve.get("id"):
                     all_cve_ids.append(cve["id"])
 
-    print(f"    Total CVEs to enrich: {len(all_cve_ids)}")
+    print(f"[*][MITRE] Total CVEs to enrich: {len(all_cve_ids)}")
     print("=" * 60)
 
     # Update database with needed years (if auto-update enabled)
     if auto_update:
         if not update_database(all_cve_ids, settings=settings):
-            print("[!] Failed to update MITRE database")
+            print("[!][MITRE] Failed to update database")
             return recon_data
     else:
-        print("[*] Auto-update disabled, using cached database")
+        print("[*][MITRE] Auto-update disabled, using cached database")
 
     # Load database
-    print("\n[*] Loading MITRE database...")
+    print("\n[*][MITRE] Loading database...")
     mitre_db = MITREDatabase(settings=settings)
     if not mitre_db.load_resources():
-        print("[!] Failed to load MITRE database resources")
+        print("[!][MITRE] Failed to load database resources")
         return recon_data
 
     # Enrich recon data
     if recon_data and enrich_recon:
-        print("\n[*] Enriching reconnaissance data...")
+        print("\n[*][MITRE] Enriching reconnaissance data...")
         recon_data = enrich_recon_data(recon_data, mitre_db, settings)
 
         # Save if output file provided
         if output_file:
             with open(output_file, 'w') as f:
                 json.dump(recon_data, f, indent=2)
-            print(f"\n[+] Saved enriched data to: {output_file}")
+            print(f"\n[+][MITRE] Saved enriched data to: {output_file}")
 
     # Print summary
     metadata = recon_data.get("metadata", {}).get("mitre_enrichment", {})
     print(f"\n{'=' * 60}")
-    print(f"[+] MITRE ENRICHMENT COMPLETE")
-    print(f"[+] CVEs processed: {metadata.get('total_cves_processed', 0)}")
-    print(f"[+] CVEs enriched: {metadata.get('total_cves_enriched', 0)}")
+    print(f"[+][MITRE] ENRICHMENT COMPLETE")
+    print(f"[+][MITRE] CVEs processed: {metadata.get('total_cves_processed', 0)}")
+    print(f"[+][MITRE] CVEs enriched: {metadata.get('total_cves_enriched', 0)}")
     print(f"{'=' * 60}")
 
     return recon_data
@@ -1154,18 +1154,18 @@ def enrich_gvm_file(gvm_file: Path, settings: Optional[Dict] = None) -> Dict:
     auto_update = settings.get('MITRE_AUTO_UPDATE_DB', DEFAULT_MITRE_SETTINGS['MITRE_AUTO_UPDATE_DB'])
 
     if not enrich_gvm:
-        print("[*] GVM MITRE enrichment disabled in settings")
+        print("[-][MITRE] GVM enrichment disabled in settings")
         return None
 
     if not gvm_file.exists():
-        print(f"[!] GVM file not found: {gvm_file}")
+        print(f"[!][MITRE] GVM file not found: {gvm_file}")
         return None
 
     print("\n" + "=" * 60)
-    print("         RedAmon - MITRE CWE/CAPEC Enrichment (GVM)")
+    print("[*][MITRE] RedAmon - CWE/CAPEC Enrichment (GVM)")
     print("=" * 60)
-    print(f"    File: {gvm_file}")
-    print(f"    Auto Update DB: {auto_update}")
+    print(f"[*][MITRE] File: {gvm_file}")
+    print(f"[*][MITRE] Auto Update DB: {auto_update}")
 
     # Load GVM data
     with open(gvm_file, 'r') as f:
@@ -1180,39 +1180,39 @@ def enrich_gvm_file(gvm_file: Path, settings: Optional[Dict] = None) -> Dict:
             elif isinstance(cve, dict):
                 all_cve_ids.append(cve.get("id", ""))
 
-    print(f"    Total CVEs to enrich: {len(all_cve_ids)}")
+    print(f"[*][MITRE] Total CVEs to enrich: {len(all_cve_ids)}")
     print("=" * 60)
 
     # Update database (if auto-update enabled)
     if auto_update:
         if not update_database(all_cve_ids, settings=settings):
-            print("[!] Failed to update MITRE database")
+            print("[!][MITRE] Failed to update database")
             return gvm_data
     else:
-        print("[*] Auto-update disabled, using cached database")
+        print("[*][MITRE] Auto-update disabled, using cached database")
 
     # Load database
-    print("\n[*] Loading MITRE database...")
+    print("\n[*][MITRE] Loading database...")
     mitre_db = MITREDatabase(settings=settings)
     if not mitre_db.load_resources():
-        print("[!] Failed to load MITRE database resources")
+        print("[!][MITRE] Failed to load database resources")
         return gvm_data
 
     # Enrich GVM data
-    print("\n[*] Enriching GVM scan data...")
+    print("\n[*][MITRE] Enriching GVM scan data...")
     gvm_data = enrich_gvm_data(gvm_data, mitre_db, settings)
 
     # Save enriched data
     with open(gvm_file, 'w') as f:
         json.dump(gvm_data, f, indent=2)
-    print(f"\n[+] Saved enriched data to: {gvm_file}")
+    print(f"\n[+][MITRE] Saved enriched data to: {gvm_file}")
 
     # Print summary
     metadata = gvm_data.get("metadata", {}).get("mitre_enrichment", {})
     print(f"\n{'=' * 60}")
-    print(f"[+] GVM MITRE ENRICHMENT COMPLETE")
-    print(f"[+] CVEs processed: {metadata.get('total_cves_processed', 0)}")
-    print(f"[+] CVEs enriched: {metadata.get('total_cves_enriched', 0)}")
+    print(f"[+][MITRE] GVM ENRICHMENT COMPLETE")
+    print(f"[+][MITRE] CVEs processed: {metadata.get('total_cves_processed', 0)}")
+    print(f"[+][MITRE] CVEs enriched: {metadata.get('total_cves_enriched', 0)}")
     print(f"{'=' * 60}")
 
     return gvm_data

@@ -30,7 +30,7 @@
 
 The `resource_enum.py` module provides comprehensive endpoint discovery and classification for web applications. It combines **active crawling** (Katana), **passive historical URL discovery** (GAU), and **API bruteforcing** (Kiterunner) to maximize endpoint coverage, extracts parameters, parses HTML forms, and organizes everything into a structured format ready for vulnerability scanning.
 
-**Pipeline Position:** `http_probe -> resource_enum -> vuln_scan`
+**Pipeline Position:** GROUP 5 in the parallelized pipeline (`GROUP 4: http_probe -> GROUP 5: resource_enum -> GROUP 6: vuln_scan`). Katana, GAU, and Kiterunner run concurrently via internal `ThreadPoolExecutor`.
 
 ### Why Resource Enumeration?
 
@@ -479,6 +479,8 @@ KITERUNNER_SCAN_TIMEOUT = 600
 ---
 
 ## Architecture & Flow
+
+> **Pipeline context:** Resource enumeration runs in **GROUP 5** of the parallelized recon pipeline, after HTTP probing (GROUP 4). The three discovery tools (Katana, GAU, Kiterunner) already run concurrently via an internal `ThreadPoolExecutor`. Graph DB updates happen in a background thread.
 
 ### Execution Flow
 

@@ -547,18 +547,18 @@ MITRE CWE/CAPEC enrichment is **automatically included** in the `vuln_scan` modu
 | `technology_cves` | `by_technology.<tech>.cves[]` | `mitre_attack.cwe_hierarchy` with full metadata |
 | `gvm_scan` | `unique_cves_enriched` | `mitre_attack.cwe_hierarchy` with full metadata |
 
-### Pipeline Order
+### Pipeline Order (Parallelized)
 
-MITRE enrichment runs automatically after vulnerability scanning as part of `vuln_scan`:
+MITRE enrichment runs automatically after Nuclei scanning as part of **GROUP 6** in the parallelized recon pipeline. Graph DB updates happen in a background thread so the main pipeline is not blocked.
 
 ```python
-SCAN_MODULES = [
-    "domain_discovery",  # 1. Find subdomains, IPs
-    "port_scan",         # 2. Find open ports
-    "http_probe",        # 3. Probe HTTP, detect tech
-    "vuln_scan",         # 4. Find vulnerabilities (CVEs) + MITRE enrichment ← INCLUDED
-    "github"             # 5. Hunt for secrets
-]
+# Parallelized pipeline groups:
+# GROUP 1: domain_discovery + WHOIS + URLScan (parallel fan-out)
+#   └── 5 discovery tools run concurrently, DNS with 20 parallel workers
+# GROUP 3: port_scan + Shodan enrichment (parallel fan-out)
+# GROUP 4: http_probe (sequential, internally parallel)
+# GROUP 5: resource_enum (Katana ∥ GAU ∥ Kiterunner — internally parallel)
+# GROUP 6: vuln_scan + MITRE enrichment ← INCLUDED (sequential)
 ```
 
 ---

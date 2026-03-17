@@ -492,14 +492,14 @@ def lookup_cves_nvd(
 
         # Handle rate limiting (NVD returns 403 or 429 when rate limited)
         if response.status_code == 403:
-            print(f"        [!] NVD API rate limited. Configure NVD API Key in Global Settings → Tool API Keys for higher limits.")
+            print(f"[!][CVE] NVD API rate limited. Configure NVD API Key in Global Settings → Tool API Keys for higher limits.")
             return cves
         if response.status_code == 404:
             # 404 can occur with invalid CPE format or when service is unavailable
-            print(f"        [!] NVD API returned 404 for {product}. Skipping CVE lookup.")
+            print(f"[!][CVE] NVD API returned 404 for {product}. Skipping CVE lookup.")
             return cves
         if response.status_code == 429:
-            print(f"        [!] NVD API rate limited (429). Waiting...")
+            print(f"[!][CVE] NVD API rate limited (429). Waiting...")
             time.sleep(6)  # Wait 6 seconds and continue
             return cves
 
@@ -542,7 +542,7 @@ def lookup_cves_nvd(
             })
             
     except Exception as e:
-        print(f"        [!] NVD API error: {str(e)[:80]}")
+        print(f"[!][CVE] NVD API error: {str(e)[:80]}")
     
     return cves
 
@@ -592,7 +592,7 @@ def lookup_cves_vulners(product: str, version: str, api_key: str = None) -> List
                     "url": f"https://vulners.com/{vuln.get('type', 'cve')}/{vuln_id}",
                 })
     except Exception as e:
-        print(f"        [!] Vulners API error: {str(e)[:80]}")
+        print(f"[!][CVE] Vulners API error: {str(e)[:80]}")
     
     return cves
 
@@ -629,10 +629,10 @@ def run_cve_lookup(
         return {}
     
     print(f"\n{'='*60}")
-    print("CVE LOOKUP - Technology-Based Vulnerability Discovery")
+    print("[*][CVE] Technology-Based Vulnerability Discovery")
     print(f"{'='*60}")
-    print(f"    Source: {source.upper()}")
-    print(f"    Min CVSS: {min_cvss}")
+    print(f"[*][CVE] Source: {source.upper()}")
+    print(f"[*][CVE] Min CVSS: {min_cvss}")
     
     # Extract technologies from httpx
     technologies = set()
@@ -668,10 +668,10 @@ def run_cve_lookup(
         seen_normalized.add(key)
         tech_to_lookup.append(tech)
     
-    print(f"\n[*] Technologies with versions: {len(tech_to_lookup)}")
+    print(f"\n[*][CVE] Technologies with versions: {len(tech_to_lookup)}")
     
     if not tech_to_lookup:
-        print("[!] No technologies with versions found")
+        print("[!][CVE] No technologies with versions found")
         return {"technology_cves": {"summary": {"total_cves": 0}}}
     
     # Lookup CVEs
@@ -682,7 +682,7 @@ def run_cve_lookup(
         name, version = parse_technology_string(tech)
         name = normalize_product_name(name)
         
-        print(f"    [{i}/{len(tech_to_lookup)}] {tech}...", end=" ", flush=True)
+        print(f"[*][CVE] [{i}/{len(tech_to_lookup)}] {tech}...", end=" ", flush=True)
         
         if source == "vulners" and vulners_api_key:
             cves = lookup_cves_vulners(name, version, vulners_api_key)
@@ -749,14 +749,14 @@ def run_cve_lookup(
     
     # Print summary
     summary = result["technology_cves"]["summary"]
-    print(f"\n[+] CVE LOOKUP SUMMARY:")
-    print(f"    Total unique CVEs: {summary['total_unique_cves']}")
+    print(f"\n[+][CVE] CVE LOOKUP SUMMARY:")
+    print(f"[+][CVE] Total unique CVEs: {summary['total_unique_cves']}")
     if summary['critical'] > 0:
-        print(f"    🔴 CRITICAL: {summary['critical']}")
+        print(f"[!][CVE] CRITICAL: {summary['critical']}")
     if summary['high'] > 0:
-        print(f"    🟠 HIGH: {summary['high']}")
+        print(f"[!][CVE] HIGH: {summary['high']}")
     if summary['medium'] > 0:
-        print(f"    🟡 MEDIUM: {summary['medium']}")
+        print(f"[*][CVE] MEDIUM: {summary['medium']}")
     print(f"{'='*60}")
     
     return result

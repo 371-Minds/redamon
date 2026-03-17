@@ -12,7 +12,7 @@
 <br/>
 
 <p align="center">
-  <img height="24" src="https://img.shields.io/badge/v2.3.0-release-2E8B57?style=flat" alt="Version 2.3.0"/>
+  <img height="24" src="https://img.shields.io/badge/v3.0.0-release-2E8B57?style=flat" alt="Version 3.0.0"/>
   <img height="24" src="https://img.shields.io/badge/WARNING-SECURITY%20TOOL-B22222?style=flat" alt="Security Tool Warning"/>
   <img height="24" src="https://img.shields.io/badge/LICENSE-MIT-4169A1?style=flat" alt="MIT License"/>
   <img height="24" src="https://img.shields.io/badge/FULL-KILL%20CHAIN-A01025?style=flat" alt="Full Kill Chain"/>
@@ -262,7 +262,7 @@ The platform is built around six pillars:
 
 | Pillar | What it does |
 |--------|-------------|
-| **Reconnaissance Pipeline** | Six sequential scanning phases that map your target's entire attack surface — starting from a domain **or IP addresses / CIDR ranges** — from subdomain discovery to vulnerability detection — and store the results as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
+| **Reconnaissance Pipeline** | A **parallelized fan-out / fan-in** scanning pipeline that maps your target's entire attack surface — starting from a domain **or IP addresses / CIDR ranges** — from subdomain discovery (5 concurrent tools) through port scanning, HTTP probing, resource enumeration, and vulnerability detection. Independent modules run concurrently via `ThreadPoolExecutor`, graph DB updates happen in a background thread, and results are stored as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding — and the primary data source the AI agent queries before every decision. |
 | **EvoGraph** | A persistent, evolutionary attack chain graph in Neo4j that tracks every step, finding, decision, and failure across the attack lifecycle — bridging the recon graph and enabling cross-session intelligence accumulation. |
@@ -275,7 +275,7 @@ The platform is built around six pillars:
 
 ### Reconnaissance Pipeline
 
-A fully automated, six-phase scanning engine running inside a Kali Linux container. Given a root domain, subdomain list, or IP/CIDR ranges, it maps the complete external attack surface: subdomain discovery (crt.sh, HackerTarget, Subfinder, Knockpy), DNS resolution, port scanning (Naabu), HTTP probing with technology fingerprinting (httpx + Wappalyzer), resource enumeration (Katana, GAU, Kiterunner), and vulnerability scanning (Nuclei with 9,000+ templates + DAST fuzzing). Results are stored as JSON and imported into the Neo4j graph.
+A fully automated, **parallelized** scanning engine running inside a Kali Linux container. Given a root domain, subdomain list, or IP/CIDR ranges, it maps the complete external attack surface using a **fan-out / fan-in** pipeline architecture: subdomain discovery (crt.sh, HackerTarget, Subfinder, Amass, Knockpy — all 5 tools run concurrently), parallel DNS resolution (20 workers), Shodan + port scanning (Naabu) in parallel, HTTP probing with technology fingerprinting (httpx + Wappalyzer), resource enumeration (Katana, GAU, Kiterunner — internally parallel), and vulnerability scanning (Nuclei with 9,000+ templates + DAST fuzzing). Neo4j graph updates run in a dedicated background thread so the main pipeline is never blocked. Results are stored as JSON and imported into the Neo4j graph.
 
 > **[Wiki: Running Reconnaissance](https://github.com/samugit83/redamon/wiki/Running-Reconnaissance)** | **[Technical: README.RECON.md](readmes/README.RECON.md)**
 
@@ -492,7 +492,7 @@ flowchart TB
 
 | Component | Description | Documentation |
 |-----------|-------------|---------------|
-| **Reconnaissance Pipeline** | 6-phase automated OSINT and vulnerability scanning | [README.RECON.md](readmes/README.RECON.md) |
+| **Reconnaissance Pipeline** | Parallelized fan-out/fan-in OSINT and vulnerability scanning pipeline | [README.RECON.md](readmes/README.RECON.md) |
 | **Recon Orchestrator** | Container lifecycle management via Docker SDK | [README.RECON_ORCHESTRATOR.md](readmes/README.RECON_ORCHESTRATOR.md) |
 | **Graph Database** | Neo4j attack surface mapping with multi-tenant support | [README.GRAPH_DB.md](readmes/README.GRAPH_DB.md) · [GRAPH.SCHEMA.md](readmes/GRAPH.SCHEMA.md) |
 | **MCP Tool Servers** | Security tools via Model Context Protocol (Kali sandbox) | [README.MCP.md](readmes/README.MCP.md) |

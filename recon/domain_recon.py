@@ -1,8 +1,12 @@
 """
 Subdomain Discovery & DNS Resolution - Unified OSINT tool
-Discovers subdomains using crt.sh, HackerTarget, and Knockpy.
+Discovers subdomains using crt.sh, HackerTarget, Subfinder, Amass, and Knockpy.
 Resolves full DNS records (A, AAAA, MX, NS, TXT, SOA, CNAME) for domain and all subdomains.
 Outputs a single JSON report.
+
+Parallelization:
+- All 5 discovery tools run concurrently via ThreadPoolExecutor (fan-out/fan-in)
+- DNS resolution runs concurrently across subdomains (configurable worker count)
 """
 
 import subprocess
@@ -16,6 +20,7 @@ import dns.resolver
 import dns.reversename
 from pathlib import Path
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
 
 # Add project root to path for imports
@@ -37,9 +42,9 @@ def get_tor_session(anonymous: bool):
                 session = get_tor_session()
                 if session:
                     return session
-            print("[!] Tor not available, using direct connection")
+            print("[!][Tor] Not available, using direct connection")
         except ImportError:
-            print("[!] Anonymity module not found")
+            print("[!][Tor] Anonymity module not found")
     return requests.Session()
 
 
@@ -58,60 +63,97 @@ def get_proxychains_prefix(anonymous: bool) -> list:
     return []
 
 
-def get_passive_subdomains(domain: str, session, settings: dict = None) -> dict:
-    """Combine crt.sh and HackerTarget passive discovery.
+def query_crtsh(domain: str, anonymous: bool = False, settings: dict = None) -> dict:
+    """Query crt.sh certificate transparency logs for subdomains.
+
+    Thread-safe: creates its own requests.Session.
 
     Returns dict {subdomain: set_of_sources} for per-source attribution.
     """
     if settings is None:
         settings = {}
-    sourced = {}  # subdomain -> set of source labels
 
-    # crt.sh
-    if settings.get('CRTSH_ENABLED', True):
-        print(f"[*] Querying crt.sh...")
-        try:
-            crtsh_subs = set()
-            resp = session.get(f"https://crt.sh/?q=%.{domain}&output=json", timeout=30)
-            if resp.status_code == 200:
-                for entry in resp.json():
-                    for sub in entry['name_value'].lower().split('\n'):
-                        if not sub.startswith('*.'):
-                            crtsh_subs.add(sub.strip())
-                max_results = settings.get('CRTSH_MAX_RESULTS', 5000)
-                if len(crtsh_subs) > max_results:
-                    crtsh_subs = set(sorted(crtsh_subs)[:max_results])
-                    print(f"[*] crt.sh: capped at {max_results} results")
-                print(f"[+] crt.sh: {len(crtsh_subs)} found")
-                for s in crtsh_subs:
-                    sourced.setdefault(s, set()).add("crt.sh")
-        except Exception as e:
-            print(f"[!] crt.sh error: {e}")
-    else:
-        print(f"[-] crt.sh: disabled")
+    if not settings.get('CRTSH_ENABLED', True):
+        print(f"[-][crt.sh] Disabled — skipping")
+        return {}
 
-    # HackerTarget
-    if settings.get('HACKERTARGET_ENABLED', True):
-        print(f"[*] Querying HackerTarget...")
-        try:
-            ht_subs = set()
-            resp = session.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=30)
-            if resp.status_code == 200 and "error" not in resp.text.lower():
-                for line in resp.text.strip().split('\n'):
-                    if ',' in line:
-                        ht_subs.add(line.split(',')[0].strip())
-                max_results = settings.get('HACKERTARGET_MAX_RESULTS', 5000)
-                if len(ht_subs) > max_results:
-                    ht_subs = set(sorted(ht_subs)[:max_results])
-                    print(f"[*] HackerTarget: capped at {max_results} results")
-                print(f"[+] HackerTarget: {len(ht_subs)} found")
-                for s in ht_subs:
-                    sourced.setdefault(s, set()).add("hackertarget")
-        except Exception as e:
-            print(f"[!] HackerTarget error: {e}")
-    else:
-        print(f"[-] HackerTarget: disabled")
+    sourced = {}
+    session = get_tor_session(anonymous)
+    try:
+        print(f"[*][crt.sh] Querying certificate transparency logs...")
+        crtsh_subs = set()
+        resp = session.get(f"https://crt.sh/?q=%.{domain}&output=json", timeout=30)
+        if resp.status_code == 200:
+            for entry in resp.json():
+                for sub in entry['name_value'].lower().split('\n'):
+                    if not sub.startswith('*.'):
+                        crtsh_subs.add(sub.strip())
+            max_results = settings.get('CRTSH_MAX_RESULTS', 5000)
+            if len(crtsh_subs) > max_results:
+                crtsh_subs = set(sorted(crtsh_subs)[:max_results])
+                print(f"[*][crt.sh] Capped at {max_results} results")
+            print(f"[+][crt.sh] Found {len(crtsh_subs)} subdomains")
+            for s in crtsh_subs:
+                sourced.setdefault(s, set()).add("crt.sh")
+    except Exception as e:
+        print(f"[!][crt.sh] Error: {e}")
+    finally:
+        session.close()
 
+    return sourced
+
+
+def query_hackertarget(domain: str, anonymous: bool = False, settings: dict = None) -> dict:
+    """Query HackerTarget API for subdomains.
+
+    Thread-safe: creates its own requests.Session.
+
+    Returns dict {subdomain: set_of_sources} for per-source attribution.
+    """
+    if settings is None:
+        settings = {}
+
+    if not settings.get('HACKERTARGET_ENABLED', True):
+        print(f"[-][HackerTarget] Disabled — skipping")
+        return {}
+
+    sourced = {}
+    session = get_tor_session(anonymous)
+    try:
+        print(f"[*][HackerTarget] Querying host search API...")
+        ht_subs = set()
+        resp = session.get(f"https://api.hackertarget.com/hostsearch/?q={domain}", timeout=30)
+        if resp.status_code == 200 and "error" not in resp.text.lower():
+            for line in resp.text.strip().split('\n'):
+                if ',' in line:
+                    ht_subs.add(line.split(',')[0].strip())
+            max_results = settings.get('HACKERTARGET_MAX_RESULTS', 5000)
+            if len(ht_subs) > max_results:
+                ht_subs = set(sorted(ht_subs)[:max_results])
+                print(f"[*][HackerTarget] Capped at {max_results} results")
+            print(f"[+][HackerTarget] Found {len(ht_subs)} subdomains")
+            for s in ht_subs:
+                sourced.setdefault(s, set()).add("hackertarget")
+    except Exception as e:
+        print(f"[!][HackerTarget] Error: {e}")
+    finally:
+        session.close()
+
+    return sourced
+
+
+def get_passive_subdomains(domain: str, session, settings: dict = None) -> dict:
+    """Combine crt.sh and HackerTarget passive discovery (legacy sequential wrapper).
+
+    Returns dict {subdomain: set_of_sources} for per-source attribution.
+    """
+    if settings is None:
+        settings = {}
+    sourced = {}
+    for s, sources in query_crtsh(domain, anonymous=False, settings=settings).items():
+        sourced.setdefault(s, set()).update(sources)
+    for s, sources in query_hackertarget(domain, anonymous=False, settings=settings).items():
+        sourced.setdefault(s, set()).update(sources)
     return sourced
 
 
@@ -122,12 +164,12 @@ def run_knockpy(domain: str, proxychains_prefix: list, bruteforce: bool = False,
 
     # Check if Knockpy recon mode is enabled
     if not settings.get('KNOCKPY_RECON_ENABLED', True) and not bruteforce:
-        print(f"[-] Knockpy recon: disabled")
+        print(f"[-][Knockpy] Disabled — skipping")
         return set()
 
     subdomains = set()
     mode = "recon + bruteforce" if bruteforce else "recon only"
-    print(f"[*] Running Knockpy ({mode})...")
+    print(f"[*][Knockpy] Running ({mode})...")
     
     command = ['knockpy', '-d', domain, '--recon']
     if bruteforce:
@@ -149,18 +191,18 @@ def run_knockpy(domain: str, proxychains_prefix: list, bruteforce: bool = False,
         max_results = settings.get('KNOCKPY_RECON_MAX_RESULTS', 5000)
         if len(subdomains) > max_results:
             subdomains = set(sorted(subdomains)[:max_results])
-            print(f"[*] Knockpy: capped at {max_results} results")
+            print(f"[*][Knockpy] Capped at {max_results} results")
         if subdomains:
-            print(f"[+] Knockpy: {len(subdomains)} found")
+            print(f"[+][Knockpy] Found {len(subdomains)} subdomains")
         else:
-            print(f"[*] Knockpy: 0 found")
-            
+            print(f"[*][Knockpy] Found 0 subdomains")
+
     except subprocess.TimeoutExpired:
-        print("[!] Knockpy timed out")
+        print("[!][Knockpy] Timed out")
     except FileNotFoundError:
-        print("[!] Knockpy not installed (pip install knockpy)")
+        print("[!][Knockpy] Not installed (pip install knockpy)")
     except Exception as e:
-        print(f"[!] Knockpy error: {e}")
+        print(f"[!][Knockpy] Error: {e}")
     finally:
         # Clean up knockpy's auto-generated files
         for f in glob.glob(str(PROJECT_ROOT / f"{domain}_*.json")):
@@ -178,13 +220,13 @@ def run_subfinder(domain: str, settings: dict = None) -> set:
         settings = {}
 
     if not settings.get('SUBFINDER_ENABLED', True):
-        print(f"[-] Subfinder: disabled")
+        print(f"[-][Subfinder] Disabled — skipping")
         return set()
 
     docker_image = settings.get('SUBFINDER_DOCKER_IMAGE', 'projectdiscovery/subfinder:latest')
     max_results = settings.get('SUBFINDER_MAX_RESULTS', 5000)
 
-    print(f"[*] Running Subfinder (passive)...")
+    print(f"[*][Subfinder] Running passive enumeration...")
 
     command = [
         'docker', 'run', '--rm',
@@ -213,19 +255,19 @@ def run_subfinder(domain: str, settings: dict = None) -> set:
 
         if len(subdomains) > max_results:
             subdomains = set(sorted(subdomains)[:max_results])
-            print(f"[*] Subfinder: capped at {max_results} results")
+            print(f"[*][Subfinder] Capped at {max_results} results")
 
         if subdomains:
-            print(f"[+] Subfinder: {len(subdomains)} found")
+            print(f"[+][Subfinder] Found {len(subdomains)} subdomains")
         else:
-            print(f"[*] Subfinder: 0 found")
+            print(f"[*][Subfinder] Found 0 subdomains")
 
     except subprocess.TimeoutExpired:
-        print("[!] Subfinder timed out")
+        print("[!][Subfinder] Timed out")
     except FileNotFoundError:
-        print("[!] Docker not found — cannot run Subfinder")
+        print("[!][Subfinder] Docker not found — cannot run")
     except Exception as e:
-        print(f"[!] Subfinder error: {e}")
+        print(f"[!][Subfinder] Error: {e}")
 
     return subdomains
 
@@ -236,7 +278,7 @@ def run_amass(domain: str, settings: dict = None) -> set:
         settings = {}
 
     if not settings.get('AMASS_ENABLED', False):
-        print(f"[-] Amass: disabled")
+        print(f"[-][Amass] Disabled — skipping")
         return set()
 
     docker_image = settings.get('AMASS_DOCKER_IMAGE', 'caffix/amass:latest')
@@ -249,7 +291,7 @@ def run_amass(domain: str, settings: dict = None) -> set:
     if brute:
         mode_parts.append("brute")
     mode = "+".join(mode_parts)
-    print(f"[*] Running Amass ({mode})...")
+    print(f"[*][Amass] Running enumeration ({mode})...")
 
     # Amass v4 needs a writable config dir
     amass_temp = Path("/tmp/redamon/.amass_temp")
@@ -289,19 +331,19 @@ def run_amass(domain: str, settings: dict = None) -> set:
 
         if len(subdomains) > max_results:
             subdomains = set(sorted(subdomains)[:max_results])
-            print(f"[*] Amass: capped at {max_results} results")
+            print(f"[*][Amass] Capped at {max_results} results")
 
         if subdomains:
-            print(f"[+] Amass: {len(subdomains)} found")
+            print(f"[+][Amass] Found {len(subdomains)} subdomains")
         else:
-            print(f"[*] Amass: 0 found")
+            print(f"[*][Amass] Found 0 subdomains")
 
     except subprocess.TimeoutExpired:
-        print("[!] Amass timed out")
+        print("[!][Amass] Timed out")
     except FileNotFoundError:
-        print("[!] Docker not found — cannot run Amass")
+        print("[!][Amass] Docker not found — cannot run")
     except Exception as e:
-        print(f"[!] Amass error: {e}")
+        print(f"[!][Amass] Error: {e}")
     finally:
         shutil.rmtree(amass_temp, ignore_errors=True)
 
@@ -410,7 +452,7 @@ def verify_domain_ownership(domain: str, token: str, txt_prefix: str = "_redamon
         "error": None
     }
 
-    print(f"[*] Verifying domain ownership: {record_name}")
+    print(f"[*][DNS] Verifying domain ownership: {record_name}")
 
     try:
         # Query TXT records
@@ -431,7 +473,7 @@ def verify_domain_ownership(domain: str, token: str, txt_prefix: str = "_redamon
         # Check if expected value is in the records
         if expected_value in cleaned_records:
             result["verified"] = True
-            print(f"[+] Domain ownership verified")
+            print(f"[+][DNS] Domain ownership verified")
         else:
             result["error"] = f"TXT record found but value doesn't match"
 
@@ -441,46 +483,56 @@ def verify_domain_ownership(domain: str, token: str, txt_prefix: str = "_redamon
     return result
 
 
-def resolve_all_dns(domain: str, subdomains: list) -> dict:
+def resolve_all_dns(domain: str, subdomains: list, max_workers: int = 20) -> dict:
     """
-    Resolve DNS for domain and all subdomains.
-    
+    Resolve DNS for domain and all subdomains using parallel workers.
+
     Args:
         domain: Root domain
         subdomains: List of discovered subdomains
-        
+        max_workers: Max concurrent DNS resolution threads (default: 20)
+
     Returns:
         Dictionary with DNS data for domain and each subdomain
     """
-    print(f"\n[*] Resolving DNS for {len(subdomains) + 1} hosts...")
-    
+    subs_to_resolve = [s for s in subdomains if s != domain]
+    print(f"\n[*][DNS] Resolving {len(subs_to_resolve) + 1} hosts ({max_workers} parallel workers)...")
+
     result = {
         "domain": {},
         "subdomains": {}
     }
-    
-    # Resolve root domain
-    print(f"  [*] {domain} (root)")
+
+    # Resolve root domain first
+    print(f"[*][DNS] {domain} (root)")
     result["domain"] = dns_lookup(domain)
     if result["domain"]["ips"]["ipv4"]:
-        print(f"      → {', '.join(result['domain']['ips']['ipv4'])}")
-    
-    # Resolve each subdomain
-    for subdomain in subdomains:
-        if subdomain == domain:
-            continue
-        
-        dns_result = dns_lookup(subdomain)
-        result["subdomains"][subdomain] = dns_result
-        
-        if dns_result["ips"]["ipv4"] or dns_result["ips"]["ipv6"]:
-            all_ips = dns_result["ips"]["ipv4"] + dns_result["ips"]["ipv6"]
-            print(f"  [+] {subdomain} → {', '.join(all_ips)}")
-    
+        print(f"[+][DNS] {domain} → {', '.join(result['domain']['ips']['ipv4'])}")
+
+    # Resolve all subdomains in parallel
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="dns") as executor:
+        future_to_sub = {
+            executor.submit(dns_lookup, sub): sub
+            for sub in subs_to_resolve
+        }
+        for future in as_completed(future_to_sub):
+            subdomain = future_to_sub[future]
+            try:
+                dns_result = future.result()
+                result["subdomains"][subdomain] = dns_result
+                if dns_result["ips"]["ipv4"] or dns_result["ips"]["ipv6"]:
+                    all_ips = dns_result["ips"]["ipv4"] + dns_result["ips"]["ipv6"]
+                    print(f"[+][DNS] {subdomain} → {', '.join(all_ips)}")
+            except Exception as e:
+                print(f"[!][DNS] {subdomain}: error: {e}")
+                result["subdomains"][subdomain] = {
+                    "records": {}, "ips": {"ipv4": [], "ipv6": []}, "has_records": False
+                }
+
     # Stats
     resolved_count = sum(1 for v in result["subdomains"].values() if v["has_records"])
-    print(f"[+] Resolved: {resolved_count}/{len(subdomains)} subdomains")
-    
+    print(f"[+][DNS] Resolved: {resolved_count}/{len(subs_to_resolve)} subdomains")
+
     return result
 
 
@@ -503,7 +555,7 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
         Complete reconnaissance data for domain and subdomains
     """
     print(f"\n{'=' * 50}")
-    print(f"[*] TARGET: {domain}")
+    print(f"[*][Discovery] TARGET: {domain}")
     if anonymous:
         print(f"[🧅] ANONYMOUS MODE")
     if bruteforce:
@@ -511,25 +563,44 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
     print(f"{'=' * 50}\n")
     
     # Setup
-    session = get_tor_session(anonymous)
     pc_prefix = get_proxychains_prefix(anonymous)
-    
-    # Subdomain Discovery
-    passive_sourced = get_passive_subdomains(domain, session, settings=settings)
-    subfinder_subs = run_subfinder(domain, settings=settings)
-    amass_subs = run_amass(domain, settings=settings)
-    active = run_knockpy(domain, pc_prefix, bruteforce, settings=settings)
 
-    # Combine, filter, sort — collect out-of-scope domains for situational awareness
-    # Track ALL sources per subdomain for accurate external domain attribution
+    # Subdomain Discovery — fan-out all 5 tools in parallel
+    print(f"[*][Discovery] Launching 5 discovery tools in parallel...")
+    with ThreadPoolExecutor(max_workers=5, thread_name_prefix="discovery") as executor:
+        futures = {
+            executor.submit(query_crtsh, domain, anonymous, settings): "crtsh",
+            executor.submit(query_hackertarget, domain, anonymous, settings): "hackertarget",
+            executor.submit(run_subfinder, domain, settings): "subfinder",
+            executor.submit(run_amass, domain, settings): "amass",
+            executor.submit(run_knockpy, domain, pc_prefix, bruteforce, settings): "knockpy",
+        }
+
+        discovery_results = {}
+        for future in as_completed(futures):
+            label = futures[future]
+            try:
+                discovery_results[label] = future.result()
+            except Exception as e:
+                print(f"[!][{label}] Failed: {e}")
+                # crtsh/hackertarget return dict, others return set
+                discovery_results[label] = {} if label in ("crtsh", "hackertarget") else set()
+
+    print(f"[+][Discovery] All discovery tools complete — merging results")
+
+    # Fan-in: combine results from all tools
+    # crtsh and hackertarget return {subdomain: set_of_sources}
+    # subfinder, amass, knockpy return set of subdomains
     sourced_subs = {}  # domain -> set of source labels
-    for s, sources in passive_sourced.items():
+    for s, sources in discovery_results.get("crtsh", {}).items():
         sourced_subs.setdefault(s, set()).update(sources)
-    for s in subfinder_subs:
+    for s, sources in discovery_results.get("hackertarget", {}).items():
+        sourced_subs.setdefault(s, set()).update(sources)
+    for s in discovery_results.get("subfinder", set()):
         sourced_subs.setdefault(s, set()).add("subfinder")
-    for s in amass_subs:
+    for s in discovery_results.get("amass", set()):
         sourced_subs.setdefault(s, set()).add("amass")
-    for s in active:
+    for s in discovery_results.get("knockpy", set()):
         sourced_subs.setdefault(s, set()).add("knockpy")
 
     filtered_subs = []
@@ -572,13 +643,10 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
             json.dump(result, f, indent=2)
 
         print(f"\n{'=' * 50}")
-        print(f"[+] TOTAL: {len(all_subs)} unique subdomains")
-        print(f"[+] SAVED: {output_file}")
+        print(f"[+][Discovery] TOTAL: {len(all_subs)} unique subdomains")
+        print(f"[+][Discovery] SAVED: {output_file}")
         print(f"{'=' * 50}\n")
     
-    if anonymous and session:
-        session.close()
-
     return result
 
 

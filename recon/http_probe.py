@@ -62,7 +62,7 @@ def is_docker_running() -> bool:
 
 def pull_httpx_docker_image(docker_image: str) -> bool:
     """Pull the httpx Docker image if not present."""
-    print(f"    [*] Checking httpx Docker image: {docker_image}")
+    print(f"[*][httpx] Checking Docker image: {docker_image}")
 
     # Check if image exists
     result = subprocess.run(
@@ -72,10 +72,10 @@ def pull_httpx_docker_image(docker_image: str) -> bool:
     )
 
     if result.stdout.strip():
-        print(f"    [✓] Image already available")
+        print(f"[✓][httpx] Image already available")
         return True
 
-    print(f"    [*] Pulling image (this may take a moment)...")
+    print(f"[*][httpx] Pulling image (this may take a moment)...")
     result = subprocess.run(
         ["docker", "pull", docker_image],
         capture_output=True,
@@ -84,10 +84,10 @@ def pull_httpx_docker_image(docker_image: str) -> bool:
     )
 
     if result.returncode == 0:
-        print(f"    [✓] Image pulled successfully")
+        print(f"[✓][httpx] Image pulled successfully")
         return True
     else:
-        print(f"    [!] Failed to pull image: {result.stderr[:200]}")
+        print(f"[!][httpx] Failed to pull image: {result.stderr[:200]}")
         return False
 
 
@@ -329,9 +329,9 @@ def run_banner_grab(recon_data: dict, settings: dict = None) -> Dict:
     if not targets:
         return {}
 
-    print(f"\n[*] Banner grabbing for non-HTTP ports...")
-    print(f"    [*] Ports to probe: {len(targets)}")
-    print(f"    [*] Threads: {BANNER_GRAB_THREADS}")
+    print(f"\n[*][httpx] Banner grabbing for non-HTTP ports...")
+    print(f"[*][httpx] Ports to probe: {len(targets)}")
+    print(f"[*][httpx] Threads: {BANNER_GRAB_THREADS}")
     
     start_time = datetime.now()
     results = []
@@ -346,7 +346,7 @@ def run_banner_grab(recon_data: dict, settings: dict = None) -> Dict:
                 
                 if result.get("banner"):
                     service = result.get("version") or result.get("service") or "unknown"
-                    print(f"    [+] {result['host']}:{result['port']} - {service}")
+                    print(f"[+][httpx] {result['host']}:{result['port']} - {service}")
             except Exception:
                 pass
     
@@ -405,7 +405,7 @@ def run_banner_grab(recon_data: dict, settings: dict = None) -> Dict:
                         break
     
     banners_found = banner_results["scan_metadata"]["banners_retrieved"]
-    print(f"    [✓] Banner grab complete: {banners_found}/{len(targets)} banners retrieved")
+    print(f"[✓][httpx] Banner grab complete: {banners_found}/{len(targets)} banners retrieved")
     
     return banner_results
 
@@ -1031,16 +1031,16 @@ def download_wappalyzer_database(settings: dict = None) -> Optional[str]:
                 with open(WAPPALYZER_CACHE_FILE, 'r') as f:
                     cached_data = json.load(f)
                 tech_count = len(cached_data.get('technologies', {}))
-                print(f"    [*] Using cached Wappalyzer DB ({tech_count} technologies, {file_age_hours:.1f}h old)")
+                print(f"[*][httpx] Using cached Wappalyzer DB ({tech_count} technologies, {file_age_hours:.1f}h old)")
             except:
-                print(f"    [*] Using cached Wappalyzer DB ({file_age_hours:.1f}h old)")
+                print(f"[*][httpx] Using cached Wappalyzer DB ({file_age_hours:.1f}h old)")
             return str(WAPPALYZER_CACHE_FILE)
 
-    print("    [*] Downloading latest Wappalyzer technologies database...")
+    print("[*][httpx] Downloading latest Wappalyzer technologies database...")
 
     try:
         # Download categories
-        print("        Downloading categories...", end=" ", flush=True)
+        print("[*][httpx] Downloading categories...", end=" ", flush=True)
         categories_resp = requests.get(WAPPALYZER_CATEGORIES_URL, timeout=10)
         categories_resp.raise_for_status()
         categories_data = categories_resp.json()
@@ -1050,7 +1050,7 @@ def download_wappalyzer_database(settings: dict = None) -> Optional[str]:
         technologies_data = {}
         tech_files = ['_'] + list('abcdefghijklmnopqrstuvwxyz')
 
-        print("        Downloading technologies: ", end="", flush=True)
+        print("[*][httpx] Downloading technologies: ", end="", flush=True)
         for letter in tech_files:
             url = f"{WAPPALYZER_BASE_URL}/technologies/{letter}.json"
             try:
@@ -1113,21 +1113,21 @@ def download_wappalyzer_database(settings: dict = None) -> Optional[str]:
             json.dump(combined_data, f)
 
         tech_count = len(technologies_data)
-        print(f"    [✓] Downloaded {tech_count} technology fingerprints")
+        print(f"[✓][httpx] Downloaded {tech_count} technology fingerprints")
         return str(WAPPALYZER_CACHE_FILE)
 
     except requests.exceptions.RequestException as e:
-        print(f"    [!] Failed to download Wappalyzer DB: {e}")
+        print(f"[!][httpx] Failed to download Wappalyzer DB: {e}")
         # Fall back to cached version if available
         if os.path.exists(WAPPALYZER_CACHE_FILE):
-            print("    [*] Using previously cached database")
+            print("[*][httpx] Using previously cached database")
             return str(WAPPALYZER_CACHE_FILE)
-        print("    [*] Will use bundled (outdated) database")
+        print("[*][httpx] Will use bundled (outdated) database")
         return None
     except Exception as e:
-        print(f"    [!] Error processing Wappalyzer DB: {e}")
+        print(f"[!][httpx] Error processing Wappalyzer DB: {e}")
         if os.path.exists(WAPPALYZER_CACHE_FILE):
-            print("    [*] Using previously cached database")
+            print("[*][httpx] Using previously cached database")
             return str(WAPPALYZER_CACHE_FILE)
         return None
 
@@ -1158,11 +1158,11 @@ def enhance_with_wappalyzer(httpx_results: Dict, settings: dict = None) -> Dict:
     try:
         from Wappalyzer import Wappalyzer, WebPage
     except ImportError:
-        print("    [!] Wappalyzer not installed - skipping enhancement")
-        print("    [*] Install with: pip install python-Wappalyzer")
+        print("[!][httpx] Wappalyzer not installed - skipping enhancement")
+        print("[*][httpx] Install with: pip install python-Wappalyzer")
         return httpx_results
 
-    print("\n[*] Enhancing technology detection with Wappalyzer...")
+    print("\n[*][httpx] Enhancing technology detection with Wappalyzer...")
 
     # Try to get latest database, fall back to bundled if unavailable
     technologies_file = download_wappalyzer_database(settings)
@@ -1336,12 +1336,12 @@ def enhance_with_wappalyzer(httpx_results: Dict, settings: dict = None) -> Dict:
     
     # Print summary
     if urls_analyzed > 0:
-        print(f"    [✓] Wappalyzer enhancement complete")
-        print(f"        URLs analyzed: {urls_analyzed}")
-        print(f"        New technologies found: {len(wappalyzer_data['new_technologies'])}")
+        print(f"[✓][httpx] Wappalyzer enhancement complete")
+        print(f"[*][httpx] URLs analyzed: {urls_analyzed}")
+        print(f"[*][httpx] New technologies found: {len(wappalyzer_data['new_technologies'])}")
         if wappalyzer_data["new_technologies"]:
             new_techs_list = list(wappalyzer_data["new_technologies"].keys())[:10]
-            print(f"        New techs: {', '.join(new_techs_list)}" +
+            print(f"[*][httpx] New techs: {', '.join(new_techs_list)}" +
                   ("..." if len(wappalyzer_data["new_technologies"]) > 10 else ""))
     
     return httpx_results
@@ -1387,7 +1387,7 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         Enriched recon_data with "http_probe" section added
     """
     print("\n" + "="*60)
-    print("HTTPX HTTP PROBER")
+    print("[*][httpx] HTTPX HTTP PROBER")
     print("="*60)
 
     # Use passed settings or empty dict as fallback
@@ -1408,29 +1408,29 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
 
     # Check Docker
     if not is_docker_installed():
-        print("[!] Docker is not installed. Please install Docker first.")
+        print("[!][httpx] Docker is not installed. Please install Docker first.")
         return recon_data
 
     if not is_docker_running():
-        print("[!] Docker daemon is not running. Please start Docker.")
+        print("[!][httpx] Docker daemon is not running. Please start Docker.")
         return recon_data
 
     # Pull image if needed
     if not pull_httpx_docker_image(HTTPX_DOCKER_IMAGE):
-        print("[!] Failed to get httpx Docker image")
+        print("[!][httpx] Failed to get httpx Docker image")
         return recon_data
 
     # Check Tor if enabled
     use_proxy = False
     if USE_TOR_FOR_RECON:
         if is_tor_running():
-            print("    [✓] Tor proxy detected - enabling anonymous probing")
+            print("[✓][httpx] Tor proxy detected - enabling anonymous probing")
             use_proxy = True
         else:
-            print("    [!] Tor not running - probing without proxy")
+            print("[!][httpx] Tor not running - probing without proxy")
 
     # Build target URLs
-    print("\n[*] Building target URLs...")
+    print("\n[*][httpx] Building target URLs...")
 
     # Prefer naabu results, fallback to DNS
     if recon_data.get("port_scan"):
@@ -1438,15 +1438,15 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         # build_targets_from_naabu falls back to DNS internally if no ports found
         has_ports = bool(recon_data["port_scan"].get("by_host"))
         if has_ports:
-            print(f"    [*] Built {len(urls)} URLs from Naabu port scan results")
+            print(f"[*][httpx] Built {len(urls)} URLs from Naabu port scan results")
         else:
-            print(f"    [*] Built {len(urls)} URLs from DNS fallback (Naabu found no open ports)")
+            print(f"[*][httpx] Built {len(urls)} URLs from DNS fallback (Naabu found no open ports)")
     else:
         urls = build_targets_from_dns(recon_data)
-        print(f"    [*] Built {len(urls)} URLs from DNS data (no Naabu results)")
+        print(f"[*][httpx] Built {len(urls)} URLs from DNS data (no Naabu results)")
 
     if not urls:
-        print("[!] No URLs to probe")
+        print("[!][httpx] No URLs to probe")
         return recon_data
 
     # Create temp directory for scan files
@@ -1467,20 +1467,20 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         # Build and run command
         cmd = build_httpx_command(str(targets_file), str(httpx_output), settings, use_proxy)
 
-        print(f"\n[*] Starting httpx probe...")
-        print(f"    [*] URLs to probe: {len(urls)}")
-        print(f"    [*] Threads: {HTTPX_THREADS}")
-        print(f"    [*] Timeout: {HTTPX_TIMEOUT}s")
-        print(f"    [*] Rate limit: {HTTPX_RATE_LIMIT} req/s")
-        print(f"    [*] Follow redirects: {HTTPX_FOLLOW_REDIRECTS}")
+        print(f"\n[*][httpx] Starting httpx probe...")
+        print(f"[*][httpx] URLs to probe: {len(urls)}")
+        print(f"[*][httpx] Threads: {HTTPX_THREADS}")
+        print(f"[*][httpx] Timeout: {HTTPX_TIMEOUT}s")
+        print(f"[*][httpx] Rate limit: {HTTPX_RATE_LIMIT} req/s")
+        print(f"[*][httpx] Follow redirects: {HTTPX_FOLLOW_REDIRECTS}")
 
         if HTTPX_PROBE_TECH_DETECT:
-            print(f"    [*] Technology detection: enabled")
+            print(f"[*][httpx] Technology detection: enabled")
         if HTTPX_PROBE_TLS_INFO:
-            print(f"    [*] TLS probing: enabled")
+            print(f"[*][httpx] TLS probing: enabled")
         if HTTPX_INCLUDE_RESPONSE:
-            print(f"    [*] Response body: included")
-        print(f"    [*] Banner grabbing: {BANNER_GRAB_ENABLED}")
+            print(f"[*][httpx] Response body: included")
+        print(f"[*][httpx] Banner grabbing: {BANNER_GRAB_ENABLED}")
 
         start_time = datetime.now()
 
@@ -1498,11 +1498,11 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         duration = (end_time - start_time).total_seconds()
 
         if process.returncode != 0 and not httpx_output.exists():
-            print(f"    [!] Probe failed: {stderr[:200] if stderr else 'Unknown error'}")
+            print(f"[!][httpx] Probe failed: {stderr[:200] if stderr else 'Unknown error'}")
             return recon_data
 
         # Parse results (filter URLs outside target scope)
-        print(f"\n[*] Parsing results...")
+        print(f"\n[*][httpx] Parsing results...")
         root_domain = recon_data.get("domain", "") or recon_data.get("metadata", {}).get("root_domain", "")
         
         # Get allowed hosts for filtering (from SUBDOMAIN_LIST filter)
@@ -1515,14 +1515,14 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
             # Use the subdomain_filter which contains the full subdomain names
             allowed_hosts = metadata.get("subdomain_filter", [])
             if allowed_hosts:
-                print(f"    [*] Filtering to allowed hosts: {', '.join(allowed_hosts)}")
+                print(f"[*][httpx] Filtering to allowed hosts: {', '.join(allowed_hosts)}")
         
         results = parse_httpx_output(str(httpx_output), root_domain=root_domain, allowed_hosts=allowed_hosts)
         
         # Log if any URLs were filtered out
         filtered_count = results.get("summary", {}).get("filtered_out_of_scope", 0)
         if filtered_count > 0:
-            print(f"    [*] Filtered {filtered_count} URL(s) outside target scope")
+            print(f"[*][httpx] Filtered {filtered_count} URL(s) outside target scope")
 
         # Build final structure
         httpx_results = {
@@ -1552,21 +1552,21 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
 
         # Print summary
         summary = results["summary"]
-        print(f"\n[✓] Probe completed in {duration:.1f} seconds")
-        print(f"    [*] URLs probed: {summary['total_urls_probed']}")
-        print(f"    [*] Live URLs: {summary['live_urls']}")
-        print(f"    [*] Unique hosts: {summary['total_hosts']}")
+        print(f"\n[✓][httpx] Probe completed in {duration:.1f} seconds")
+        print(f"[*][httpx] URLs probed: {summary['total_urls_probed']}")
+        print(f"[*][httpx] Live URLs: {summary['live_urls']}")
+        print(f"[*][httpx] Unique hosts: {summary['total_hosts']}")
 
         if summary.get('technology_count', 0) > 0:
-            print(f"    [*] Technologies detected: {summary['technology_count']}")
+            print(f"[*][httpx] Technologies detected: {summary['technology_count']}")
             techs = summary.get('unique_technologies', [])[:10]
             if techs:
-                print(f"        {', '.join(techs)}" + ("..." if len(summary.get('unique_technologies', [])) > 10 else ""))
+                print(f"[*][httpx] {', '.join(techs)}" + ("..." if len(summary.get('unique_technologies', [])) > 10 else ""))
 
         if summary.get('by_status_code'):
             codes = summary['by_status_code']
             code_str = ", ".join([f"{k}:{v}" for k, v in sorted(codes.items())[:5]])
-            print(f"    [*] Status codes: {code_str}")
+            print(f"[*][httpx] Status codes: {code_str}")
 
         # Enhance with Wappalyzer (uses existing HTML from httpx)
         httpx_results = enhance_with_wappalyzer(httpx_results, settings)
@@ -1589,15 +1589,15 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
             with open(output_file, 'w') as f:
                 json.dump(recon_data, f, indent=2, default=str)
             fix_file_ownership(output_file)
-            print(f"\n[✓] Results saved to {output_file}")
+            print(f"\n[✓][httpx] Results saved to {output_file}")
 
         return recon_data
 
     except subprocess.TimeoutExpired:
-        print("[!] Probe timed out after 30 minutes")
+        print("[!][httpx] Probe timed out after 30 minutes")
         return recon_data
     except Exception as e:
-        print(f"[!] Error during probe: {e}")
+        print(f"[!][httpx] Error during probe: {e}")
         return recon_data
     finally:
         # Cleanup temp files
@@ -1628,7 +1628,7 @@ def enrich_recon_file(recon_file: Path) -> dict:
     from recon.project_settings import get_settings
     settings = get_settings()
 
-    print(f"\n[*] Loading recon file: {recon_file}")
+    print(f"\n[*][httpx] Loading recon file: {recon_file}")
 
     with open(recon_file, 'r') as f:
         recon_data = json.load(f)

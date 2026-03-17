@@ -49,15 +49,15 @@ def _urlscan_search(domain: str, api_key: str, max_results: int = 500) -> list[d
             return results
         elif resp.status_code == 429:
             logger.warning("URLScan rate limit hit")
-            print("[!] URLScan rate limit hit — try adding an API key in Global Settings")
+            print("[!][URLScan] Rate limit hit — try adding an API key in Global Settings")
             return []
         else:
             logger.warning(f"URLScan {resp.status_code}: {resp.text[:200]}")
-            print(f"[!] URLScan API returned {resp.status_code}")
+            print(f"[!][URLScan] API returned {resp.status_code}")
             return []
     except requests.RequestException as e:
         logger.warning(f"URLScan request failed: {e}")
-        print(f"[!] URLScan request failed: {e}")
+        print(f"[!][URLScan] Request failed: {e}")
         return []
 
 
@@ -130,15 +130,15 @@ def run_urlscan_enrichment(combined_result: dict, settings: dict[str, Any]) -> d
     print(f"\n[PHASE] URLScan.io Passive Enrichment")
     print("-" * 40)
     if api_key:
-        print(f"[+] Using URLScan API key for higher rate limits")
+        print(f"[+][URLScan] Using API key for higher rate limits")
     else:
-        print(f"[*] No API key — using public results only")
-    print(f"[+] Querying URLScan for domain: {domain} (max {max_results} results)")
+        print(f"[*][URLScan] No API key — using public results only")
+    print(f"[*][URLScan] Querying for domain: {domain} (max {max_results} results)")
 
     results = _urlscan_search(domain, api_key, max_results)
 
     if not results:
-        print(f"[-] No URLScan results found for {domain}")
+        print(f"[-][URLScan] No results found for {domain}")
         combined_result["urlscan"] = {
             "results_count": 0,
             "subdomains_discovered": [],
@@ -267,12 +267,41 @@ def run_urlscan_enrichment(combined_result: dict, settings: dict[str, Any]) -> d
         "external_domains": external_domain_entries,
     }
 
-    print(f"[+] URLScan results: {len(results)} scans found")
-    print(f"[+] Subdomains discovered: {len(subdomains)}")
-    print(f"[+] Unique IPs found: {len(ips)}")
-    print(f"[+] URLs with paths: {len(urls_with_paths)}")
+    print(f"[+][URLScan] {len(results)} scans found")
+    print(f"[+][URLScan] Subdomains discovered: {len(subdomains)}")
+    print(f"[+][URLScan] Unique IPs found: {len(ips)}")
+    print(f"[+][URLScan] URLs with paths: {len(urls_with_paths)}")
     if domain_age_days is not None:
-        print(f"[+] Domain age: {domain_age_days} days")
+        print(f"[+][URLScan] Domain age: {domain_age_days} days")
 
     combined_result["urlscan"] = urlscan_data
     return combined_result
+
+
+def run_urlscan_discovery_only(domain: str, settings: dict[str, Any]) -> dict:
+    """
+    Run URLScan.io discovery and return only the 'urlscan' data dict.
+
+    Thread-safe: does not need or mutate combined_result. Designed for
+    parallel execution alongside other discovery tools (WHOIS, subdomain enum).
+
+    Args:
+        domain: Root domain to query
+        settings: Project settings dict
+
+    Returns:
+        The 'urlscan' data dictionary, or empty dict if disabled/no results.
+    """
+    if not settings.get("URLSCAN_ENABLED", False):
+        return {}
+
+    if not domain:
+        return {}
+
+    # Build a minimal combined_result just for the enrichment function
+    fake_combined = {
+        "domain": domain,
+        "metadata": {"ip_mode": False},
+    }
+    run_urlscan_enrichment(fake_combined, settings)
+    return fake_combined.get("urlscan", {})

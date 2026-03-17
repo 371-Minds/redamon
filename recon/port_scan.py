@@ -56,7 +56,7 @@ def is_docker_running() -> bool:
 
 def pull_naabu_docker_image(docker_image: str) -> bool:
     """Pull the Naabu Docker image if not present."""
-    print(f"    [*] Checking Naabu Docker image: {docker_image}")
+    print(f"[*][Naabu] Checking Docker image: {docker_image}")
 
     # Check if image exists
     result = subprocess.run(
@@ -66,10 +66,10 @@ def pull_naabu_docker_image(docker_image: str) -> bool:
     )
 
     if result.stdout.strip():
-        print(f"    [✓] Image already available")
+        print(f"[✓][Naabu] Image already available")
         return True
 
-    print(f"    [*] Pulling image (this may take a moment)...")
+    print(f"[*][Naabu] Pulling image (this may take a moment)...")
     result = subprocess.run(
         ["docker", "pull", docker_image],
         capture_output=True,
@@ -78,10 +78,10 @@ def pull_naabu_docker_image(docker_image: str) -> bool:
     )
 
     if result.returncode == 0:
-        print(f"    [✓] Image pulled successfully")
+        print(f"[✓][Naabu] Image pulled successfully")
         return True
     else:
-        print(f"    [!] Failed to pull image: {result.stderr[:200]}")
+        print(f"[!][Naabu] Failed to pull image: {result.stderr[:200]}")
         return False
 
 
@@ -442,7 +442,7 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         Enriched recon_data with "port_scan" section added
     """
     print("\n" + "="*60)
-    print("NAABU PORT SCANNER")
+    print("[*][Naabu] PORT SCANNER")
     print("="*60)
 
     # Use passed settings or empty dict as fallback
@@ -461,29 +461,29 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
     # Check Docker
     if not is_docker_installed():
-        print("[!] Docker is not installed. Please install Docker first.")
+        print("[!][Naabu] Docker is not installed. Please install Docker first.")
         return recon_data
 
     if not is_docker_running():
-        print("[!] Docker daemon is not running. Please start Docker.")
+        print("[!][Naabu] Docker daemon is not running. Please start Docker.")
         return recon_data
 
     # Pull image if needed
     if not pull_naabu_docker_image(NAABU_DOCKER_IMAGE):
-        print("[!] Failed to get Naabu Docker image")
+        print("[!][Naabu] Failed to get Docker image")
         return recon_data
 
     # Check Tor if enabled
     use_proxy = False
     if USE_TOR_FOR_RECON:
         if is_tor_running():
-            print("    [✓] Tor proxy detected - enabling anonymous scanning")
+            print("[✓][Naabu] Tor proxy detected — enabling anonymous scanning")
             use_proxy = True
         else:
-            print("    [!] Tor not running - scanning without proxy")
+            print("[!][Naabu] Tor not running — scanning without proxy")
 
     # Extract targets
-    print("\n[*] Extracting targets from recon data...")
+    print("[*][Naabu] Extracting targets from recon data...")
     unique_ips, unique_hostnames, ip_to_hostnames = extract_targets_from_recon(recon_data)
 
     # Combine targets - prefer hostnames for better accuracy
@@ -492,11 +492,11 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     ]]
 
     if not all_targets:
-        print("[!] No targets found in recon data")
+        print("[!][Naabu] No targets found in recon data")
         return recon_data
 
-    print(f"    [*] Found {len(unique_hostnames)} hostnames and {len(unique_ips)} IPs")
-    print(f"    [*] Total targets to scan: {len(all_targets)}")
+    print(f"[*][Naabu] Found {len(unique_hostnames)} hostnames and {len(unique_ips)} IPs")
+    print(f"[*][Naabu] Total targets to scan: {len(all_targets)}")
 
     # Create temp directory for scan files
     # Use /tmp/redamon to avoid spaces in paths (snap Docker issue)
@@ -516,19 +516,19 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         # Build and run command
         cmd = build_naabu_command(str(targets_file), str(naabu_output), settings, use_proxy)
 
-        print(f"\n[*] Starting Naabu scan...")
-        print(f"    [*] Scan type: {'SYN' if NAABU_SCAN_TYPE == 's' else 'CONNECT'}")
-        print(f"    [*] Ports: {NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f'top {NAABU_TOP_PORTS}'}")
-        print(f"    [*] Rate limit: {NAABU_RATE_LIMIT} pps")
-        print(f"    [*] Threads: {settings.get('NAABU_THREADS', 25)}")
-        print(f"    [*] Timeout: {settings.get('NAABU_TIMEOUT', 10000)}ms")
-        print(f"    [*] Retries: {settings.get('NAABU_RETRIES', 1)}")
-        print(f"    [*] Exclude CDN: {NAABU_EXCLUDE_CDN}")
-        print(f"    [*] Skip host discovery: {settings.get('NAABU_SKIP_HOST_DISCOVERY', True)}")
-        print(f"    [*] Verify ports: {settings.get('NAABU_VERIFY_PORTS', True)}")
+        print(f"[*][Naabu] Starting scan...")
+        print(f"[*][Naabu] Scan type: {'SYN' if NAABU_SCAN_TYPE == 's' else 'CONNECT'}")
+        print(f"[*][Naabu] Ports: {NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f'top {NAABU_TOP_PORTS}'}")
+        print(f"[*][Naabu] Rate limit: {NAABU_RATE_LIMIT} pps")
+        print(f"[*][Naabu] Threads: {settings.get('NAABU_THREADS', 25)}")
+        print(f"[*][Naabu] Timeout: {settings.get('NAABU_TIMEOUT', 10000)}ms")
+        print(f"[*][Naabu] Retries: {settings.get('NAABU_RETRIES', 1)}")
+        print(f"[*][Naabu] Exclude CDN: {NAABU_EXCLUDE_CDN}")
+        print(f"[*][Naabu] Skip host discovery: {settings.get('NAABU_SKIP_HOST_DISCOVERY', True)}")
+        print(f"[*][Naabu] Verify ports: {settings.get('NAABU_VERIFY_PORTS', True)}")
 
         if NAABU_PASSIVE_MODE:
-            print(f"    [*] Mode: PASSIVE (Shodan InternetDB)")
+            print(f"[*][Naabu] Mode: PASSIVE (Shodan InternetDB)")
 
         start_time = datetime.now()
 
@@ -539,7 +539,7 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         for attempt, scan_type in enumerate([NAABU_SCAN_TYPE, 'c'] if NAABU_SCAN_TYPE == 's' else [NAABU_SCAN_TYPE]):
             if attempt > 0:
                 # Retry with CONNECT scan after SYN scan failed
-                print(f"\n    [*] Retrying with CONNECT scan...")
+                print(f"[*][Naabu] Retrying with CONNECT scan...")
                 settings_copy = settings.copy()
                 settings_copy['NAABU_SCAN_TYPE'] = 'c'
                 cmd = build_naabu_command(str(targets_file), str(naabu_output), settings_copy, use_proxy)
@@ -556,9 +556,9 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
             # Check for SIGSEGV crash (common in SYN mode)
             if 'SIGSEGV' in stderr or 'segmentation' in stderr.lower():
-                print(f"    [!] Scan crashed (SIGSEGV) - naabu binary error")
+                print(f"[!][Naabu] Scan crashed (SIGSEGV) — binary error")
                 if scan_type == 's' and attempt == 0:
-                    print(f"    [*] SYN scan requires raw sockets - will try CONNECT scan")
+                    print(f"[*][Naabu] SYN scan requires raw sockets — will try CONNECT scan")
                     continue  # Try CONNECT scan
                 else:
                     break  # No more fallbacks
@@ -570,28 +570,28 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                 if (scan_type == 's' and attempt == 0
                         and (not naabu_output.exists()
                              or naabu_output.stat().st_size == 0)):
-                    print(f"    [!] SYN scan completed but found no open ports")
-                    print(f"    [*] Firewall may be dropping SYN probes — retrying with CONNECT scan...")
+                    print(f"[!][Naabu] SYN scan completed but found no open ports")
+                    print(f"[*][Naabu] Firewall may be dropping SYN probes — retrying with CONNECT scan...")
                     continue
                 scan_succeeded = True
                 break
 
             if stderr and attempt == 0 and scan_type == 's':
-                print(f"    [!] SYN scan failed: {stderr[:150] if stderr else 'Unknown error'}")
+                print(f"[!][Naabu] SYN scan failed: {stderr[:150] if stderr else 'Unknown error'}")
                 continue  # Try CONNECT scan
 
-            print(f"    [!] Scan failed: {stderr[:200] if stderr else 'Unknown error'}")
+            print(f"[!][Naabu] Scan failed: {stderr[:200] if stderr else 'Unknown error'}")
             break
 
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
         if not scan_succeeded and not naabu_output.exists():
-            print(f"    [!] All scan attempts failed")
+            print(f"[!][Naabu] All scan attempts failed")
             return recon_data
 
         # Parse results
-        print(f"\n[*] Parsing results...")
+        print(f"[*][Naabu] Parsing results...")
         results = parse_naabu_output(str(naabu_output))
 
         # Build final structure
@@ -618,18 +618,18 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
         # Print summary
         summary = results["summary"]
-        print(f"\n[✓] Scan completed in {duration:.1f} seconds")
+        print(f"[✓][Naabu] Scan completed in {duration:.1f} seconds")
         if actual_scan_type != NAABU_SCAN_TYPE:
-            print(f"    [*] Note: Used CONNECT scan (SYN scan crashed)")
-        print(f"    [*] Hosts with open ports: {summary['hosts_with_open_ports']}")
-        print(f"    [*] Total open ports found: {summary['total_open_ports']}")
-        print(f"    [*] Unique ports: {summary['unique_port_count']}")
+            print(f"[*][Naabu] Note: Used CONNECT scan (SYN scan crashed)")
+        print(f"[+][Naabu] Hosts with open ports: {summary['hosts_with_open_ports']}")
+        print(f"[+][Naabu] Total open ports found: {summary['total_open_ports']}")
+        print(f"[+][Naabu] Unique ports: {summary['unique_port_count']}")
 
         if summary.get('cdn_hosts', 0) > 0:
-            print(f"    [*] CDN-protected hosts: {summary['cdn_hosts']}")
+            print(f"[*][Naabu] CDN-protected hosts: {summary['cdn_hosts']}")
 
         if results["all_ports"]:
-            print(f"    [*] Ports discovered: {', '.join(map(str, results['all_ports'][:20]))}" +
+            print(f"[+][Naabu] Ports discovered: {', '.join(map(str, results['all_ports'][:20]))}" +
                   (f"... (+{len(results['all_ports'])-20} more)" if len(results['all_ports']) > 20 else ""))
 
         # Add to recon_data
@@ -640,15 +640,15 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             with open(output_file, 'w') as f:
                 json.dump(recon_data, f, indent=2, default=str)
             fix_file_ownership(output_file)
-            print(f"\n[✓] Results saved to {output_file}")
+            print(f"[✓][Naabu] Results saved to {output_file}")
 
         return recon_data
 
     except subprocess.TimeoutExpired:
-        print("[!] Scan timed out after 30 minutes")
+        print("[!][Naabu] Scan timed out after 30 minutes")
         return recon_data
     except Exception as e:
-        print(f"[!] Error during scan: {e}")
+        print(f"[!][Naabu] Error during scan: {e}")
         return recon_data
     finally:
         # Cleanup temp files
@@ -679,7 +679,7 @@ def enrich_recon_file(recon_file: Path) -> dict:
     from recon.project_settings import get_settings
     settings = get_settings()
 
-    print(f"\n[*] Loading recon file: {recon_file}")
+    print(f"[*][Naabu] Loading recon file: {recon_file}")
 
     with open(recon_file, 'r') as f:
         recon_data = json.load(f)
@@ -687,4 +687,26 @@ def enrich_recon_file(recon_file: Path) -> dict:
     enriched = run_port_scan(recon_data, output_file=recon_file, settings=settings)
 
     return enriched
+
+
+def run_port_scan_isolated(recon_data: dict, settings: dict = None) -> dict:
+    """
+    Run port scan and return only the 'port_scan' data dict.
+
+    Thread-safe: does not mutate recon_data. Reads DNS/subdomain data from
+    it but writes nothing back. Designed for parallel execution alongside
+    other modules (e.g., Shodan enrichment).
+
+    Args:
+        recon_data: The pipeline's combined result dictionary (read-only)
+        settings: Settings dictionary from main.py
+
+    Returns:
+        The 'port_scan' data dictionary (just the scan payload),
+        or empty dict if scan produced no results.
+    """
+    import copy
+    snapshot = copy.copy(recon_data)  # shallow copy — safe for read-only access
+    run_port_scan(snapshot, output_file=None, settings=settings)
+    return snapshot.get("port_scan", {})
 
