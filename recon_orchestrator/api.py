@@ -24,6 +24,9 @@ from models import (
     GithubHuntStartRequest,
     GithubHuntState,
     GithubHuntStatus,
+    TrufflehogStartRequest,
+    TrufflehogState,
+    TrufflehogStatus,
 )
 
 # Configure logging
@@ -89,6 +92,8 @@ GVM_SCAN_PATH = _get_host_path(_host_mounts, "/app/gvm_scan", "GVM_SCAN_PATH")
 GVM_IMAGE = os.getenv("GVM_IMAGE", "redamon-vuln-scanner:latest")
 GITHUB_HUNT_PATH = _get_host_path(_host_mounts, "/app/github_secret_hunt", "GITHUB_HUNT_PATH")
 GITHUB_HUNT_IMAGE = os.getenv("GITHUB_HUNT_IMAGE", "redamon-github-hunter:latest")
+TRUFFLEHOG_PATH = _get_host_path(_host_mounts, "/app/trufflehog_scan", "TRUFFLEHOG_PATH")
+TRUFFLEHOG_IMAGE = os.getenv("TRUFFLEHOG_IMAGE", "redamon-trufflehog:latest")
 try:
     CUSTOM_TEMPLATES_PATH = _get_host_path(_host_mounts, "/app/nuclei-templates", "CUSTOM_TEMPLATES_PATH")
 except RuntimeError:
@@ -105,7 +110,7 @@ async def lifespan(app: FastAPI):
     """Initialize and cleanup resources"""
     global container_manager
     logger.info("Starting Recon Orchestrator...")
-    container_manager = ContainerManager(recon_image=RECON_IMAGE, gvm_image=GVM_IMAGE, github_hunt_image=GITHUB_HUNT_IMAGE)
+    container_manager = ContainerManager(recon_image=RECON_IMAGE, gvm_image=GVM_IMAGE, github_hunt_image=GITHUB_HUNT_IMAGE, trufflehog_image=TRUFFLEHOG_IMAGE)
     yield
     logger.info("Shutting down Recon Orchestrator...")
     await container_manager.cleanup()
@@ -137,6 +142,7 @@ async def health_check():
         running_recons=container_manager.get_running_count() if container_manager else 0,
         running_gvm_scans=container_manager.get_gvm_running_count() if container_manager else 0,
         running_github_hunts=container_manager.get_github_hunt_running_count() if container_manager else 0,
+        running_trufflehog_scans=container_manager.get_trufflehog_running_count() if container_manager else 0,
     )
 
 
@@ -792,6 +798,130 @@ async def stream_github_hunt_logs(project_id: str):
             }
 
         final_state = await container_manager.get_github_hunt_status(project_id)
+        yield {
+            "event": "complete",
+            "data": json.dumps({
+                "status": final_state.status.value,
+                "completedAt": final_state.completed_at.isoformat() if final_state.completed_at else None,
+                "error": final_state.error,
+            }),
+        }
+
+    return EventSourceResponse(event_generator())
+
+
+# =============================================================================
+# TruffleHog Secret Scanner Endpoints
+# =============================================================================
+
+
+@app.post("/trufflehog/{project_id}/start", response_model=TrufflehogState)
+async def start_trufflehog(project_id: str, request: TrufflehogStartRequest):
+    """
+    Start a TruffleHog Secret Scanner for a project.
+
+    Requires recon data to already exist for target context.
+    """
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    # Check that recon data exists
+    from pathlib import Path
+    recon_file = Path("/app/recon/output") / f"recon_{project_id}.json"
+    if not recon_file.exists():
+        raise HTTPException(
+            status_code=400,
+            detail="Recon data required. Run reconnaissance first.",
+        )
+
+    try:
+        state = await container_manager.start_trufflehog(
+            project_id=project_id,
+            user_id=request.user_id,
+            webapp_api_url=request.webapp_api_url,
+            trufflehog_path=TRUFFLEHOG_PATH,
+        )
+        return state
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error starting TruffleHog scan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/trufflehog/{project_id}/status", response_model=TrufflehogState)
+async def get_trufflehog_status(project_id: str):
+    """Get current status of a TruffleHog scan process"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    return await container_manager.get_trufflehog_status(project_id)
+
+
+@app.post("/trufflehog/{project_id}/stop", response_model=TrufflehogState)
+async def stop_trufflehog(project_id: str):
+    """Stop a running TruffleHog scan process"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    state = await container_manager.stop_trufflehog(project_id)
+    return state
+
+
+@app.post("/trufflehog/{project_id}/pause", response_model=TrufflehogState)
+async def pause_trufflehog(project_id: str):
+    """Pause a running TruffleHog scan process"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    state = await container_manager.pause_trufflehog(project_id)
+    return state
+
+
+@app.post("/trufflehog/{project_id}/resume", response_model=TrufflehogState)
+async def resume_trufflehog(project_id: str):
+    """Resume a paused TruffleHog scan process"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    state = await container_manager.resume_trufflehog(project_id)
+    return state
+
+
+@app.get("/trufflehog/{project_id}/logs")
+async def stream_trufflehog_logs(project_id: str):
+    """
+    Stream logs from a TruffleHog scanner container using Server-Sent Events.
+    """
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    state = await container_manager.get_trufflehog_status(project_id)
+    if state.status == TrufflehogStatus.IDLE:
+        raise HTTPException(status_code=404, detail="No TruffleHog scan found for this project")
+
+    async def event_generator():
+        try:
+            async for event in container_manager.stream_trufflehog_logs(project_id):
+                yield {
+                    "event": "log",
+                    "data": json.dumps({
+                        "log": event.log,
+                        "timestamp": event.timestamp.isoformat(),
+                        "phase": event.phase,
+                        "phaseNumber": event.phase_number,
+                        "isPhaseStart": event.is_phase_start,
+                        "level": event.level,
+                    }),
+                }
+        except Exception as e:
+            logger.error(f"Error streaming TruffleHog logs: {e}")
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": str(e)}),
+            }
+
+        final_state = await container_manager.get_trufflehog_status(project_id)
         yield {
             "event": "complete",
             "data": json.dumps({

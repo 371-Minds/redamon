@@ -29,6 +29,7 @@ flowchart TB
         Recon[Recon Pipeline<br/>Docker Container]
         GVM[GVM/OpenVAS Scanner<br/>Network Vuln Assessment]
         GHHunt[GitHub Secret Hunter<br/>Credential Scanning]
+        TruffleHog[TruffleHog<br/>TruffleHog Secret Scanner - Deep Credential Detection]
     end
 
     subgraph Data["💾 Data Layer"]
@@ -62,8 +63,10 @@ flowchart TB
     ReconOrch -->|Docker SDK| Recon
     ReconOrch -->|Docker SDK| GVM
     ReconOrch -->|Docker SDK| GHHunt
+    ReconOrch -->|Docker SDK| TruffleHog
     Recon -->|Fetch Settings| Webapp
     GHHunt -->|GitHub API| GitHubAPI
+    TruffleHog -->|GitHub API| GitHubAPI
     Agent -->|API| OpenAI
     Agent -->|API| Anthropic
     Agent -->|API| LocalLLM
@@ -118,6 +121,12 @@ flowchart TB
         JSON -->|Target Domain| GHHunt[🔑 GitHub Secret Hunter<br/>40+ Patterns + Entropy]
         GHHunt --> GHResults[(GitHub Hunt JSON Output)]
         GHResults --> Graph
+    end
+
+    subgraph Phase2d["Phase 2d: TruffleHog Secret Scan (Optional)"]
+        JSON -->|Target Domain| TruffleHog[🔐 TruffleHog Secret Scanner<br/>Deep Credential Detection]
+        TruffleHog --> THResults[(TruffleHog JSON Output)]
+        THResults --> Graph
     end
 
     subgraph Phase3["Phase 3: AI Analysis"]
@@ -209,6 +218,11 @@ flowchart TB
                 PyGithub[PyGithub Client]
             end
 
+            subgraph TrufflehogContainer["trufflehog-scanner-container"]
+                TrufflehogPy[Python Scripts]
+                TrufflehogBin[TruffleHog Binary]
+            end
+
             subgraph GuineaContainer["guinea-pigs"]
                 Apache1[Apache 2.4.25<br/>CVE-2017-3167]
                 Apache2[Apache 2.4.49<br/>CVE-2021-41773]
@@ -219,6 +233,7 @@ flowchart TB
         ReconOrchContainer -->|Manages| ReconContainer
         ReconOrchContainer -->|Manages| GVMScanContainer
         ReconOrchContainer -->|Manages| GHHuntContainer
+        ReconOrchContainer -->|Manages| TrufflehogContainer
         GVMScanContainer -->|Unix Socket| GVMd
         GVMd --> OSPD
         GVMd --> PgGVM

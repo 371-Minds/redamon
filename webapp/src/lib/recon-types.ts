@@ -93,3 +93,29 @@ export const GITHUB_HUNT_PHASES = [
 ] as const
 
 export type GithubHuntPhase = typeof GITHUB_HUNT_PHASES[number]
+
+// =============================================================================
+// TruffleHog Secret Scan Types
+// =============================================================================
+
+export type TrufflehogStatus = 'idle' | 'starting' | 'running' | 'paused' | 'completed' | 'error' | 'stopping'
+
+export interface TrufflehogState {
+  project_id: string
+  status: TrufflehogStatus
+  current_phase: string | null
+  phase_number: number | null
+  total_phases: number
+  started_at: string | null
+  completed_at: string | null
+  error: string | null
+  container_id?: string | null
+}
+
+export const TRUFFLEHOG_PHASES = [
+  'Loading Settings',
+  'Scanning Repositories',
+  'Complete',
+] as const
+
+export type TrufflehogPhase = typeof TRUFFLEHOG_PHASES[number]

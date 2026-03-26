@@ -39,6 +39,11 @@ export const NODE_COLORS: Record<string, string> = {
   GithubSecret: '#7c6f9b',        // Muted dusty purple - leaked secret (API key, credential)
   GithubSensitiveFile: '#5b8a72',  // Muted sage green - sensitive file (.env, config)
 
+  // TRUFFLEHOG INTELLIGENCE (Teal-gray family - distinct from GitHub Hunt)
+  TrufflehogScan: '#334155',       // Slate-700 - scan container node
+  TrufflehogRepository: '#475569', // Slate-600 - repository node
+  TrufflehogFinding: '#8b5e3c',    // Muted bronze - secret finding (warm, distinct from GithubSecret purple)
+
   // EXTERNAL / OUT-OF-SCOPE (informational, not a target)
   ExternalDomain: '#8b8178',       // Warm stone gray
 

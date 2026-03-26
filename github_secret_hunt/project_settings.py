@@ -52,8 +52,19 @@ def fetch_github_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     # Start with defaults, then override with API values
     settings = DEFAULT_GITHUB_SETTINGS.copy()
 
+    # Fetch GitHub access token from user global settings (not project)
+    user_id = os.environ.get('USER_ID', '')
+    if user_id:
+        try:
+            user_settings_url = f"{webapp_url.rstrip('/')}/api/users/{user_id}/settings?internal=true"
+            user_resp = requests.get(user_settings_url, timeout=30)
+            user_resp.raise_for_status()
+            user_settings = user_resp.json()
+            settings['GITHUB_ACCESS_TOKEN'] = user_settings.get('githubAccessToken', DEFAULT_GITHUB_SETTINGS['GITHUB_ACCESS_TOKEN'])
+        except Exception as e:
+            logger.warning(f"Failed to fetch user settings for GitHub token: {e}")
+
     # Map camelCase API fields to SCREAMING_SNAKE_CASE
-    settings['GITHUB_ACCESS_TOKEN'] = project.get('githubAccessToken', DEFAULT_GITHUB_SETTINGS['GITHUB_ACCESS_TOKEN'])
     settings['GITHUB_TARGET_ORG'] = project.get('githubTargetOrg', DEFAULT_GITHUB_SETTINGS['GITHUB_TARGET_ORG'])
     settings['GITHUB_TARGET_REPOS'] = project.get('githubTargetRepos', DEFAULT_GITHUB_SETTINGS['GITHUB_TARGET_REPOS'])
     settings['GITHUB_SCAN_MEMBERS'] = project.get('githubScanMembers', DEFAULT_GITHUB_SETTINGS['GITHUB_SCAN_MEMBERS'])

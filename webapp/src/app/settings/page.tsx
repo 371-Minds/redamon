@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal/Modal'
 import styles from '@/components/settings/Settings.module.css'
 
 interface UserSettings {
+  githubAccessToken: string
   tavilyApiKey: string
   shodanApiKey: string
   serpApiKey: string
@@ -22,6 +23,7 @@ interface UserSettings {
 }
 
 const EMPTY_SETTINGS: UserSettings = {
+  githubAccessToken: '',
   tavilyApiKey: '',
   shodanApiKey: '',
   serpApiKey: '',
@@ -240,6 +242,7 @@ export default function SettingsPage() {
       if (resp.ok) {
         const data = await resp.json()
         setSettings({
+          githubAccessToken: data.githubAccessToken || '',
           tavilyApiKey: data.tavilyApiKey || '',
           shodanApiKey: data.shodanApiKey || '',
           serpApiKey: data.serpApiKey || '',
@@ -310,6 +313,7 @@ export default function SettingsPage() {
       if (resp.ok) {
         const data = await resp.json()
         setSettings({
+          githubAccessToken: data.githubAccessToken || '',
           tavilyApiKey: data.tavilyApiKey || '',
           shodanApiKey: data.shodanApiKey || '',
           serpApiKey: data.serpApiKey || '',
@@ -490,6 +494,16 @@ export default function SettingsPage() {
           <div className={styles.emptyState}><Loader2 size={16} className={styles.spin} /> Loading...</div>
         ) : (
           <div className={styles.settingsGrid}>
+            <SecretField
+              label="GitHub Access Token"
+              hint="Required for GitHub Secret Hunt and TruffleHog scanners. Use repo scope for private repos, or a fine-grained token for specific repos only"
+              signupUrl="https://github.com/settings/tokens"
+              badges={['GitHub Secret Hunt', 'TruffleHog']}
+              value={settings.githubAccessToken}
+              visible={!!visibleFields.githubAccessToken}
+              onToggle={() => toggleFieldVisibility('githubAccessToken')}
+              onChange={v => updateSetting('githubAccessToken', v)}
+            />
             <SecretField
               label="Tavily API Key"
               hint="Enables web_search tool for CVE research and exploit lookups"
@@ -885,6 +899,30 @@ const BADGE_STYLES: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     background: 'var(--status-success-bg)',
     color: 'var(--status-success-text)',
+    marginLeft: '6px',
+    verticalAlign: 'middle',
+    letterSpacing: '0.02em',
+  },
+  'GitHub Secret Hunt': {
+    display: 'inline-block',
+    fontSize: '10px',
+    fontWeight: 600,
+    padding: '1px 6px',
+    borderRadius: '4px',
+    background: 'rgba(139, 92, 246, 0.12)',
+    color: '#8b5cf6',
+    marginLeft: '6px',
+    verticalAlign: 'middle',
+    letterSpacing: '0.02em',
+  },
+  'TruffleHog': {
+    display: 'inline-block',
+    fontSize: '10px',
+    fontWeight: 600,
+    padding: '1px 6px',
+    borderRadius: '4px',
+    background: 'rgba(139, 92, 246, 0.12)',
+    color: '#8b5cf6',
     marginLeft: '6px',
     verticalAlign: 'middle',
     letterSpacing: '0.02em',

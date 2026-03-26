@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TruffleHog Secret Scanner** — deep credential scanning with 700+ detectors and automatic credential verification via the TruffleHog Docker container (`trufflesecurity/trufflehog`). Scans GitHub repositories for leaked secrets (API keys, passwords, tokens, certificates) and verifies whether discovered credentials are still active. Full multi-layer integration:
+  - **Backend**: `trufflehog_scan/` service with SSE streaming progress, Docker-in-Docker execution, and JSON output parsing
+  - **Neo4j graph**: new node types `TrufflehogScan`, `TrufflehogRepository`, and `TrufflehogFinding` with relationships `(:TrufflehogScan)-[:SCANNED_REPO]->(:TrufflehogRepository)-[:HAS_FINDING]->(:TrufflehogFinding)`
+  - **Frontend**: real-time SSE progress via `useTrufflehogSSE` hook, scan status polling via `useTrufflehogStatus` hook, results displayed in the graph dashboard
+  - **API**: `/api/trufflehog` routes for triggering scans, streaming progress, and retrieving results
+
+- **"Other Scans" Modal** — new modal in the graph toolbar (`OtherScansModal`) that consolidates GitHub Hunt and TruffleHog scanning into a single launch point accessible from the graph page toolbar.
+
+- **GitHub Access Token moved to Global Settings** — the GitHub access token is now configured once in Global Settings and shared by both GitHub Secret Hunt and TruffleHog, eliminating duplicate token configuration per scan type.
+
 - **SQL Injection Agent Skill** (`sql_injection`) — new built-in agent skill for SQL injection testing, replacing the previous `sql_injection-unclassified` fallback with a structured 7-step workflow:
   - **Step 1**: Target analysis via `execute_curl` (identify parameters, technology stack, DBMS hints)
   - **Step 2**: SQLMap detection scan via `kali_shell` with configurable level (1-5) and risk (1-3)

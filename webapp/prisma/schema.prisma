@@ -61,6 +61,7 @@ model UserSettings {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Tool API Keys
+  githubAccessToken String @default("") @map("github_access_token")
   tavilyApiKey    String   @default("") @map("tavily_api_key")
   shodanApiKey    String   @default("") @map("shodan_api_key")
   serpApiKey       String   @default("") @map("serp_api_key")
@@ -127,7 +128,6 @@ model Project {
   dnsMaxRetries               Int      @default(3) @map("dns_max_retries")
 
   // ========== GITHUB SECRET HUNT ==========
-  githubAccessToken           String   @default("") @map("github_access_token")
   githubTargetOrg             String   @default("") @map("github_target_org")
   githubTargetRepos           String   @default("") @map("github_target_repos")
   githubScanMembers           Boolean  @default(false) @map("github_scan_members")
@@ -135,6 +135,16 @@ model Project {
   githubScanCommits           Boolean  @default(true) @map("github_scan_commits")
   githubMaxCommits            Int      @default(100) @map("github_max_commits")
   githubOutputJson            Boolean  @default(true) @map("github_output_json")
+
+  // ========== TRUFFLEHOG SECRET SCANNER ==========
+  trufflehogEnabled            Boolean  @default(false) @map("trufflehog_enabled")
+  trufflehogGithubOrg          String   @default("") @map("trufflehog_github_org")
+  trufflehogGithubRepos        String   @default("") @map("trufflehog_github_repos")
+  trufflehogOnlyVerified       Boolean  @default(false) @map("trufflehog_only_verified")
+  trufflehogNoVerification     Boolean  @default(false) @map("trufflehog_no_verification")
+  trufflehogConcurrency        Int      @default(8) @map("trufflehog_concurrency")
+  trufflehogIncludeDetectors   String   @default("") @map("trufflehog_include_detectors")
+  trufflehogExcludeDetectors   String   @default("") @map("trufflehog_exclude_detectors")
 
   // ========== NAABU PORT SCANNER ==========
   naabuDockerImage            String   @default("projectdiscovery/naabu:latest") @map("naabu_docker_image")

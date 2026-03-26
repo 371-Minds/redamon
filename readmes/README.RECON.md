@@ -936,6 +936,58 @@ flowchart LR
 
 ---
 
+### Module 7: `trufflehog`
+
+```mermaid
+flowchart LR
+    subgraph Input
+        Org2[GitHub Org/User]
+    end
+
+    subgraph Scanner["TruffleHog Secret Scanner"]
+        Repos2[List Repositories]
+        GitHistory[Deep Git History Scan]
+        Verify[Credential Verification]
+    end
+
+    subgraph Detectors["Detector Engine"]
+        AWS2[AWS Keys]
+        GCP2[GCP Credentials]
+        Stripe2[Stripe Keys]
+        DB2[Database Strings]
+        Custom[700+ Detectors]
+    end
+
+    subgraph Output2
+        Findings[Verified + Unverified Findings]
+    end
+
+    Org2 --> Repos2
+    Repos2 --> GitHistory
+    GitHistory --> Verify
+
+    Verify --> Detectors
+
+    AWS2 --> Findings
+    GCP2 --> Findings
+    Stripe2 --> Findings
+    DB2 --> Findings
+    Custom --> Findings
+```
+
+TruffleHog provides deep credential detection by scanning the full git history of all repositories belonging to the target GitHub organization or user. Unlike the built-in GitHub Secret Hunter (regex + entropy), TruffleHog uses a detector-based engine with 700+ credential detectors and can **verify** whether discovered credentials are still active.
+
+| Feature | GitHub Secret Hunter | TruffleHog |
+|---------|---------------------|------------|
+| Detection method | 40+ regex patterns + Shannon entropy | 700+ detector-based engine |
+| Verification | No | Yes (active credential checking) |
+| Git history depth | Commit + code search API | Full local clone history |
+| Output | Secrets + Sensitive files | Verified + Unverified findings |
+
+The `trufflehog_scan/` directory contains the scanner wrapper and its docker-compose service definition.
+
+---
+
 ## 🆚 Complete Tool Comparison
 
 ### Overview Matrix
@@ -1102,6 +1154,7 @@ recon/
 ├── vuln_scan.py            # Vulnerability scanning
 ├── add_mitre.py            # MITRE enrichment
 ├── github_secret_hunt.py   # GitHub secrets
+├── trufflehog_scan/        # TruffleHog secret scanner (separate service)
 ├── output/                 # 📄 Scan results (JSON)
 ├── data/                   # 📦 Cached databases
 │   ├── mitre_db/           # CVE2CAPEC database

@@ -154,7 +154,8 @@ Browser ──→ Webapp (Next.js :3000) ──WebSocket──→ Agent (FastAPI
         Ephemeral Containers                    └── Nmap (:8004)
         ├── Recon Pipeline
         ├── GVM/OpenVAS Scanner
-        └── GitHub Secret Hunter
+        ├── GitHub Secret Hunter
+        └── TruffleHog Secret Scanner
 
                     ┌─────────────┐     ┌──────────────┐
                     │ PostgreSQL  │     │    Neo4j      │
@@ -251,7 +252,7 @@ redamon/
 │       └── tools/                  #     11 code-aware tools (read, edit, grep, glob, bash, symbols, etc.)
 │
 ├── recon_orchestrator/             # Container lifecycle manager (Python 3.11 / FastAPI)
-│   ├── api.py                      #   /recon, /gvm, /github-hunt endpoints with SSE streaming
+│   ├── api.py                      #   /recon, /gvm, /github-hunt, /trufflehog endpoints with SSE streaming
 │   ├── container_manager.py        #   Docker SDK: spawn containers, health checks, log streaming, cleanup
 │   └── models.py                   #   Pydantic request/response models (ReconState, GvmState, etc.)
 │
@@ -298,6 +299,7 @@ redamon/
 │   │   │   │   ├── recon/          #       Recon status and control
 │   │   │   │   ├── gvm/            #       GVM scanner status and control
 │   │   │   │   ├── github-hunt/    #       GitHub secret hunt control
+│   │   │   │   ├── trufflehog/    #       TruffleHog secret scanner control
 │   │   │   │   ├── guardrail/      #       Scope guardrail validation
 │   │   │   │   ├── roe/            #       Rules of Engagement management
 │   │   │   │   ├── ws/             #       WebSocket proxy endpoints
@@ -361,6 +363,7 @@ redamon/
 ├── graph_db/                       # Neo4j graph utilities and schema helpers
 ├── gvm_scan/                       # OpenVAS/GVM vulnerability scanner Python wrapper
 ├── github_secret_hunt/             # GitHub credential scanner (40+ regex patterns + Shannon entropy)
+├── trufflehog_scan/                # TruffleHog secret scanner (detector-based credential verification + deep git history)
 ├── guinea_pigs/                    # Intentionally vulnerable test applications
 │   ├── apache_2.4.49/              #   Apache CVE-2021-41773 (path traversal + RCE)
 │   ├── apache_2.4.25/              #   Apache CVE-2017-3167 (auth bypass)
@@ -477,7 +480,7 @@ The recon pipeline runs a 6-phase sequential scan inside an ephemeral Docker con
 5. Results are written to JSON files (`recon/output/`) and to the Neo4j graph incrementally per phase.
 6. The container is cleaned up after completion.
 
-The recon orchestrator also manages **GVM scanner** (`vuln-scanner` service) and **GitHub Secret Hunter** (`github-secret-hunter` service) containers using the same lifecycle pattern.
+The recon orchestrator also manages **GVM scanner** (`vuln-scanner` service), **GitHub Secret Hunter** (`github-secret-hunter` service), and **TruffleHog Secret Scanner** (`trufflehog-scanner` service) containers using the same lifecycle pattern.
 
 > For per-phase details, see [README.RECON.md](README.RECON.md) and the individual phase READMEs ([PORT_SCAN](README.PORT_SCAN.md), [HTTP_PROBE](README.HTTP_PROBE.md), [RESOURCE_ENUM](README.RESOURCE_ENUM.md), [VULN_SCAN](README.VULN_SCAN.md), [MITRE](README.MITRE.md)).
 
@@ -504,6 +507,7 @@ All REST endpoints live in `webapp/src/app/api/`. There are 17 route groups:
 | `recon/` | Recon pipeline status and control |
 | `gvm/` | GVM scanner status and control |
 | `github-hunt/` | GitHub secret hunt control |
+| `trufflehog/` | TruffleHog secret scanner control |
 | `guardrail/` | Scope guardrail validation |
 | `roe/` | Rules of Engagement management |
 | `ws/` | WebSocket proxy to agent container |
@@ -529,7 +533,7 @@ All REST endpoints live in `webapp/src/app/api/`. There are 17 route groups:
 **Real-time communication:**
 
 - **WebSocket** — Agent chat connections are proxied to the agent container (internal `:8080`, host `:8090`) via the `/api/ws` route.
-- **SSE** — Recon, GVM, and GitHub hunt progress is streamed from the recon orchestrator (`:8010`).
+- **SSE** — Recon, GVM, GitHub hunt, and TruffleHog progress is streamed from the recon orchestrator (`:8010`).
 
 **Internal service URLs** (for inter-container communication within Docker network):
 

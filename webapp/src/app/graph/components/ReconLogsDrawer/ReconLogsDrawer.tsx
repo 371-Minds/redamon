@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { X, Terminal, CheckCircle, AlertCircle, Pause, Play, Trash2, Square, Loader2 } from 'lucide-react'
+import { X, Terminal, CheckCircle, AlertCircle, Pause, Play, Trash2, Square, Loader2, Download } from 'lucide-react'
 import { RECON_PHASES } from '@/lib/recon-types'
 import type { ReconLogEvent, ReconStatus } from '@/lib/recon-types'
 import styles from './ReconLogsDrawer.module.css'
@@ -97,6 +97,38 @@ export function ReconLogsDrawer({
     }
   }
 
+  const handleDownloadLogs = () => {
+    if (logs.length === 0) return
+
+    const lines = logs.map(log => {
+      const ts = new Date(log.timestamp).toISOString()
+      const level = log.level.toUpperCase().padEnd(7)
+      const phase = log.phase ? ` [${log.phase}]` : ''
+      return `${ts}  ${level}${phase}  ${log.log}`
+    })
+
+    // Add header
+    const header = [
+      `# ${title}`,
+      `# Status: ${status}`,
+      `# Phase: ${currentPhase || 'N/A'} (${currentPhaseNumber || 0}/${totalPhases})`,
+      `# Exported: ${new Date().toISOString()}`,
+      `# Total lines: ${logs.length}`,
+      '',
+    ]
+
+    const content = [...header, ...lines].join('\n')
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    // Sanitize title for filename
+    const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/_+$/, '')
+    a.download = `${safeName}_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const getLogClassName = (level: string) => {
     switch (level) {
       case 'error':
@@ -154,6 +186,14 @@ export function ReconLogsDrawer({
               <Square size={14} />
             </button>
           )}
+          <button
+            className={styles.iconButton}
+            onClick={handleDownloadLogs}
+            disabled={logs.length === 0}
+            title="Download logs"
+          >
+            <Download size={14} />
+          </button>
           <button
             className={styles.iconButton}
             onClick={onClearLogs}

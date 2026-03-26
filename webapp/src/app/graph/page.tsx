@@ -17,10 +17,11 @@ import { RoeViewer } from './components/RoeViewer'
 import { KaliTerminal } from './components/KaliTerminal'
 import { useGraphData, useDimensions, useNodeSelection, useTableData } from './hooks'
 import { exportToExcel } from './utils/exportExcel'
-import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE, useActiveSessions } from '@/hooks'
+import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE, useTrufflehogStatus, useTrufflehogSSE, useActiveSessions } from '@/hooks'
 import { useProjectById } from '@/hooks/useProjects'
 import { useProject } from '@/providers/ProjectProvider'
-import { GVM_PHASES, GITHUB_HUNT_PHASES } from '@/lib/recon-types'
+import { GVM_PHASES, GITHUB_HUNT_PHASES, TRUFFLEHOG_PHASES } from '@/lib/recon-types'
+import { OtherScansModal } from './components/OtherScansModal/OtherScansModal'
 import styles from './page.module.css'
 
 export default function GraphPage() {
@@ -35,10 +36,13 @@ export default function GraphPage() {
   const [showLabels, setShowLabels] = useState(true)
   const [isAIOpen, setIsAIOpen] = useState(false)
   const [isReconModalOpen, setIsReconModalOpen] = useState(false)
-  const [activeLogsDrawer, setActiveLogsDrawer] = useState<'recon' | 'gvm' | 'githubHunt' | null>(null)
+  const [activeLogsDrawer, setActiveLogsDrawer] = useState<'recon' | 'gvm' | 'githubHunt' | 'trufflehog' | null>(null)
   const [hasReconData, setHasReconData] = useState(false)
   const [hasGvmData, setHasGvmData] = useState(false)
   const [hasGithubHuntData, setHasGithubHuntData] = useState(false)
+  const [hasTrufflehogData, setHasTrufflehogData] = useState(false)
+  const [isOtherScansModalOpen, setIsOtherScansModalOpen] = useState(false)
+  const [hasGithubToken, setHasGithubToken] = useState(false)
   const [graphStats, setGraphStats] = useState<{ totalNodes: number; nodesByType: Record<string, number> } | null>(null)
   const [gvmStats, setGvmStats] = useState<{ totalGvmNodes: number; nodesByType: Record<string, number> } | null>(null)
   const [isGvmModalOpen, setIsGvmModalOpen] = useState(false)
@@ -116,6 +120,21 @@ export default function GraphPage() {
     const interval = setInterval(fetchTunnels, 10000)
     return () => clearInterval(interval)
   }, [])
+
+  // Check if user has a GitHub access token configured in global settings
+  useEffect(() => {
+    if (!userId) return
+    const checkToken = async () => {
+      try {
+        const res = await fetch(`/api/users/${userId}/settings`)
+        if (res.ok) {
+          const data = await res.json()
+          setHasGithubToken((data.githubAccessToken || '').length > 0)
+        }
+      } catch { /* ignore */ }
+    }
+    checkToken()
+  }, [userId])
 
   // Recon status hook - must be before useGraphData to provide isReconRunning
   const {
@@ -204,6 +223,31 @@ export default function GraphPage() {
   } = useGithubHuntSSE({
     projectId,
     enabled: githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'paused' || githubHuntState?.status === 'stopping',
+  })
+
+  // TruffleHog status hook
+  const {
+    state: trufflehogState,
+    startTrufflehog,
+    stopTrufflehog,
+    pauseTrufflehog,
+    resumeTrufflehog,
+  } = useTrufflehogStatus({
+    projectId,
+    enabled: !!projectId,
+  })
+
+  const isTrufflehogRunning = trufflehogState?.status === 'running' || trufflehogState?.status === 'starting'
+
+  // TruffleHog logs SSE hook
+  const {
+    logs: trufflehogLogs,
+    currentPhase: trufflehogCurrentPhase,
+    currentPhaseNumber: trufflehogCurrentPhaseNumber,
+    clearLogs: clearTrufflehogLogs,
+  } = useTrufflehogSSE({
+    projectId,
+    enabled: trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused' || trufflehogState?.status === 'stopping',
   })
 
   // Active sessions hook — polls kali-sandbox session list
@@ -478,12 +522,24 @@ export default function GraphPage() {
     }
   }, [projectId])
 
-  // Check for recon/GVM/GitHub Hunt data on mount and when project changes
+  // Check if TruffleHog data exists
+  const checkTrufflehogData = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const response = await fetch(`/api/trufflehog/${projectId}/download`, { method: 'HEAD' })
+      setHasTrufflehogData(response.ok)
+    } catch {
+      setHasTrufflehogData(false)
+    }
+  }, [projectId])
+
+  // Check for recon/GVM/GitHub Hunt/TruffleHog data on mount and when project changes
   useEffect(() => {
     checkReconData()
     checkGvmData()
     checkGithubHuntData()
-  }, [checkReconData, checkGvmData, checkGithubHuntData])
+    checkTrufflehogData()
+  }, [checkReconData, checkGvmData, checkGithubHuntData, checkTrufflehogData])
 
   // Refresh graph data when recon completes
   useEffect(() => {
@@ -508,6 +564,14 @@ export default function GraphPage() {
       checkGithubHuntData()
     }
   }, [githubHuntState?.status, refetchGraph, checkGithubHuntData])
+
+  // Refresh when TruffleHog completes
+  useEffect(() => {
+    if (trufflehogState?.status === 'completed' || trufflehogState?.status === 'error') {
+      refetchGraph()
+      checkTrufflehogData()
+    }
+  }, [trufflehogState?.status, refetchGraph, checkTrufflehogData])
 
   const handleToggleAI = useCallback(() => {
     setIsAIOpen((prev) => !prev)
@@ -639,6 +703,23 @@ export default function GraphPage() {
     setActiveLogsDrawer(prev => prev === 'githubHunt' ? null : 'githubHunt')
   }, [])
 
+  const handleStartTrufflehog = useCallback(async () => {
+    clearTrufflehogLogs()
+    const result = await startTrufflehog()
+    if (result) {
+      setActiveLogsDrawer('trufflehog')
+    }
+  }, [startTrufflehog, clearTrufflehogLogs])
+
+  const handleDownloadTrufflehogJSON = useCallback(async () => {
+    if (!projectId) return
+    window.open(`/api/trufflehog/${projectId}/download`, '_blank')
+  }, [projectId])
+
+  const handleToggleTrufflehogLogs = useCallback(() => {
+    setActiveLogsDrawer(prev => prev === 'trufflehog' ? null : 'trufflehog')
+  }, [])
+
   // Pause/Resume/Stop handlers
   const handlePauseRecon = useCallback(async () => { await pauseRecon() }, [pauseRecon])
   const handleResumeRecon = useCallback(async () => { await resumeRecon() }, [resumeRecon])
@@ -649,9 +730,12 @@ export default function GraphPage() {
   const handlePauseGithubHunt = useCallback(async () => { await pauseGithubHunt() }, [pauseGithubHunt])
   const handleResumeGithubHunt = useCallback(async () => { await resumeGithubHunt() }, [resumeGithubHunt])
   const handleStopGithubHunt = useCallback(async () => { await stopGithubHunt() }, [stopGithubHunt])
+  const handlePauseTrufflehog = useCallback(async () => { await pauseTrufflehog() }, [pauseTrufflehog])
+  const handleResumeTrufflehog = useCallback(async () => { await resumeTrufflehog() }, [resumeTrufflehog])
+  const handleStopTrufflehog = useCallback(async () => { await stopTrufflehog() }, [stopTrufflehog])
 
   // Emergency Pause All — freezes every running pipeline and agent at once
-  const isAnyPipelineRunning = isReconRunning || isGvmRunning || isGithubHuntRunning || isAgentRunning
+  const isAnyPipelineRunning = isReconRunning || isGvmRunning || isGithubHuntRunning || isTrufflehogRunning || isAgentRunning
   const [isEmergencyPausing, setIsEmergencyPausing] = useState(false)
 
   // Auto-clear the pausing state once all pipelines have actually stopped
@@ -673,10 +757,13 @@ export default function GraphPage() {
     if (githubHuntState?.status === 'running' || githubHuntState?.status === 'starting') {
       tasks.push(pauseGithubHunt())
     }
+    if (trufflehogState?.status === 'running' || trufflehogState?.status === 'starting') {
+      tasks.push(pauseTrufflehog())
+    }
     // Stop all running AI agent conversations
     tasks.push(fetch('/api/agent/emergency-stop-all', { method: 'POST' }))
     await Promise.allSettled(tasks)
-  }, [reconState?.status, gvmState?.status, githubHuntState?.status, pauseRecon, pauseGvm, pauseGithubHunt])
+  }, [reconState?.status, gvmState?.status, githubHuntState?.status, trufflehogState?.status, pauseRecon, pauseGvm, pauseGithubHunt, pauseTrufflehog])
 
   // Show message if no project is selected
   if (!projectLoading && !projectId) {
@@ -736,6 +823,18 @@ export default function GraphPage() {
         githubHuntStatus={githubHuntState?.status || 'idle'}
         hasGithubHuntData={hasGithubHuntData}
         isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
+        // TruffleHog props
+        onStartTrufflehog={handleStartTrufflehog}
+        onPauseTrufflehog={handlePauseTrufflehog}
+        onResumeTrufflehog={handleResumeTrufflehog}
+        onStopTrufflehog={handleStopTrufflehog}
+        onDownloadTrufflehogJSON={handleDownloadTrufflehogJSON}
+        onToggleTrufflehogLogs={handleToggleTrufflehogLogs}
+        trufflehogStatus={trufflehogState?.status || 'idle'}
+        hasTrufflehogData={hasTrufflehogData}
+        isTrufflehogLogsOpen={activeLogsDrawer === 'trufflehog'}
+        // Other Scans modal
+        onToggleOtherScansModal={() => setIsOtherScansModalOpen(prev => !prev)}
         // Stealth mode
         stealthMode={currentProject?.stealthMode}
         // RoE
@@ -747,6 +846,33 @@ export default function GraphPage() {
         // Agent status
         agentActiveCount={agentSummary.activeCount}
         agentConversations={agentSummary.conversations}
+      />
+
+      <OtherScansModal
+        isOpen={isOtherScansModalOpen}
+        onClose={() => setIsOtherScansModalOpen(false)}
+        hasReconData={hasReconData}
+        hasGithubToken={hasGithubToken}
+        // GitHub Hunt
+        onStartGithubHunt={handleStartGithubHunt}
+        onPauseGithubHunt={handlePauseGithubHunt}
+        onResumeGithubHunt={handleResumeGithubHunt}
+        onStopGithubHunt={handleStopGithubHunt}
+        onDownloadGithubHuntJSON={handleDownloadGithubHuntJSON}
+        onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
+        githubHuntStatus={githubHuntState?.status || 'idle'}
+        hasGithubHuntData={hasGithubHuntData}
+        isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
+        // TruffleHog
+        onStartTrufflehog={handleStartTrufflehog}
+        onPauseTrufflehog={handlePauseTrufflehog}
+        onResumeTrufflehog={handleResumeTrufflehog}
+        onStopTrufflehog={handleStopTrufflehog}
+        onDownloadTrufflehogJSON={handleDownloadTrufflehogJSON}
+        onToggleTrufflehogLogs={handleToggleTrufflehogLogs}
+        trufflehogStatus={trufflehogState?.status || 'idle'}
+        hasTrufflehogData={hasTrufflehogData}
+        isTrufflehogLogsOpen={activeLogsDrawer === 'trufflehog'}
       />
 
       <ViewTabs
@@ -862,6 +988,22 @@ export default function GraphPage() {
         onStop={handleStopGithubHunt}
         title="GitHub Secret Hunt Logs"
         phases={GITHUB_HUNT_PHASES}
+        totalPhases={3}
+      />
+
+      <ReconLogsDrawer
+        isOpen={activeLogsDrawer === 'trufflehog'}
+        onClose={() => setActiveLogsDrawer(null)}
+        logs={trufflehogLogs}
+        currentPhase={trufflehogCurrentPhase}
+        currentPhaseNumber={trufflehogCurrentPhaseNumber}
+        status={trufflehogState?.status || 'idle'}
+        onClearLogs={clearTrufflehogLogs}
+        onPause={handlePauseTrufflehog}
+        onResume={handleResumeTrufflehog}
+        onStop={handleStopTrufflehog}
+        title="TruffleHog Secret Scanner Logs"
+        phases={TRUFFLEHOG_PHASES}
         totalPhases={3}
       />
 

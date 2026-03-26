@@ -169,6 +169,67 @@ GET /recon/running
 
 Lists all currently running recon processes.
 
+## TruffleHog Endpoints
+
+The orchestrator manages TruffleHog secret scanner containers with the same lifecycle pattern as recon.
+
+### Start TruffleHog Scan
+
+```
+POST /trufflehog/{projectId}/start
+Content-Type: application/json
+
+{
+  "user_id": "user-123",
+  "webapp_api_url": "http://localhost:3000"
+}
+```
+
+Starts a TruffleHog secret scanner container for the specified project. Scans GitHub repositories for leaked credentials using detector-based verification and deep git history analysis.
+
+### Get TruffleHog Status
+
+```
+GET /trufflehog/{projectId}/status
+```
+
+Returns current TruffleHog scan status for a project. Status values follow the same pattern as recon (`idle`, `starting`, `running`, `completed`, `error`, `stopping`, `paused`).
+
+### Stop TruffleHog Scan
+
+```
+POST /trufflehog/{projectId}/stop
+```
+
+Gracefully stops a running TruffleHog scanner container.
+
+### Pause TruffleHog Scan
+
+```
+POST /trufflehog/{projectId}/pause
+```
+
+Pauses a running TruffleHog scanner container.
+
+### Resume TruffleHog Scan
+
+```
+POST /trufflehog/{projectId}/resume
+```
+
+Resumes a paused TruffleHog scanner container.
+
+### Stream TruffleHog Logs (SSE)
+
+```
+GET /trufflehog/{projectId}/logs
+Accept: text/event-stream
+```
+
+Server-Sent Events stream of TruffleHog log lines. Event format follows the same pattern as recon log streaming.
+
+---
+
 ## Phase Detection
 
 The orchestrator automatically detects recon phases from log output:

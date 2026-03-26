@@ -16,6 +16,9 @@ RUN echo "deb http://kali.download/kali kali-rolling main contrib non-free non-f
     && echo "deb https://kali.download/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list \
     && apt-get update
 
+# Allow HTTPS→HTTP redirects (Kali CDN sometimes redirects to http mirrors)
+RUN echo 'Acquire::https::Redirect::Allowed "true";' > /etc/apt/apt.conf.d/99allow-redirect
+
 # Update and install penetration testing tools
 RUN apt-get install -y --fix-missing \
     # Core tools

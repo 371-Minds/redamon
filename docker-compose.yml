@@ -235,6 +235,13 @@ services:
     image: redamon-github-hunter:latest
     profiles: ["tools"]
 
+  trufflehog-scanner:
+    build:
+      context: .
+      dockerfile: trufflehog_scan/Dockerfile
+    image: redamon-trufflehog:latest
+    profiles: ["tools"]
+
   # ===========================================================================
   # Backend Services
   # ===========================================================================
@@ -253,12 +260,15 @@ services:
       - ./gvm_scan/output:/app/gvm_scan/output:rw
       - ./github_secret_hunt:/app/github_secret_hunt:ro
       - ./github_secret_hunt/output:/app/github_secret_hunt/output:rw
+      - ./trufflehog_scan:/app/trufflehog_scan:ro
+      - ./trufflehog_scan/output:/app/trufflehog_scan/output:rw
       - ./mcp/nuclei-templates:/app/nuclei-templates:ro
     environment:
       # Host paths are auto-detected from container mounts (no hardcoded paths needed)
       RECON_IMAGE: redamon-recon:latest
       GVM_IMAGE: redamon-vuln-scanner:latest
       GITHUB_HUNT_IMAGE: redamon-github-hunter:latest
+      TRUFFLEHOG_IMAGE: redamon-trufflehog:latest
       # Forwarded to spawned recon containers (host network, so localhost)
       NEO4J_URI: bolt://localhost:7687
       NEO4J_USER: neo4j
@@ -404,6 +414,7 @@ services:
       RECON_OUTPUT_PATH: /data/recon-output
       GVM_OUTPUT_PATH: /data/gvm-output
       GITHUB_HUNT_OUTPUT_PATH: /data/github-hunt-output
+      TRUFFLEHOG_OUTPUT_PATH: /data/trufflehog-output
       REPORT_OUTPUT_PATH: /data/reports
       WORDLIST_UPLOAD_PATH: /data/recon-wordlists
       NUCLEI_TEMPLATES_PATH: /data/nuclei-templates
@@ -413,6 +424,7 @@ services:
       - ./mcp/nuclei-templates:/data/nuclei-templates:rw
       - ./gvm_scan/output:/data/gvm-output:ro
       - ./github_secret_hunt/output:/data/github-hunt-output:ro
+      - ./trufflehog_scan/output:/data/trufflehog-output:ro
       - report_data:/data/reports
     depends_on:
       postgres:

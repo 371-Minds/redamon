@@ -233,7 +233,7 @@ The platform is built around six pillars:
 
 | Pillar | What it does |
 |--------|-------------|
-| **Reconnaissance Pipeline** | A **parallelized fan-out / fan-in** scanning pipeline that maps your target's entire attack surface — starting from a domain **or IP addresses / CIDR ranges** — from subdomain discovery (5 concurrent tools) through port scanning, HTTP probing, resource enumeration, and vulnerability detection. Independent modules run concurrently via `ThreadPoolExecutor`, graph DB updates happen in a background thread, and results are stored as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
+| **Reconnaissance Pipeline** | A **parallelized fan-out / fan-in** scanning pipeline that maps your target's entire attack surface — starting from a domain **or IP addresses / CIDR ranges** — from subdomain discovery (5 concurrent tools) through port scanning, HTTP probing, resource enumeration, and vulnerability detection. Independent modules run concurrently via `ThreadPoolExecutor`, graph DB updates happen in a background thread, and results are stored as a rich, queryable graph. Complemented by standalone GVM network scanning, GitHub secret hunting, and TruffleHog deep secret scanning modules. |
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding — and the primary data source the AI agent queries before every decision. |
 | **EvoGraph** | A persistent, evolutionary attack chain graph in Neo4j that tracks every step, finding, decision, and failure across the attack lifecycle — bridging the recon graph and enabling cross-session intelligence accumulation. |
@@ -349,6 +349,10 @@ Scans GitHub repositories, gists, and commit history for exposed secrets using *
 
 > **[Wiki: GitHub Secret Hunting](https://github.com/samugit83/redamon/wiki/GitHub-Secret-Hunting)**
 
+### TruffleHog Deep Secret Scanner
+
+Scans GitHub repositories for leaked credentials using **700+ detectors** with automatic verification of whether discovered secrets are still active. Powered by the TruffleHog engine (`trufflesecurity/trufflehog`), it detects API keys, passwords, tokens, certificates, and more across full commit history. Results are stored as `TrufflehogScan → TrufflehogRepository → TrufflehogFinding` nodes in the Neo4j graph. Both GitHub Hunt and TruffleHog are accessible from the **"Other Scans" modal** in the graph toolbar.
+
 ### Project Settings
 
 **190+ configurable parameters** across 14 tabs controlling every tool's behavior — from scan modules to agent approval gates. Managed through the webapp UI.
@@ -430,6 +434,7 @@ flowchart TB
         Recon[Recon Pipeline<br/>Docker Container]
         GVM[GVM/OpenVAS Scanner<br/>Network Vuln Assessment]
         GHHunt[GitHub Secret Hunter<br/>Credential Scanning]
+        TruffleHog[TruffleHog Scanner<br/>700+ Secret Detectors]
     end
 
     subgraph Data["💾 Data Layer"]
@@ -463,8 +468,11 @@ flowchart TB
     ReconOrch -->|Docker SDK| Recon
     ReconOrch -->|Docker SDK| GVM
     ReconOrch -->|Docker SDK| GHHunt
+    ReconOrch -->|Docker SDK| TruffleHog
     Recon -->|Fetch Settings| Webapp
     GHHunt -->|GitHub API| GitHubAPI
+    TruffleHog -->|GitHub API| GitHubAPI
+    TruffleHog --> Neo4j
     Agent -->|API| OpenAI
     Agent -->|API| Anthropic
     Agent -->|API| LocalLLM
@@ -508,6 +516,7 @@ flowchart TB
 | **CypherFix Agents** | Automated triage + code fix + GitHub PR | [README.CYPHERFIX_AGENTS.md](readmes/README.CYPHERFIX_AGENTS.md) |
 | **Web Application** | Next.js dashboard for visualization and AI interaction | [README.WEBAPP.md](readmes/README.WEBAPP.md) |
 | **GVM Scanner** | Greenbone/OpenVAS network vulnerability scanner (170K+ NVTs) | [README.GVM.md](readmes/README.GVM.md) |
+| **TruffleHog Scanner** | Deep secret scanning with 700+ detectors and credential verification | — |
 | **PostgreSQL Database** | Project settings, user accounts, configuration data | [README.POSTGRES.md](readmes/README.POSTGRES.md) |
 | **Test Environments** | Intentionally vulnerable Docker containers for safe testing | [README.GPIGS.md](readmes/README.GPIGS.md) |
 
@@ -558,7 +567,12 @@ docker compose build --no-cache
 docker compose --profile tools build --no-cache
 ```
 
-**6. Start the new version:**
+**6. Remove dangling images left by the rebuild:**
+```bash
+docker image prune -f
+```
+
+**7. Start the new version:**
 ```bash
 # Full stack (with GVM):
 docker compose up -d
@@ -567,7 +581,7 @@ docker compose up -d
 docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
 ```
 
-**7. Import your projects** — open http://localhost:3000, create/select a user, and import each ZIP.
+**8. Import your projects** — open http://localhost:3000, create/select a user, and import each ZIP.
 
 ---
 

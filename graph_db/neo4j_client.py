@@ -316,6 +316,10 @@ class Neo4jClient:
             "CREATE CONSTRAINT githubpath_unique IF NOT EXISTS FOR (gp:GithubPath) REQUIRE gp.id IS UNIQUE",
             "CREATE CONSTRAINT githubsecret_unique IF NOT EXISTS FOR (gs:GithubSecret) REQUIRE gs.id IS UNIQUE",
             "CREATE CONSTRAINT githubsensitivefile_unique IF NOT EXISTS FOR (gsf:GithubSensitiveFile) REQUIRE gsf.id IS UNIQUE",
+            # TruffleHog Secret Scanner constraints
+            "CREATE CONSTRAINT trufflehogscan_unique IF NOT EXISTS FOR (ts:TrufflehogScan) REQUIRE ts.id IS UNIQUE",
+            "CREATE CONSTRAINT trufflehogrepository_unique IF NOT EXISTS FOR (tr:TrufflehogRepository) REQUIRE tr.id IS UNIQUE",
+            "CREATE CONSTRAINT trufflehogfinding_unique IF NOT EXISTS FOR (tf:TrufflehogFinding) REQUIRE tf.id IS UNIQUE",
             # Secret constraints
             "CREATE CONSTRAINT secret_unique IF NOT EXISTS FOR (s:Secret) REQUIRE (s.id) IS UNIQUE",
             # External Domain constraints
@@ -349,6 +353,10 @@ class Neo4jClient:
             "CREATE INDEX idx_githubpath_tenant IF NOT EXISTS FOR (gp:GithubPath) ON (gp.user_id, gp.project_id)",
             "CREATE INDEX idx_githubsecret_tenant IF NOT EXISTS FOR (gs:GithubSecret) ON (gs.user_id, gs.project_id)",
             "CREATE INDEX idx_githubsensitivefile_tenant IF NOT EXISTS FOR (gsf:GithubSensitiveFile) ON (gsf.user_id, gsf.project_id)",
+            # TruffleHog Secret Scanner tenant indexes
+            "CREATE INDEX idx_trufflehogscan_tenant IF NOT EXISTS FOR (ts:TrufflehogScan) ON (ts.user_id, ts.project_id)",
+            "CREATE INDEX idx_trufflehogrepository_tenant IF NOT EXISTS FOR (tr:TrufflehogRepository) ON (tr.user_id, tr.project_id)",
+            "CREATE INDEX idx_trufflehogfinding_tenant IF NOT EXISTS FOR (tf:TrufflehogFinding) ON (tf.user_id, tf.project_id)",
             # Secret tenant indexes
             "CREATE INDEX idx_secret_tenant IF NOT EXISTS FOR (s:Secret) ON (s.user_id, s.project_id)",
             # External Domain tenant indexes
@@ -390,6 +398,9 @@ class Neo4jClient:
             "CREATE INDEX idx_githubrepo_name IF NOT EXISTS FOR (gr:GithubRepository) ON (gr.name)",
             "CREATE INDEX idx_githubpath_path IF NOT EXISTS FOR (gp:GithubPath) ON (gp.path)",
             "CREATE INDEX idx_githubsecret_secret_type IF NOT EXISTS FOR (gs:GithubSecret) ON (gs.secret_type)",
+            # TruffleHog functional indexes
+            "CREATE INDEX idx_trufflehogfinding_detector IF NOT EXISTS FOR (tf:TrufflehogFinding) ON (tf.detector_name)",
+            "CREATE INDEX idx_trufflehogrepository_name IF NOT EXISTS FOR (tr:TrufflehogRepository) ON (tr.name)",
             # Secret functional indexes
             "CREATE INDEX idx_secret_type IF NOT EXISTS FOR (s:Secret) ON (s.secret_type)",
             "CREATE INDEX idx_secret_severity IF NOT EXISTS FOR (s:Secret) ON (s.severity)",
@@ -4454,6 +4465,285 @@ class Neo4jClient:
             print(f"[+][graph-db] Created {stats['relationships_created']} relationships")
             print(f"[+][graph-db] Skipped {stats['findings_skipped_high_entropy']} HIGH_ENTROPY findings")
             print(f"[+][graph-db] Deduplicated {stats['findings_deduplicated']} cross-commit findings")
+
+            if stats["errors"]:
+                print(f"[!][graph-db] {len(stats['errors'])} errors occurred")
+
+        return stats
+
+    # =========================================================================
+    # TruffleHog Secret Scanner — Graph Integration
+    # =========================================================================
+
+    def clear_trufflehog_data(self, user_id: str, project_id: str) -> dict:
+        """
+        Delete only TruffleHog Secret Scanner nodes and relationships for a project.
+
+        Preserves all recon, GVM, and GitHub Hunt data. Only removes:
+        - TrufflehogFinding nodes (leaf findings)
+        - TrufflehogRepository nodes
+        - TrufflehogScan nodes
+        - All relationships between them and to Domain
+
+        Args:
+            user_id: User identifier
+            project_id: Project identifier
+
+        Returns:
+            dict with counts of deleted items
+        """
+        stats = {
+            "findings_deleted": 0,
+            "repositories_deleted": 0,
+            "scans_deleted": 0,
+        }
+
+        with self.driver.session() as session:
+            # 1. Delete leaf nodes first (TrufflehogFinding)
+            result = session.run(
+                """
+                MATCH (tf:TrufflehogFinding {user_id: $uid, project_id: $pid})
+                DETACH DELETE tf
+                RETURN count(tf) as deleted
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["findings_deleted"] = record["deleted"]
+
+            # 2. Delete TrufflehogRepository nodes
+            result = session.run(
+                """
+                MATCH (tr:TrufflehogRepository {user_id: $uid, project_id: $pid})
+                DETACH DELETE tr
+                RETURN count(tr) as deleted
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["repositories_deleted"] = record["deleted"]
+
+            # 3. Delete TrufflehogScan nodes
+            result = session.run(
+                """
+                MATCH (ts:TrufflehogScan {user_id: $uid, project_id: $pid})
+                DETACH DELETE ts
+                RETURN count(ts) as deleted
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["scans_deleted"] = record["deleted"]
+
+            total = sum(stats.values())
+            print(f"[*][graph-db] Cleared TruffleHog data: {total} items removed")
+
+        return stats
+
+    def update_graph_from_trufflehog(self, trufflehog_data: dict, user_id: str, project_id: str) -> dict:
+        """
+        Update the Neo4j graph database with TruffleHog scan results.
+
+        Node hierarchy (3 levels):
+        - TrufflehogScan node (scan metadata: target, timestamps, statistics)
+        - TrufflehogRepository nodes (each scanned repository)
+        - TrufflehogFinding nodes (each secret finding with verification status)
+
+        Relationships:
+        - Domain -[:HAS_TRUFFLEHOG_SCAN]-> TrufflehogScan
+        - TrufflehogScan -[:HAS_REPOSITORY]-> TrufflehogRepository
+        - TrufflehogRepository -[:HAS_FINDING]-> TrufflehogFinding
+
+        Deduplication: Findings are deduplicated by repository+file+line+detector_name.
+
+        Args:
+            trufflehog_data: The TruffleHog scan JSON data (top-level with target, findings, statistics)
+            user_id: User identifier for multi-tenant isolation
+            project_id: Project identifier for multi-tenant isolation
+
+        Returns:
+            Dictionary with statistics about created nodes/relationships
+        """
+        stats = {
+            "scan_created": 0,
+            "repositories_created": 0,
+            "findings_created": 0,
+            "relationships_created": 0,
+            "findings_deduplicated": 0,
+            "errors": []
+        }
+
+        # Validate input
+        target = trufflehog_data.get("target")
+        findings = trufflehog_data.get("findings", [])
+        if not target:
+            stats["errors"].append("No target found in trufflehog_data")
+            return stats
+
+        scan_statistics = trufflehog_data.get("statistics", {})
+
+        with self.driver.session() as session:
+            self._init_schema(session)
+
+            # Clear previous TruffleHog data for this project
+            clear_stats = self.clear_trufflehog_data(user_id, project_id)
+            print(f"[*][graph-db] Pre-cleared: {clear_stats}")
+
+            # 1. Create TrufflehogScan node (scan metadata)
+            scan_id = f"trufflehog-scan-{user_id}-{project_id}"
+            scan_props = {
+                "id": scan_id,
+                "user_id": user_id,
+                "project_id": project_id,
+                "target": target,
+                "scan_start_time": trufflehog_data.get("scan_start_time", ""),
+                "scan_end_time": trufflehog_data.get("scan_end_time", ""),
+                "duration_seconds": trufflehog_data.get("duration_seconds", 0),
+                "status": trufflehog_data.get("status", "unknown"),
+                "total_findings": scan_statistics.get("total_findings", 0),
+                "verified_findings": scan_statistics.get("verified_findings", 0),
+                "unverified_findings": scan_statistics.get("unverified_findings", 0),
+                "repositories_scanned": scan_statistics.get("repositories_scanned", 0),
+            }
+
+            try:
+                session.run(
+                    """
+                    MERGE (ts:TrufflehogScan {id: $id})
+                    SET ts += $props, ts.updated_at = datetime()
+                    """,
+                    id=scan_id, props=scan_props
+                )
+                stats["scan_created"] += 1
+            except Exception as e:
+                stats["errors"].append(f"Failed to create TrufflehogScan node: {e}")
+                print(f"[!][graph-db] TrufflehogScan creation failed: {e}")
+                return stats
+
+            # 2. Link TrufflehogScan to Domain node
+            try:
+                result = session.run(
+                    """
+                    MATCH (d:Domain {user_id: $uid, project_id: $pid})
+                    MATCH (ts:TrufflehogScan {id: $scan_id})
+                    MERGE (d)-[:HAS_TRUFFLEHOG_SCAN]->(ts)
+                    RETURN count(*) as linked
+                    """,
+                    uid=user_id, pid=project_id, scan_id=scan_id
+                )
+                record = result.single()
+                if record and record["linked"] > 0:
+                    stats["relationships_created"] += 1
+                else:
+                    print(f"[!][graph-db] Warning: No Domain node found for user_id={user_id}, project_id={project_id}")
+            except Exception as e:
+                stats["errors"].append(f"Failed to link TrufflehogScan to Domain: {e}")
+
+            # 3. Process findings (deduplicate by repo+file+line+detector)
+            seen_findings = set()
+            created_repos = set()
+
+            for finding in findings:
+                repository = finding.get("repository", "")
+                file_path = finding.get("file", "")
+                line = finding.get("line", 0)
+                detector_name = finding.get("detector_name", "")
+
+                if not detector_name:
+                    continue
+
+                # Deduplicate
+                dedup_key = f"{repository}:{file_path}:{line}:{detector_name}"
+                if dedup_key in seen_findings:
+                    stats["findings_deduplicated"] += 1
+                    continue
+                seen_findings.add(dedup_key)
+
+                # Generate IDs
+                repo_hash = f"{hash(f'{user_id}:{project_id}:{repository}') & 0xFFFFFFFF:08x}"
+                repo_id = f"trufflehog-repo-{user_id}-{project_id}-{repo_hash}"
+                finding_hash = f"{hash(dedup_key) & 0xFFFFFFFF:08x}"
+                finding_id = f"trufflehog-finding-{user_id}-{project_id}-{finding_hash}"
+
+                # 3a. Create/merge TrufflehogRepository node
+                if repository and repository not in created_repos:
+                    repo_props = {
+                        "id": repo_id,
+                        "name": repository,
+                        "user_id": user_id,
+                        "project_id": project_id,
+                    }
+                    try:
+                        session.run(
+                            "MERGE (tr:TrufflehogRepository {id: $id}) SET tr += $props, tr.updated_at = datetime()",
+                            id=repo_id, props=repo_props
+                        )
+                        stats["repositories_created"] += 1
+                        created_repos.add(repository)
+
+                        # Link TrufflehogScan → TrufflehogRepository
+                        session.run(
+                            """
+                            MATCH (ts:TrufflehogScan {id: $scan_id})
+                            MATCH (tr:TrufflehogRepository {id: $repo_id})
+                            MERGE (ts)-[:HAS_REPOSITORY]->(tr)
+                            """,
+                            scan_id=scan_id, repo_id=repo_id
+                        )
+                        stats["relationships_created"] += 1
+                    except Exception as e:
+                        stats["errors"].append(f"Failed to create repo {repository}: {e}")
+                        continue
+
+                # 3b. Create TrufflehogFinding node
+                finding_props = {
+                    "id": finding_id,
+                    "user_id": user_id,
+                    "project_id": project_id,
+                    "detector_name": detector_name,
+                    "detector_description": finding.get("detector_description", ""),
+                    "verified": finding.get("verified", False),
+                    "redacted": finding.get("redacted", ""),
+                    "repository": repository,
+                    "file": file_path,
+                    "commit": finding.get("commit", ""),
+                    "line": line,
+                    "link": finding.get("link", ""),
+                    "timestamp": finding.get("timestamp", ""),
+                    "extra_data": finding.get("extra_data", "{}"),
+                }
+
+                try:
+                    session.run(
+                        "MERGE (tf:TrufflehogFinding {id: $id}) SET tf += $props, tf.updated_at = datetime()",
+                        id=finding_id, props=finding_props
+                    )
+                    stats["findings_created"] += 1
+
+                    # Link TrufflehogRepository → TrufflehogFinding
+                    if repository:
+                        session.run(
+                            """
+                            MATCH (tr:TrufflehogRepository {id: $repo_id})
+                            MATCH (tf:TrufflehogFinding {id: $finding_id})
+                            MERGE (tr)-[:HAS_FINDING]->(tf)
+                            """,
+                            repo_id=repo_id, finding_id=finding_id
+                        )
+                        stats["relationships_created"] += 1
+                except Exception as e:
+                    stats["errors"].append(f"Failed to create finding {dedup_key}: {e}")
+
+            # Print summary
+            print(f"\n[+] TruffleHog Graph Update Summary:")
+            print(f"[+][graph-db] Created {stats['scan_created']} TrufflehogScan node")
+            print(f"[+][graph-db] Created {stats['repositories_created']} TrufflehogRepository nodes")
+            print(f"[+][graph-db] Created {stats['findings_created']} TrufflehogFinding nodes")
+            print(f"[+][graph-db] Created {stats['relationships_created']} relationships")
+            print(f"[+][graph-db] Deduplicated {stats['findings_deduplicated']} findings")
 
             if stats["errors"]:
                 print(f"[!][graph-db] {len(stats['errors'])} errors occurred")

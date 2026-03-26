@@ -151,12 +151,6 @@ export function validateProjectForm(data: Record<string, unknown>): ValidationEr
     errors.push({ field: 'katanaCustomHeaders', message: 'Invalid header format (Name: Value)' })
   }
 
-  // GitHub token
-  const ghToken = data.githubAccessToken as string
-  if (ghToken && !REGEX_GITHUB_TOKEN.test(ghToken)) {
-    errors.push({ field: 'githubAccessToken', message: 'Invalid GitHub token format' })
-  }
-
   // GitHub org
   const ghOrg = data.githubTargetOrg as string
   if (ghOrg && !REGEX_GITHUB_ORG.test(ghOrg)) {

@@ -42,6 +42,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!settings) {
       return NextResponse.json({
+        githubAccessToken: '',
         tavilyApiKey: '',
         shodanApiKey: '',
         serpApiKey: '',
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (!internal) {
       settings = {
         ...settings,
+        githubAccessToken: maskSecret(settings.githubAccessToken),
         tavilyApiKey: maskSecret(settings.tavilyApiKey),
         shodanApiKey: maskSecret(settings.shodanApiKey),
         serpApiKey: maskSecret(settings.serpApiKey),
@@ -91,7 +93,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     })
 
     const data: Record<string, string> = {}
-    const fields = ['tavilyApiKey', 'shodanApiKey', 'serpApiKey', 'nvdApiKey', 'vulnersApiKey', 'urlscanApiKey', 'ngrokAuthtoken', 'chiselServerUrl', 'chiselAuth'] as const
+    const fields = ['githubAccessToken', 'tavilyApiKey', 'shodanApiKey', 'serpApiKey', 'nvdApiKey', 'vulnersApiKey', 'urlscanApiKey', 'ngrokAuthtoken', 'chiselServerUrl', 'chiselAuth'] as const
 
     for (const field of fields) {
       if (field in body) {
@@ -194,6 +196,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Return masked (chiselServerUrl is not a secret)
     return NextResponse.json({
       ...settings,
+      githubAccessToken: maskSecret(settings.githubAccessToken),
       tavilyApiKey: maskSecret(settings.tavilyApiKey),
       shodanApiKey: maskSecret(settings.shodanApiKey),
       serpApiKey: maskSecret(settings.serpApiKey),

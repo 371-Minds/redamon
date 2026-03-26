@@ -1318,6 +1318,9 @@ RETURN s.name AS host, svc.name AS service, u.url AS url,
 | GithubPath | id, repository, path | ✅ Unique (global), ✅ Tenant index |
 | GithubSecret | id, repository, path, secret_type, sample | ✅ Unique (global), ✅ Tenant index |
 | GithubSensitiveFile | id, repository, path, secret_type | ✅ Unique (global), ✅ Tenant index |
+| TrufflehogScan | id, target, scan_start_time, status, total_findings, verified_findings | ✅ Unique (global), ✅ Tenant index |
+| TrufflehogRepository | id, name | ✅ Unique (global), ✅ Tenant index |
+| TrufflehogFinding | id, detector_name, verified, file, commit, line, repository | ✅ Unique (global), ✅ Tenant index |
 | Secret | id, secret_type, severity, source, source_url, base_url, sample | ✅ Unique (global), ✅ Tenant index |
 
 ---
@@ -1775,6 +1778,129 @@ OPTIONAL MATCH (gp)-[:CONTAINS_SECRET]->(gs:GithubSecret)
 OPTIONAL MATCH (gp)-[:CONTAINS_SENSITIVE_FILE]->(gsf:GithubSensitiveFile)
 WITH gr, count(gs) AS secrets, count(gsf) AS sensitive_files
 RETURN gr.name AS repo, secrets, sensitive_files ORDER BY secrets + sensitive_files DESC
+```
+
+---
+
+## 🔐 TruffleHog Secret Scanner Nodes
+
+TruffleHog scan findings are stored in a 3-level node hierarchy linked to the Domain root.
+TruffleHog uses detector-based credential verification and deep git history analysis.
+Findings are deduplicated by `{repository}:{file}:{line}:{detector_name}`.
+
+### TrufflehogScan (Scan Metadata)
+
+```cypher
+(:TrufflehogScan {
+    id: "trufflehog-scan-<user_id>-<project_id>",
+    user_id: "samgiam",
+    project_id: "first_test",
+    target: "samugit83",
+    scan_start_time: "2026-03-20T14:10:04.193830",
+    scan_end_time: "2026-03-20T16:35:05.335142",
+    duration_seconds: 8701.14,
+    status: "completed",
+    total_findings: 47,
+    verified_findings: 12,
+    unverified_findings: 35,
+    repositories_scanned: 16,
+    updated_at: "2026-03-20T16:35:05.335142"
+})
+```
+
+**Relationship:** `Domain -[:HAS_TRUFFLEHOG_SCAN]-> TrufflehogScan`
+
+### TrufflehogRepository (Scanned Repository)
+
+```cypher
+(:TrufflehogRepository {
+    id: "trufflehog-repo-<user_id>-<project_id>-<hash>",
+    name: "samugit83/ai-superagent",
+    user_id: "samgiam",
+    project_id: "first_test",
+    updated_at: "2026-03-20T16:35:05.335142"
+})
+```
+
+**Relationship:** `TrufflehogScan -[:HAS_REPOSITORY]-> TrufflehogRepository`
+
+### TrufflehogFinding (Detected Credential Finding)
+
+Leaf node for individual credential findings detected by TruffleHog's detector engine.
+
+```cypher
+(:TrufflehogFinding {
+    id: "trufflehog-finding-<user_id>-<project_id>-<hash>",
+    user_id: "samgiam",
+    project_id: "first_test",
+    detector_name: "AWS",
+    detector_description: "Amazon Web Services access key",
+    verified: true,
+    redacted: "AKIA2E0A8F3B1...",
+    file: "deploy/config.yml",
+    commit: "a3b2c1d",
+    line: 42,
+    link: "https://github.com/samugit83/ai-superagent/blob/a3b2c1d/deploy/config.yml#L42",
+    extra_data: "{}",
+    repository: "samugit83/ai-superagent",
+    timestamp: "2026-03-20T14:12:31.917308",
+    updated_at: "2026-03-20T14:12:31.917308"
+})
+```
+
+**Dedup key:** `{repository}:{file}:{line}:{detector_name}`
+
+**Relationship:** `TrufflehogRepository -[:HAS_FINDING]-> TrufflehogFinding`
+
+### Full Chain
+
+```
+Domain -[:HAS_TRUFFLEHOG_SCAN]-> TrufflehogScan
+    -[:HAS_REPOSITORY]-> TrufflehogRepository
+        -[:HAS_FINDING]-> TrufflehogFinding
+```
+
+### Constraints & Indexes
+
+```cypher
+CREATE CONSTRAINT trufflehogscan_unique IF NOT EXISTS
+FOR (ts:TrufflehogScan) REQUIRE ts.id IS UNIQUE;
+
+CREATE CONSTRAINT trufflehogrepo_unique IF NOT EXISTS
+FOR (tr:TrufflehogRepository) REQUIRE tr.id IS UNIQUE;
+
+CREATE CONSTRAINT trufflehogfinding_unique IF NOT EXISTS
+FOR (tf:TrufflehogFinding) REQUIRE tf.id IS UNIQUE;
+
+CREATE INDEX idx_trufflehogscan_tenant IF NOT EXISTS
+FOR (ts:TrufflehogScan) ON (ts.user_id, ts.project_id);
+
+CREATE INDEX idx_trufflehogrepo_tenant IF NOT EXISTS
+FOR (tr:TrufflehogRepository) ON (tr.user_id, tr.project_id);
+
+CREATE INDEX idx_trufflehogfinding_tenant IF NOT EXISTS
+FOR (tf:TrufflehogFinding) ON (tf.user_id, tf.project_id);
+```
+
+### Example Queries
+
+```cypher
+// Full chain: all TruffleHog findings for a project
+MATCH (d:Domain {user_id: $userId, project_id: $projectId})
+      -[:HAS_TRUFFLEHOG_SCAN]->(ts:TrufflehogScan)
+      -[:HAS_REPOSITORY]->(tr:TrufflehogRepository)
+      -[:HAS_FINDING]->(tf:TrufflehogFinding)
+RETURN tr.name AS repository, tf.detector_name AS detector, tf.file AS file, tf.verified AS verified
+
+// Only verified findings
+MATCH (tf:TrufflehogFinding {user_id: $userId, project_id: $projectId, verified: true})
+RETURN tf.repository, tf.detector_name, tf.file, tf.line, tf.redacted
+
+// Count findings per repository
+MATCH (tr:TrufflehogRepository {user_id: $userId, project_id: $projectId})
+      -[:HAS_FINDING]->(tf:TrufflehogFinding)
+WITH tr, count(tf) AS total, sum(CASE WHEN tf.verified THEN 1 ELSE 0 END) AS verified
+RETURN tr.name AS repo, total, verified ORDER BY total DESC
 ```
 
 ---

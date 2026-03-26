@@ -97,8 +97,12 @@ recon/data/resolvers.txt
 # Recon output files (contain sensitive scan data)
 recon/output/*.json
 gvm_scan/output/*.json
+github_secret_hunt/output/*.json
+trufflehog_scan/output/*.json
 !recon/output/.gitkeep
 !gvm_scan/output/.gitkeep
+!github_secret_hunt/output/.gitkeep
+!trufflehog_scan/output/.gitkeep
 
 # Nmap scan results
 *.nmap

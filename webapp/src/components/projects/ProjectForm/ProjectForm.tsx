@@ -5,6 +5,7 @@ import { Save, X, Loader2, AlertTriangle, Download, ShieldAlert } from 'lucide-r
 import type { Project } from '@prisma/client'
 import { validateProjectForm } from '@/lib/validation'
 import { isHardBlockedDomain } from '@/lib/hard-guardrail'
+import { useProject } from '@/providers/ProjectProvider'
 import styles from './ProjectForm.module.css'
 
 // Import sections
@@ -25,6 +26,7 @@ import { CveLookupSection } from './sections/CveLookupSection'
 import { MitreSection } from './sections/MitreSection'
 import { SecurityChecksSection } from './sections/SecurityChecksSection'
 import { GithubSection } from './sections/GithubSection'
+import { TrufflehogSection } from './sections/TrufflehogSection'
 import { AgentBehaviourSection } from './sections/AgentBehaviourSection'
 import { AttackSkillsSection } from './sections/AttackSkillsSection'
 import { ShodanSection } from './sections/ShodanSection'
@@ -81,7 +83,7 @@ const TAB_GROUPS = [
       { id: 'cve', label: 'CVE & MITRE' },
       { id: 'security', label: 'Security Checks' },
       { id: 'gvm', label: 'GVM Scan' },
-      { id: 'integrations', label: 'Integrations', wide: true },
+      { id: 'integrations', label: 'Other Scans', wide: true },
     ],
   },
   {
@@ -157,6 +159,20 @@ export function ProjectForm({
 
   // RoE document file (held in memory until project creation)
   const [roeFile, setRoeFile] = useState<File | null>(null)
+
+  // GitHub Access Token check (stored in Global Settings, not project)
+  const { userId } = useProject()
+  const [hasGithubToken, setHasGithubToken] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return
+    fetch(`/api/users/${userId}/settings`)
+      .then(r => r.ok ? r.json() : null)
+      .then(settings => {
+        if (settings) setHasGithubToken(!!settings.githubAccessToken)
+      })
+      .catch(() => setHasGithubToken(false))
+  }, [userId])
 
   // Prefer URL param on settings page so wordlist upload etc. always get a real id
   const projectId =
@@ -447,7 +463,10 @@ export function ProjectForm({
         )}
 
         {activeTab === 'integrations' && (
-          <GithubSection data={formData} updateField={updateField} />
+          <>
+            <GithubSection data={formData} updateField={updateField} hasGithubToken={hasGithubToken} />
+            <TrufflehogSection data={formData} updateField={updateField} hasGithubToken={hasGithubToken} />
+          </>
         )}
 
         {activeTab === 'gvm' && (

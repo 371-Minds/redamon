@@ -3,7 +3,7 @@
 import { Bot, Play, Download, Loader2, Terminal, Shield, Github, Target, Zap, MessageSquare, Pause, Square, ShieldAlert } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import { Toggle } from '@/components/ui'
-import type { ReconStatus, GvmStatus, GithubHuntStatus } from '@/lib/recon-types'
+import type { ReconStatus, GvmStatus, GithubHuntStatus, TrufflehogStatus } from '@/lib/recon-types'
 import styles from './GraphToolbar.module.css'
 
 interface GraphToolbarProps {
@@ -47,6 +47,18 @@ interface GraphToolbarProps {
   githubHuntStatus?: GithubHuntStatus
   hasGithubHuntData?: boolean
   isGithubHuntLogsOpen?: boolean
+  // TruffleHog props
+  onStartTrufflehog?: () => void
+  onPauseTrufflehog?: () => void
+  onResumeTrufflehog?: () => void
+  onStopTrufflehog?: () => void
+  onDownloadTrufflehogJSON?: () => void
+  onToggleTrufflehogLogs?: () => void
+  trufflehogStatus?: TrufflehogStatus
+  hasTrufflehogData?: boolean
+  isTrufflehogLogsOpen?: boolean
+  // Other Scans modal
+  onToggleOtherScansModal?: () => void
   // Stealth mode
   stealthMode?: boolean
   // RoE
@@ -108,6 +120,18 @@ export function GraphToolbar({
   githubHuntStatus = 'idle',
   hasGithubHuntData = false,
   isGithubHuntLogsOpen = false,
+  // TruffleHog props
+  onStartTrufflehog,
+  onPauseTrufflehog,
+  onResumeTrufflehog,
+  onStopTrufflehog,
+  onDownloadTrufflehogJSON,
+  onToggleTrufflehogLogs,
+  trufflehogStatus = 'idle',
+  hasTrufflehogData = false,
+  isTrufflehogLogsOpen = false,
+  // Other Scans modal
+  onToggleOtherScansModal,
   // Stealth mode
   stealthMode = false,
   // RoE
@@ -135,6 +159,11 @@ export function GraphToolbar({
   const isGithubHuntRunning = isGithubHuntBusy || isGithubHuntStopping
   const isGithubHuntPaused = githubHuntStatus === 'paused'
   const isGithubHuntActive = isGithubHuntRunning || isGithubHuntPaused
+  const isTrufflehogBusy = trufflehogStatus === 'running' || trufflehogStatus === 'starting'
+  const isTrufflehogStopping = trufflehogStatus === 'stopping'
+  const isTrufflehogRunning = isTrufflehogBusy || isTrufflehogStopping
+  const isTrufflehogPaused = trufflehogStatus === 'paused'
+  const isTrufflehogActive = isTrufflehogRunning || isTrufflehogPaused
 
   // Agent status derived values
   const runningAgent = agentConversations.find(c => c.agentRunning)
@@ -357,70 +386,19 @@ export function GraphToolbar({
               </button>
             </div>
 
-            {/* GitHub Secret Hunt Actions */}
+            {/* Other Scans (GitHub Hunt + TruffleHog) */}
             <div className={styles.actionGroup}>
               <button
-                className={`${styles.githubHuntButton} ${isGithubHuntActive ? styles.githubHuntButtonActive : ''}`}
-                onClick={isGithubHuntPaused ? onResumeGithubHunt : onStartGithubHunt}
-                disabled={isGithubHuntRunning || (!hasReconData && !isGithubHuntPaused)}
-                title={
-                  !hasReconData && !isGithubHuntPaused
-                    ? 'Run recon first'
-                    : isGithubHuntStopping
-                    ? 'Stopping...'
-                    : isGithubHuntRunning
-                    ? 'GitHub hunt in progress...'
-                    : isGithubHuntPaused
-                    ? 'Resume GitHub Hunt'
-                    : 'Start GitHub Secret Hunt'
-                }
+                className={`${styles.githubHuntButton} ${(isGithubHuntActive || isTrufflehogActive) ? styles.githubHuntButtonActive : ''}`}
+                onClick={onToggleOtherScansModal}
+                title="Other Scans (GitHub Hunt, TruffleHog)"
               >
-                {isGithubHuntRunning ? (
+                {(isGithubHuntRunning || isTrufflehogRunning) ? (
                   <Loader2 size={14} className={styles.spinner} />
                 ) : (
                   <Github size={14} />
                 )}
-                <span>{isGithubHuntStopping ? 'Stopping...' : isGithubHuntBusy ? 'Hunting...' : isGithubHuntPaused ? 'Resume' : 'GitHub Hunt'}</span>
-              </button>
-
-              {isGithubHuntBusy && (
-                <button
-                  className={styles.pauseButton}
-                  onClick={onPauseGithubHunt}
-                  title="Pause GitHub Hunt"
-                >
-                  <Pause size={14} />
-                </button>
-              )}
-
-              {isGithubHuntActive && (
-                <button
-                  className={styles.stopButton}
-                  onClick={onStopGithubHunt}
-                  disabled={isGithubHuntStopping}
-                  title="Stop GitHub Hunt"
-                >
-                  <Square size={14} />
-                </button>
-              )}
-
-              {isGithubHuntActive && (
-                <button
-                  className={`${styles.logsButton} ${isGithubHuntLogsOpen ? styles.logsButtonActive : ''}`}
-                  onClick={onToggleGithubHuntLogs}
-                  title="View GitHub Hunt Logs"
-                >
-                  <Terminal size={14} />
-                </button>
-              )}
-
-              <button
-                className={styles.downloadButton}
-                onClick={onDownloadGithubHuntJSON}
-                disabled={!hasGithubHuntData || isGithubHuntActive}
-                title={hasGithubHuntData ? 'Download GitHub Hunt JSON' : 'No GitHub hunt data available'}
-              >
-                <Download size={14} />
+                <span>{(isGithubHuntBusy || isTrufflehogBusy) ? 'Scanning...' : 'Other Scans'}</span>
               </button>
             </div>
           </>

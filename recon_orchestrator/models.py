@@ -56,6 +56,7 @@ class HealthResponse(BaseModel):
     running_recons: int
     running_gvm_scans: int = 0
     running_github_hunts: int = 0
+    running_trufflehog_scans: int = 0
 
 
 # =============================================================================
@@ -143,6 +144,53 @@ class GithubHuntState(BaseModel):
 
 class GithubHuntLogEvent(BaseModel):
     """A single log event from GitHub secret hunt container"""
+    log: str
+    timestamp: datetime
+    phase: Optional[str] = None
+    phase_number: Optional[int] = None
+    is_phase_start: bool = False
+    is_phase_end: bool = False
+    level: str = "info"
+
+
+# =============================================================================
+# TruffleHog Secret Scanner Models
+# =============================================================================
+
+
+class TrufflehogStatus(str, Enum):
+    """Status of a TruffleHog scan process"""
+    IDLE = "idle"
+    STARTING = "starting"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ERROR = "error"
+    STOPPING = "stopping"
+
+
+class TrufflehogStartRequest(BaseModel):
+    """Request to start a TruffleHog scan"""
+    project_id: str
+    user_id: str
+    webapp_api_url: str
+
+
+class TrufflehogState(BaseModel):
+    """Current state of a TruffleHog scan process"""
+    project_id: str
+    status: TrufflehogStatus
+    current_phase: Optional[str] = None
+    phase_number: Optional[int] = None
+    total_phases: int = 3
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    container_id: Optional[str] = None
+
+
+class TrufflehogLogEvent(BaseModel):
+    """A single log event from TruffleHog scanner container"""
     log: str
     timestamp: datetime
     phase: Optional[str] = None
