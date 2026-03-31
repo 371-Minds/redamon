@@ -2189,6 +2189,19 @@ class OsintMixin:
                         )
                         stats["ips_created"] += 1
 
+                        # Link IP to Domain (prevents orphaned IP nodes)
+                        if domain:
+                            session.run(
+                                """
+                                MATCH (i:IP {address: $address, user_id: $user_id, project_id: $project_id})
+                                MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
+                                MERGE (d)-[:HAS_IP]->(i)
+                                """,
+                                address=ip, domain=domain,
+                                user_id=user_id, project_id=project_id,
+                            )
+                            stats["relationships_created"] += 1
+
                         ports = ip_ports.get(ip, [])
                         for port_num in ports:
                             if not port_num or port_num <= 0:
@@ -2222,6 +2235,18 @@ class OsintMixin:
                             url=url, user_id=user_id, project_id=project_id,
                         )
                         stats["urls_created"] += 1
+                        # Link Endpoint to Domain
+                        if domain:
+                            session.run(
+                                """
+                                MATCH (e:Endpoint {url: $url, user_id: $user_id, project_id: $project_id})
+                                MATCH (d:Domain {name: $domain, user_id: $user_id, project_id: $project_id})
+                                MERGE (d)-[:HAS_ENDPOINT]->(e)
+                                """,
+                                url=url, domain=domain,
+                                user_id=user_id, project_id=project_id,
+                            )
+                            stats["relationships_created"] += 1
                     except Exception as e:
                         stats["errors"].append(f"Uncover URL {url}: {e}")
 

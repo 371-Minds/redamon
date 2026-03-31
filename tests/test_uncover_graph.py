@@ -105,7 +105,7 @@ class TestUpdateGraphFromUncover(unittest.TestCase):
         )
         stats = client.update_graph_from_uncover(recon, "user1", "proj1")
         self.assertEqual(stats["ips_created"], 1)
-        self.assertEqual(stats["relationships_created"], 2)  # 2 port HAS_PORT rels
+        self.assertEqual(stats["relationships_created"], 3)  # 1 HAS_IP + 2 HAS_PORT
 
     def test_skips_empty_hostname(self):
         client, session = _make_client()
@@ -126,7 +126,7 @@ class TestUpdateGraphFromUncover(unittest.TestCase):
             ip_ports={"1.2.3.4": [0, -1, 80]},
         )
         stats = client.update_graph_from_uncover(recon, "user1", "proj1")
-        self.assertEqual(stats["relationships_created"], 1)  # only port 80
+        self.assertEqual(stats["relationships_created"], 2)  # 1 HAS_IP + 1 HAS_PORT (port 80)
 
     def test_sources_metadata_passed_to_cypher(self):
         client, session = _make_client()
