@@ -15,6 +15,7 @@ model User {
   conversations Conversation[]
   llmProviders  UserLlmProvider[]
   attackSkills  UserAttackSkill[]
+  chatSkills   UserChatSkill[]
   settings      UserSettings?
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
@@ -519,6 +520,7 @@ model Project {
   amassTimeout                          Int      @default(10)    @map("amass_timeout")
   amassActive                           Boolean  @default(true) @map("amass_active")
   amassBrute                            Boolean  @default(false) @map("amass_brute")
+  amassBruteWordlists                  Json     @default("[\"default\"]") @map("amass_brute_wordlists")
   amassDockerImage                      String   @default("caffix/amass:latest") @map("amass_docker_image")
 
   // Puredns (wildcard filtering)
@@ -736,6 +738,21 @@ model UserAttackSkill {
 
   @@index([userId])
   @@map("user_attack_skills")
+}
+
+model UserChatSkill {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?  @db.Text
+  category    String   @default("general")
+  content     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("user_chat_skills")
 }
 
 model GraphView {

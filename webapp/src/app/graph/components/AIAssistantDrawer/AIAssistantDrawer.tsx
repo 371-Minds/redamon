@@ -218,7 +218,7 @@ export function AIAssistantDrawer({
   const {
     status, isConnected, reconnectAttempt,
     sendQuery, sendGuidance, sendApproval, sendToolConfirmation,
-    sendAnswer, sendStop, sendResume,
+    sendAnswer, sendSkillInject, sendStop, sendResume,
   } = useAgentWebSocket({
     userId,
     projectId,
@@ -251,7 +251,7 @@ export function AIAssistantDrawer({
     isProcessingQuestion, awaitingQuestionRef,
     isProcessingToolConfirmation, awaitingToolConfirmationRef,
     pendingApprovalToolId, pendingApprovalWaveId,
-    sendQuery, sendGuidance, sendApproval, sendToolConfirmation, sendAnswer, sendStop, sendResume,
+    sendQuery, sendGuidance, sendSkillInject, sendApproval, sendToolConfirmation, sendAnswer, sendStop, sendResume,
     conversationId, setConversationId, projectId, userId, sessionId,
     createConversation, saveMessage, updateConvMeta,
   })

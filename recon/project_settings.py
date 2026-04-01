@@ -433,6 +433,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'AMASS_TIMEOUT': 10,
     'AMASS_ACTIVE': True,
     'AMASS_BRUTE': False,
+    'AMASS_BRUTE_WORDLISTS': ['default'],
     'AMASS_DOCKER_IMAGE': 'caffix/amass:latest',
 
     # Puredns (wildcard filtering — runs after discovery, before DNS resolution)
@@ -842,6 +843,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['AMASS_TIMEOUT'] = project.get('amassTimeout', DEFAULT_SETTINGS['AMASS_TIMEOUT'])
     settings['AMASS_ACTIVE'] = project.get('amassActive', DEFAULT_SETTINGS['AMASS_ACTIVE'])
     settings['AMASS_BRUTE'] = project.get('amassBrute', DEFAULT_SETTINGS['AMASS_BRUTE'])
+    settings['AMASS_BRUTE_WORDLISTS'] = project.get('amassBruteWordlists', DEFAULT_SETTINGS['AMASS_BRUTE_WORDLISTS'])
     settings['AMASS_DOCKER_IMAGE'] = project.get('amassDockerImage', DEFAULT_SETTINGS['AMASS_DOCKER_IMAGE'])
 
     # Puredns (wildcard filtering)

@@ -2,6 +2,18 @@ import { useCallback, useRef, KeyboardEvent } from 'react'
 import type { ApprovalRequestPayload, QuestionRequestPayload, ToolConfirmationRequestPayload } from '@/lib/websocket-types'
 import type { ChatItem, Message } from '../types'
 
+interface ChatSkillSummary {
+  id: string
+  name: string
+  description: string | null
+  category: string
+  createdAt: string
+}
+
+interface ChatSkillFull extends ChatSkillSummary {
+  content: string
+}
+
 interface SendHandlersDeps {
   // Chat state
   inputValue: string
@@ -41,6 +53,7 @@ interface SendHandlersDeps {
   // WebSocket senders
   sendQuery: (q: string) => void
   sendGuidance: (m: string) => void
+  sendSkillInject: (payload: { skill_id: string; skill_name: string; content: string }) => void
   sendApproval: (decision: 'approve' | 'modify' | 'abort', modification?: string) => void
   sendToolConfirmation: (decision: 'approve' | 'modify' | 'reject', modifications?: Record<string, any>) => void
   sendAnswer: (answer: string) => void
@@ -70,16 +83,120 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     isProcessingQuestion, awaitingQuestionRef,
     isProcessingToolConfirmation, awaitingToolConfirmationRef,
     pendingApprovalToolId, pendingApprovalWaveId,
-    sendQuery, sendGuidance, sendApproval, sendToolConfirmation, sendAnswer, sendStop, sendResume,
+    sendQuery, sendGuidance, sendSkillInject, sendApproval, sendToolConfirmation, sendAnswer, sendStop, sendResume,
     conversationId, setConversationId, projectId, userId, sessionId,
     createConversation, saveMessage, updateConvMeta,
   } = deps
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const pendingSkillContentRef = useRef<string | null>(null)
+
+  // Helper: add a system-style message to the chat
+  const addSystemMessage = useCallback((content: string) => {
+    const msg: Message = {
+      type: 'message',
+      id: `system-${Date.now()}`,
+      role: 'assistant',
+      content,
+      timestamp: new Date(),
+    }
+    setChatItems(prev => [...prev, msg])
+  }, [setChatItems])
+
+  // Handle /skill command
+  const handleSkillCommand = useCallback(async (args: string) => {
+    const query = args.trim()
+
+    // Fetch all user chat skills
+    let skills: ChatSkillSummary[]
+    try {
+      const res = await fetch(`/api/users/${userId}/chat-skills`)
+      if (!res.ok) throw new Error('Failed to fetch chat skills')
+      skills = await res.json()
+    } catch {
+      addSystemMessage('Failed to fetch chat skills. Please try again.')
+      return
+    }
+
+    // /skill or /skill list -- show all skills grouped by category
+    if (!query || query.toLowerCase() === 'list') {
+      if (skills.length === 0) {
+        addSystemMessage('No Chat Skills found. Create skills in Settings > Chat Skills.')
+        return
+      }
+      const grouped: Record<string, ChatSkillSummary[]> = {}
+      for (const s of skills) {
+        const cat = s.category || 'general'
+        if (!grouped[cat]) grouped[cat] = []
+        grouped[cat].push(s)
+      }
+      let text = '[Chat Skills]\n'
+      for (const [cat, items] of Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))) {
+        text += `\n${cat}:\n`
+        for (const s of items) {
+          text += `  - ${s.name}${s.description ? ` -- ${s.description}` : ''}\n`
+        }
+      }
+      text += '\nUsage: /skill <name> to load a skill'
+      addSystemMessage(text)
+      return
+    }
+
+    // Match by name (case-insensitive, partial) or by ID
+    const lowerQuery = query.toLowerCase()
+    const matches = skills.filter(s =>
+      s.name.toLowerCase().includes(lowerQuery) || s.id.toLowerCase().includes(lowerQuery)
+    )
+
+    if (matches.length === 0) {
+      addSystemMessage(`No Chat Skill found matching '${query}'`)
+      return
+    }
+
+    if (matches.length > 1) {
+      const list = matches.map(s => `  - ${s.name} (${s.category})`).join('\n')
+      addSystemMessage(`Multiple Chat Skills match '${query}'. Be more specific:\n${list}`)
+      return
+    }
+
+    // Single match -- fetch full content
+    const match = matches[0]
+    let fullSkill: ChatSkillFull
+    try {
+      const res = await fetch(`/api/users/${userId}/chat-skills/${match.id}`)
+      if (!res.ok) throw new Error('Failed to fetch skill content')
+      fullSkill = await res.json()
+    } catch {
+      addSystemMessage(`Failed to load Chat Skill '${match.name}'. Please try again.`)
+      return
+    }
+
+    if (isLoading) {
+      // Agent is running -- inject via WebSocket guidance queue
+      sendSkillInject({
+        skill_id: fullSkill.id,
+        skill_name: fullSkill.name,
+        content: fullSkill.content,
+      })
+    } else {
+      // Agent is NOT running -- store for next query
+      pendingSkillContentRef.current = fullSkill.content
+    }
+
+    addSystemMessage(`[Chat Skill Loaded: ${fullSkill.name}] Category: ${fullSkill.category}`)
+  }, [userId, isLoading, sendSkillInject, addSystemMessage])
 
   const handleSend = useCallback(async () => {
     const question = inputValue.trim()
     if (!question || awaitingApproval || awaitingQuestion || awaitingToolConfirmation) return
+
+    // Intercept /skill commands
+    if (question.startsWith('/skill')) {
+      const args = question.slice('/skill'.length).trim()
+      setInputValue('')
+      await handleSkillCommand(args)
+      return
+    }
 
     if (!conversationId && projectId && userId && sessionId) {
       const conv = await createConversation(sessionId)
@@ -102,6 +219,13 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       sendGuidance(question)
       saveMessage('guidance', { content: question, isGuidance: true })
     } else {
+      // Prepend any pending skill content to the query
+      let finalQuestion = question
+      if (pendingSkillContentRef.current) {
+        finalQuestion = `[Chat Skill Context]\n${pendingSkillContentRef.current}\n\n[User Query]\n${question}`
+        pendingSkillContentRef.current = null
+      }
+
       const userMessage: Message = {
         type: 'message',
         id: `user-${Date.now()}`,
@@ -119,13 +243,13 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       }
 
       try {
-        sendQuery(question)
+        sendQuery(finalQuestion)
       } catch {
         setIsLoading(false)
       }
     }
   }, [inputValue, isLoading, awaitingApproval, awaitingQuestion, awaitingToolConfirmation,
-      sendQuery, sendGuidance, conversationId, projectId, userId, sessionId,
+      sendQuery, sendGuidance, handleSkillCommand, conversationId, projectId, userId, sessionId,
       createConversation, saveMessage, updateConvMeta, chatItems,
       setChatItems, setInputValue, setIsLoading, setConversationId])
 

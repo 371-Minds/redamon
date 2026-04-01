@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Plus, Pencil, Trash2, Loader2, Eye, EyeOff, Upload, Download, Swords, RotateCw, Copy, Check, ExternalLink, ChevronDown, ChevronRight, Info } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Eye, EyeOff, Upload, Download, Swords, RotateCw, Copy, Check, ExternalLink, ChevronDown, ChevronRight, Info, BookOpen } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
 import { useVersionCheck } from '@/hooks/useVersionCheck'
 import { LlmProviderForm } from '@/components/settings/LlmProviderForm'
@@ -139,6 +139,25 @@ export default function SettingsPage() {
   const [editingSkillId, setEditingSkillId] = useState('')
   const [editingSkillDescription, setEditingSkillDescription] = useState('')
   const [editDescSaving, setEditDescSaving] = useState(false)
+  // Import from Community (Agent Skills)
+  const [importingAgentSkills, setImportingAgentSkills] = useState(false)
+
+  // Chat Skills
+  const [chatSkills, setChatSkills] = useState<{ id: string; name: string; description?: string | null; category?: string | null; createdAt: string }[]>([])
+  const [chatSkillsLoading, setChatSkillsLoading] = useState(true)
+  const [chatSkillNameModal, setChatSkillNameModal] = useState(false)
+  const [pendingChatSkillContent, setPendingChatSkillContent] = useState('')
+  const [pendingChatSkillName, setPendingChatSkillName] = useState('')
+  const [pendingChatSkillDescription, setPendingChatSkillDescription] = useState('')
+  const [pendingChatSkillCategory, setPendingChatSkillCategory] = useState('general')
+  const [chatSkillUploading, setChatSkillUploading] = useState(false)
+  // Chat skill edit description modal
+  const [editChatDescModal, setEditChatDescModal] = useState(false)
+  const [editingChatSkillId, setEditingChatSkillId] = useState('')
+  const [editingChatSkillDescription, setEditingChatSkillDescription] = useState('')
+  const [editChatDescSaving, setEditChatDescSaving] = useState(false)
+  // Import from Community (Chat Skills)
+  const [importingChatSkills, setImportingChatSkills] = useState(false)
   // Fetch attack skills
   const fetchSkills = useCallback(async () => {
     if (!userId) return
@@ -267,6 +286,180 @@ export default function SettingsPage() {
     }
   }, [userId, editingSkillId, editingSkillDescription, fetchSkills])
 
+  // Import community agent skills
+  const importCommunityAgentSkills = useCallback(async () => {
+    if (!userId) return
+    setImportingAgentSkills(true)
+    try {
+      const resp = await fetch(`/api/users/${userId}/attack-skills/import-community`, { method: 'POST' })
+      const data = await resp.json()
+      if (resp.ok) {
+        fetchSkills()
+        alert(data.message || `Imported ${data.imported ?? 0} community skill(s).`)
+      } else {
+        alert(data.error || 'Failed to import community skills')
+      }
+    } catch (err) {
+      console.error('Failed to import community skills:', err)
+    } finally {
+      setImportingAgentSkills(false)
+    }
+  }, [userId, fetchSkills])
+
+  // Fetch chat skills
+  const fetchChatSkills = useCallback(async () => {
+    if (!userId) return
+    try {
+      const resp = await fetch(`/api/users/${userId}/chat-skills`)
+      if (resp.ok) setChatSkills(await resp.json())
+    } catch (err) {
+      console.error('Failed to fetch chat skills:', err)
+    } finally {
+      setChatSkillsLoading(false)
+    }
+  }, [userId])
+
+  // Upload chat skill from .md file
+  const handleChatSkillUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !userId) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPendingChatSkillContent(reader.result as string)
+      setPendingChatSkillName(file.name.replace(/\.md$/i, ''))
+      setPendingChatSkillCategory('general')
+      setChatSkillNameModal(true)
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }, [userId])
+
+  // Confirm chat skill upload
+  const confirmChatSkillUpload = useCallback(async () => {
+    if (!userId || !pendingChatSkillName.trim()) return
+    setChatSkillUploading(true)
+    try {
+      const resp = await fetch(`/api/users/${userId}/chat-skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: pendingChatSkillName.trim(),
+          description: pendingChatSkillDescription.trim() || null,
+          category: pendingChatSkillCategory,
+          content: pendingChatSkillContent,
+        }),
+      })
+      if (resp.ok) {
+        fetchChatSkills()
+        setChatSkillNameModal(false)
+        setPendingChatSkillContent('')
+        setPendingChatSkillName('')
+        setPendingChatSkillDescription('')
+        setPendingChatSkillCategory('general')
+      } else {
+        const err = await resp.json()
+        alert(err.error || 'Failed to upload chat skill')
+      }
+    } catch (err) {
+      console.error('Failed to upload chat skill:', err)
+    } finally {
+      setChatSkillUploading(false)
+    }
+  }, [userId, pendingChatSkillName, pendingChatSkillDescription, pendingChatSkillCategory, pendingChatSkillContent, fetchChatSkills])
+
+  // Download chat skill as .md
+  const downloadChatSkill = useCallback(async (skillId: string, skillName: string) => {
+    if (!userId) return
+    try {
+      const resp = await fetch(`/api/users/${userId}/chat-skills/${skillId}`)
+      if (resp.ok) {
+        const skill = await resp.json()
+        const blob = new Blob([skill.content], { type: 'text/markdown' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${skillName}.md`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch (err) {
+      console.error('Failed to download chat skill:', err)
+    }
+  }, [userId])
+
+  // Delete chat skill
+  const deleteChatSkill = useCallback(async (skillId: string) => {
+    if (!userId || !confirm('Delete this chat skill?')) return
+    try {
+      await fetch(`/api/users/${userId}/chat-skills/${skillId}`, { method: 'DELETE' })
+      fetchChatSkills()
+    } catch (err) {
+      console.error('Failed to delete chat skill:', err)
+    }
+  }, [userId, fetchChatSkills])
+
+  // Open chat skill edit description modal
+  const openEditChatDescription = useCallback(async (skillId: string) => {
+    if (!userId) return
+    try {
+      const resp = await fetch(`/api/users/${userId}/chat-skills/${skillId}`)
+      if (resp.ok) {
+        const skill = await resp.json()
+        setEditingChatSkillId(skillId)
+        setEditingChatSkillDescription(skill.description || '')
+        setEditChatDescModal(true)
+      }
+    } catch (err) {
+      console.error('Failed to fetch chat skill:', err)
+    }
+  }, [userId])
+
+  // Save edited chat skill description
+  const saveEditChatDescription = useCallback(async () => {
+    if (!userId || !editingChatSkillId) return
+    setEditChatDescSaving(true)
+    try {
+      const resp = await fetch(`/api/users/${userId}/chat-skills/${editingChatSkillId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: editingChatSkillDescription.trim() || null }),
+      })
+      if (resp.ok) {
+        fetchChatSkills()
+        setEditChatDescModal(false)
+        setEditingChatSkillId('')
+        setEditingChatSkillDescription('')
+      } else {
+        const err = await resp.json()
+        alert(err.error || 'Failed to update description')
+      }
+    } catch (err) {
+      console.error('Failed to update chat skill description:', err)
+    } finally {
+      setEditChatDescSaving(false)
+    }
+  }, [userId, editingChatSkillId, editingChatSkillDescription, fetchChatSkills])
+
+  // Import community chat skills
+  const importCommunityChatSkills = useCallback(async () => {
+    if (!userId) return
+    setImportingChatSkills(true)
+    try {
+      const resp = await fetch(`/api/users/${userId}/chat-skills/import-community`, { method: 'POST' })
+      const data = await resp.json()
+      if (resp.ok) {
+        fetchChatSkills()
+        alert(data.message || `Imported ${data.imported ?? 0} community chat skill(s).`)
+      } else {
+        alert(data.error || 'Failed to import community chat skills')
+      }
+    } catch (err) {
+      console.error('Failed to import community chat skills:', err)
+    } finally {
+      setImportingChatSkills(false)
+    }
+  }, [userId, fetchChatSkills])
+
   // Fetch providers
   const fetchProviders = useCallback(async () => {
     if (!userId) return
@@ -330,7 +523,8 @@ export default function SettingsPage() {
     fetchProviders()
     fetchSettings()
     fetchSkills()
-  }, [fetchProviders, fetchSettings, fetchSkills])
+    fetchChatSkills()
+  }, [fetchProviders, fetchSettings, fetchSkills, fetchChatSkills])
 
   // Delete provider
   const deleteProvider = useCallback(async (providerId: string) => {
@@ -484,7 +678,7 @@ export default function SettingsPage() {
   }, [rotationModal, closeRotationModal])
 
   const searchParams = useSearchParams()
-  const validTabs = ['providers', 'skills', 'keys', 'system']
+  const validTabs = ['providers', 'skills', 'chat-skills', 'keys', 'system']
   const initialTab = searchParams.get('tab') || 'providers'
   const [activeTab, setActiveTab] = useState(validTabs.includes(initialTab) ? initialTab : 'providers')
 
@@ -510,6 +704,9 @@ export default function SettingsPage() {
         </button>
         <button className={`${styles.tab} ${activeTab === 'skills' ? styles.tabActive : ''}`} onClick={() => setActiveTab('skills')}>
           <Swords size={14} /> Agent Skills
+        </button>
+        <button className={`${styles.tab} ${activeTab === 'chat-skills' ? styles.tabActive : ''}`} onClick={() => setActiveTab('chat-skills')}>
+          <BookOpen size={14} /> Chat Skills
         </button>
         <button className={`${styles.tab} ${activeTab === 'keys' ? styles.tabActive : ''}`} onClick={() => setActiveTab('keys')}>
           API Keys & Tunneling
@@ -587,15 +784,25 @@ export default function SettingsPage() {
       {activeTab === 'skills' && <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}><Swords size={16} /> Agent Skills</h2>
-          <label className="primaryButton" style={{ cursor: 'pointer' }}>
-            <Upload size={14} /> Upload Skill
-            <input
-              type="file"
-              accept=".md"
-              style={{ display: 'none' }}
-              onChange={handleSkillUpload}
-            />
-          </label>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="secondaryButton"
+              onClick={importCommunityAgentSkills}
+              disabled={importingAgentSkills}
+            >
+              {importingAgentSkills ? <Loader2 size={14} className={styles.spin} /> : <Download size={14} />}
+              Import from Community
+            </button>
+            <label className="primaryButton" style={{ cursor: 'pointer' }}>
+              <Upload size={14} /> Upload Skill
+              <input
+                type="file"
+                accept=".md"
+                style={{ display: 'none' }}
+                onChange={handleSkillUpload}
+              />
+            </label>
+          </div>
         </div>
         <p className={styles.sectionHint}>
           Upload .md files defining custom attack skill workflows. Skills become available as toggles in all project settings.
@@ -628,6 +835,86 @@ export default function SettingsPage() {
                     <Download size={14} />
                   </button>
                   <button className="iconButton" title="Delete" onClick={() => deleteSkill(skill.id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>}
+
+      {/* Tab: Chat Skills */}
+      {activeTab === 'chat-skills' && <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}><BookOpen size={16} /> Chat Skills</h2>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="secondaryButton"
+              onClick={importCommunityChatSkills}
+              disabled={importingChatSkills}
+            >
+              {importingChatSkills ? <Loader2 size={14} className={styles.spin} /> : <Download size={14} />}
+              Import from Community
+            </button>
+            <label className="primaryButton" style={{ cursor: 'pointer' }}>
+              <Upload size={14} /> Upload Skill (.md)
+              <input
+                type="file"
+                accept=".md"
+                style={{ display: 'none' }}
+                onChange={handleChatSkillUpload}
+              />
+            </label>
+          </div>
+        </div>
+        <p className={styles.sectionHint}>
+          Upload and manage on-demand reference skills for the AI agent chat. Unlike Agent Skills (which drive attack classification and phase-aware workflows), Chat Skills are tactical reference docs that you inject into the agent&apos;s context on the fly using <code>/skill &lt;name&gt;</code> in the chat.
+        </p>
+
+        {chatSkillsLoading ? (
+          <div className={styles.emptyState}><Loader2 size={16} className={styles.spin} /> Loading...</div>
+        ) : chatSkills.length === 0 ? (
+          <div className={styles.emptyState}>No Chat Skills yet. Click Import from Community to add ready-to-use reference skills, or upload your own .md files.</div>
+        ) : (
+          <div className={styles.providerList}>
+            {chatSkills.map(skill => (
+              <div key={skill.id} className={styles.providerCard}>
+                <span className={styles.providerIcon}><BookOpen size={16} /></span>
+                <div className={styles.providerInfo}>
+                  <div className={styles.providerName}>
+                    {skill.name}
+                    {skill.category && (
+                      <span style={{
+                        marginLeft: '8px',
+                        fontSize: '10px',
+                        fontWeight: 500,
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'var(--bg-tertiary)',
+                        color: 'var(--text-secondary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.03em',
+                      }}>
+                        {skill.category}
+                      </span>
+                    )}
+                  </div>
+                  <div className={styles.providerMeta}>
+                    {skill.description || <span style={{ opacity: 0.5, fontStyle: 'italic' }}>No description</span>}
+                  </div>
+                  <div className={styles.providerMeta}>
+                    Uploaded {new Date(skill.createdAt).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className={styles.providerActions}>
+                  <button className="iconButton" title="Edit description" onClick={() => openEditChatDescription(skill.id)}>
+                    <Pencil size={14} />
+                  </button>
+                  <button className="iconButton" title="Download" onClick={() => downloadChatSkill(skill.id, skill.name)}>
+                    <Download size={14} />
+                  </button>
+                  <button className="iconButton" title="Delete" onClick={() => deleteChatSkill(skill.id)}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -1083,6 +1370,120 @@ export default function SettingsPage() {
           />
           <span className="formHint">
             Helps the agent understand when to use this skill. Without a description, the first 500 characters of the markdown are used instead &mdash; a good description improves classification accuracy.
+          </span>
+        </div>
+      </Modal>
+
+      {/* Chat Skill upload modal */}
+      <Modal
+        isOpen={chatSkillNameModal}
+        onClose={() => { setChatSkillNameModal(false); setPendingChatSkillContent(''); setPendingChatSkillName(''); setPendingChatSkillDescription(''); setPendingChatSkillCategory('general') }}
+        title="Upload Chat Skill"
+        size="small"
+        footer={
+          <>
+            <button
+              className="secondaryButton"
+              onClick={() => { setChatSkillNameModal(false); setPendingChatSkillContent(''); setPendingChatSkillName(''); setPendingChatSkillDescription(''); setPendingChatSkillCategory('general') }}
+            >
+              Cancel
+            </button>
+            <button
+              className="primaryButton"
+              disabled={!pendingChatSkillName.trim() || chatSkillUploading}
+              onClick={confirmChatSkillUpload}
+            >
+              {chatSkillUploading ? <Loader2 size={14} className={styles.spin} /> : <Upload size={14} />}
+              Upload
+            </button>
+          </>
+        }
+      >
+        <div className="formGroup">
+          <label className="formLabel">Skill Name</label>
+          <input
+            className="textInput"
+            type="text"
+            value={pendingChatSkillName}
+            onChange={(e) => setPendingChatSkillName(e.target.value)}
+            placeholder="e.g. OWASP Top 10 Reference"
+            autoFocus
+          />
+        </div>
+        <div className="formGroup" style={{ marginTop: '12px' }}>
+          <label className="formLabel">Description</label>
+          <textarea
+            className="textInput"
+            rows={3}
+            value={pendingChatSkillDescription}
+            onChange={(e) => setPendingChatSkillDescription(e.target.value)}
+            placeholder="e.g. Quick reference for OWASP Top 10 vulnerability categories"
+            maxLength={500}
+          />
+          <span className="formHint">
+            Optional. Helps you remember what this skill covers.
+          </span>
+        </div>
+        <div className="formGroup" style={{ marginTop: '12px' }}>
+          <label className="formLabel">Category</label>
+          <select
+            className="textInput"
+            value={pendingChatSkillCategory}
+            onChange={(e) => setPendingChatSkillCategory(e.target.value)}
+          >
+            <option value="general">general</option>
+            <option value="vulnerabilities">vulnerabilities</option>
+            <option value="tooling">tooling</option>
+            <option value="scan_modes">scan_modes</option>
+            <option value="frameworks">frameworks</option>
+            <option value="technologies">technologies</option>
+            <option value="protocols">protocols</option>
+            <option value="coordination">coordination</option>
+          </select>
+          <span className="formHint">
+            Categorize this skill for easier browsing.
+          </span>
+        </div>
+      </Modal>
+
+      {/* Chat Skill edit description modal */}
+      <Modal
+        isOpen={editChatDescModal}
+        onClose={() => { setEditChatDescModal(false); setEditingChatSkillId(''); setEditingChatSkillDescription('') }}
+        title="Edit Chat Skill Description"
+        size="small"
+        footer={
+          <>
+            <button
+              className="secondaryButton"
+              onClick={() => { setEditChatDescModal(false); setEditingChatSkillId(''); setEditingChatSkillDescription('') }}
+            >
+              Cancel
+            </button>
+            <button
+              className="primaryButton"
+              disabled={editChatDescSaving}
+              onClick={saveEditChatDescription}
+            >
+              {editChatDescSaving ? <Loader2 size={14} className={styles.spin} /> : <Pencil size={14} />}
+              Save
+            </button>
+          </>
+        }
+      >
+        <div className="formGroup">
+          <label className="formLabel">Description</label>
+          <textarea
+            className="textInput"
+            rows={3}
+            value={editingChatSkillDescription}
+            onChange={(e) => setEditingChatSkillDescription(e.target.value)}
+            placeholder="e.g. Quick reference for OWASP Top 10 vulnerability categories"
+            maxLength={500}
+            autoFocus
+          />
+          <span className="formHint">
+            Optional description to help you remember what this skill covers.
           </span>
         </div>
       </Modal>
