@@ -25,11 +25,7 @@ export function MasscanSection({ data, updateField }: MasscanSectionProps) {
           <Radar size={16} />
           Masscan Port Scanner
           <NodeInfoTooltip section="Masscan" />
-          {data.masscanEnabled ? (
-            <span className={styles.badgeActive}>Active</span>
-          ) : (
-            <span className={styles.badgeInactive}>Disabled</span>
-          )}
+          <span className={styles.badgeActive}>Active</span>
         </h2>
         <div className={styles.sectionHeaderRight}>
           <div onClick={(e) => e.stopPropagation()}>

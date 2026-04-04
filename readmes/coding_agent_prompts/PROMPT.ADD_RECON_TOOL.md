@@ -121,5 +121,13 @@ Integrate **[TOOL_NAME]** into the RedAmon recon pipeline.
    - `[⚡]` — special mode indicator (e.g., `[⚡] BRUTEFORCE MODE`)
 
    See `recon/domain_recon.py`, `recon/port_scan.py`, `recon/whois_recon.py` for reference. Never use bare `print()` without the `[symbol][ToolName]` prefix.
+- [ ] **Recon Presets** (`webapp/src/lib/recon-presets/presets/*.ts`):
+  Hardcoded parameter presets exist in `webapp/src/lib/recon-presets/presets/`. Each preset is a partial dictionary of camelCase project settings that override defaults when a user selects it. When adding a new tool:
+  1. Review EVERY preset file in the `presets/` folder
+  2. For each preset, decide: should this new tool be **enabled or disabled** given the preset's stated goal? Read the preset's `fullDescription` to understand its intent (e.g., "JS Secret Miner" is JS-focused and disables irrelevant tools)
+  3. If the tool should be disabled in a preset, add `toolEnabled: false` to that preset's `parameters` object
+  4. If the tool should be enabled with non-default settings (e.g., higher limits, specific mode), add those parameters to the preset
+  5. If the tool uses default settings and the preset doesn't need to change it, do NOT add it -- missing keys automatically inherit from defaults (safe merge)
+  6. The preset registry is at `webapp/src/lib/recon-presets/index.ts` -- no changes needed there unless adding a new preset
 - [ ] Error handling: try/except with timeout, Docker/binary not found, API errors — follow existing patterns
 - [ ] Build and test: `docker compose build recon` then run a scan

@@ -5,6 +5,7 @@ import { ProjectForm } from '@/components/projects'
 import { useCreateProject } from '@/hooks/useProjects'
 import { useProject } from '@/providers/ProjectProvider'
 import type { Project } from '@prisma/client'
+import { useAlertModal, useToast } from '@/components/ui'
 import styles from './page.module.css'
 
 type ProjectFormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -13,10 +14,12 @@ export default function NewProjectPage() {
   const router = useRouter()
   const { userId, setCurrentProject } = useProject()
   const createProjectMutation = useCreateProject()
+  const { alertError, alertWarning } = useAlertModal()
+  const toast = useToast()
 
   const handleSubmit = async (data: ProjectFormData & { roeFile?: File | null }) => {
     if (!userId) {
-      alert('Please select a user first')
+      await alertWarning('Please select a user first')
       router.push('/projects')
       return
     }
@@ -40,13 +43,14 @@ export default function NewProjectPage() {
         updatedAt: project.updatedAt.toString()
       })
 
+      toast.success('Project created')
       router.push(`/graph?project=${project.id}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to create project'
       if (message.toLowerCase().includes('guardrail')) {
         throw error // Let ProjectForm handle guardrail errors with its modal
       }
-      alert(message)
+      alertError(message)
     }
   }
 

@@ -9,6 +9,7 @@ import { LlmProviderForm } from '@/components/settings/LlmProviderForm'
 import type { ProviderData } from '@/components/settings/LlmProviderForm'
 import { PROVIDER_TYPES } from '@/lib/llmProviderPresets'
 import { Modal } from '@/components/ui/Modal/Modal'
+import { useAlertModal, useToast } from '@/components/ui'
 import styles from '@/components/settings/Settings.module.css'
 
 interface UserSettings {
@@ -106,6 +107,8 @@ function getProviderLabel(providerType: string): string {
 
 export default function SettingsPage() {
   const { userId } = useProject()
+  const { alertError, alert: showAlert, confirm: showConfirm } = useAlertModal()
+  const toast = useToast()
 
   // LLM Providers
   const [providers, setProviders] = useState<ProviderData[]>([])
@@ -202,12 +205,14 @@ export default function SettingsPage() {
         setPendingSkillContent('')
         setPendingSkillName('')
         setPendingSkillDescription('')
+        toast.success('Attack skill uploaded')
       } else {
         const err = await resp.json()
-        alert(err.error || 'Failed to upload skill')
+        alertError(err.error || 'Failed to upload skill')
       }
     } catch (err) {
       console.error('Failed to upload skill:', err)
+      toast.error('Failed to upload skill')
     } finally {
       setSkillUploading(false)
     }
@@ -235,12 +240,14 @@ export default function SettingsPage() {
 
   // Delete skill
   const deleteSkill = useCallback(async (skillId: string) => {
-    if (!userId || !confirm('Delete this skill? It will be removed from all projects.')) return
+    if (!userId || !(await showConfirm('Delete this skill? It will be removed from all projects.'))) return
     try {
       await fetch(`/api/users/${userId}/attack-skills/${skillId}`, { method: 'DELETE' })
       fetchSkills()
+      toast.success('Attack skill deleted')
     } catch (err) {
       console.error('Failed to delete skill:', err)
+      toast.error('Failed to delete skill')
     }
   }, [userId, fetchSkills])
 
@@ -275,12 +282,14 @@ export default function SettingsPage() {
         setEditDescModal(false)
         setEditingSkillId('')
         setEditingSkillDescription('')
+        toast.success('Skill description updated')
       } else {
         const err = await resp.json()
-        alert(err.error || 'Failed to update description')
+        alertError(err.error || 'Failed to update description')
       }
     } catch (err) {
       console.error('Failed to update skill description:', err)
+      toast.error('Failed to update description')
     } finally {
       setEditDescSaving(false)
     }
@@ -295,9 +304,9 @@ export default function SettingsPage() {
       const data = await resp.json()
       if (resp.ok) {
         fetchSkills()
-        alert(data.message || `Imported ${data.imported ?? 0} community skill(s).`)
+        showAlert(data.message || `Imported ${data.imported ?? 0} community skill(s).`)
       } else {
-        alert(data.error || 'Failed to import community skills')
+        alertError(data.error || 'Failed to import community skills')
       }
     } catch (err) {
       console.error('Failed to import community skills:', err)
@@ -356,12 +365,14 @@ export default function SettingsPage() {
         setPendingChatSkillName('')
         setPendingChatSkillDescription('')
         setPendingChatSkillCategory('general')
+        toast.success('Chat skill uploaded')
       } else {
         const err = await resp.json()
-        alert(err.error || 'Failed to upload chat skill')
+        alertError(err.error || 'Failed to upload chat skill')
       }
     } catch (err) {
       console.error('Failed to upload chat skill:', err)
+      toast.error('Failed to upload chat skill')
     } finally {
       setChatSkillUploading(false)
     }
@@ -389,12 +400,14 @@ export default function SettingsPage() {
 
   // Delete chat skill
   const deleteChatSkill = useCallback(async (skillId: string) => {
-    if (!userId || !confirm('Delete this chat skill?')) return
+    if (!userId || !(await showConfirm('Delete this chat skill?'))) return
     try {
       await fetch(`/api/users/${userId}/chat-skills/${skillId}`, { method: 'DELETE' })
       fetchChatSkills()
+      toast.success('Chat skill deleted')
     } catch (err) {
       console.error('Failed to delete chat skill:', err)
+      toast.error('Failed to delete chat skill')
     }
   }, [userId, fetchChatSkills])
 
@@ -429,12 +442,14 @@ export default function SettingsPage() {
         setEditChatDescModal(false)
         setEditingChatSkillId('')
         setEditingChatSkillDescription('')
+        toast.success('Chat skill description updated')
       } else {
         const err = await resp.json()
-        alert(err.error || 'Failed to update description')
+        alertError(err.error || 'Failed to update description')
       }
     } catch (err) {
       console.error('Failed to update chat skill description:', err)
+      toast.error('Failed to update description')
     } finally {
       setEditChatDescSaving(false)
     }
@@ -449,9 +464,9 @@ export default function SettingsPage() {
       const data = await resp.json()
       if (resp.ok) {
         fetchChatSkills()
-        alert(data.message || `Imported ${data.imported ?? 0} community chat skill(s).`)
+        showAlert(data.message || `Imported ${data.imported ?? 0} community chat skill(s).`)
       } else {
-        alert(data.error || 'Failed to import community chat skills')
+        alertError(data.error || 'Failed to import community chat skills')
       }
     } catch (err) {
       console.error('Failed to import community chat skills:', err)
@@ -528,12 +543,14 @@ export default function SettingsPage() {
 
   // Delete provider
   const deleteProvider = useCallback(async (providerId: string) => {
-    if (!userId || !confirm('Delete this provider? Models from it will no longer be available.')) return
+    if (!userId || !(await showConfirm('Delete this provider? Models from it will no longer be available.'))) return
     try {
       await fetch(`/api/users/${userId}/llm-providers/${providerId}`, { method: 'DELETE' })
       fetchProviders()
+      toast.success('Provider deleted')
     } catch (err) {
       console.error('Failed to delete provider:', err)
+      toast.error('Failed to delete provider')
     }
   }, [userId, fetchProviders])
 
@@ -600,9 +617,11 @@ export default function SettingsPage() {
           setRotationConfigs(data.rotationConfigs)
         }
         setSettingsDirty(false)
+        toast.success('Settings saved')
       }
     } catch (err) {
       console.error('Failed to save settings:', err)
+      toast.error('Failed to save settings')
     } finally {
       setSettingsSaving(false)
     }

@@ -80,6 +80,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'MASSCAN_EXCLUDE_TARGETS': '',
 
     # httpx HTTP Probing
+    'HTTPX_ENABLED': True,
     'HTTPX_DOCKER_IMAGE': 'projectdiscovery/httpx:latest',
     'HTTPX_THREADS': 50,
     'HTTPX_TIMEOUT': 10,
@@ -139,6 +140,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'BANNER_GRAB_MAX_LENGTH': 500,
 
     # Nuclei Vulnerability Scanner
+    'NUCLEI_ENABLED': True,
     'NUCLEI_SEVERITY': ['critical', 'high', 'medium', 'low'],
     'NUCLEI_TEMPLATES': [],
     'NUCLEI_EXCLUDE_TEMPLATES': [],
@@ -356,6 +358,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NVD_API_KEY': '',  # Configured in Global Settings → Tool API Keys
 
     # MITRE CWE/CAPEC Enrichment
+    'MITRE_ENABLED': True,
     'MITRE_AUTO_UPDATE_DB': True,
     'MITRE_INCLUDE_CWE': True,
     'MITRE_INCLUDE_CAPEC': True,
@@ -397,6 +400,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'SECURITY_CHECK_MAX_WORKERS': 10,
 
     # Shodan Pipeline Enrichment
+    'SHODAN_ENABLED': True,
     'SHODAN_HOST_LOOKUP': True,
     'SHODAN_REVERSE_DNS': True,
     'SHODAN_DOMAIN_DNS': False,
@@ -409,6 +413,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'URLSCAN_MAX_RESULTS': 5000,
 
     # OSINT & Threat Intelligence Enrichment
+    'OSINT_ENRICHMENT_ENABLED': False,
     'CENSYS_ENABLED': False,
     'CENSYS_API_TOKEN': '',
     'CENSYS_ORG_ID': '',
@@ -442,6 +447,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'UNCOVER_GOOGLE_API_CX': '',
     'UNCOVER_ONYPHE_API_KEY': '',
     'UNCOVER_DRIFTNET_API_KEY': '',
+
+    # Subdomain Discovery
+    'SUBDOMAIN_DISCOVERY_ENABLED': True,
 
     # Subdomain Discovery Tool Toggles
     'CRTSH_ENABLED': True,
@@ -605,6 +613,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['NMAP_HOST_TIMEOUT'] = project.get('nmapHostTimeout', DEFAULT_SETTINGS['NMAP_HOST_TIMEOUT'])
 
     # httpx HTTP Probing
+    settings['HTTPX_ENABLED'] = project.get('httpxEnabled', DEFAULT_SETTINGS['HTTPX_ENABLED'])
     settings['HTTPX_DOCKER_IMAGE'] = project.get('httpxDockerImage', DEFAULT_SETTINGS['HTTPX_DOCKER_IMAGE'])
     settings['HTTPX_THREADS'] = project.get('httpxThreads', DEFAULT_SETTINGS['HTTPX_THREADS'])
     settings['HTTPX_TIMEOUT'] = project.get('httpxTimeout', DEFAULT_SETTINGS['HTTPX_TIMEOUT'])
@@ -652,6 +661,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['BANNER_GRAB_MAX_LENGTH'] = project.get('bannerGrabMaxLength', DEFAULT_SETTINGS['BANNER_GRAB_MAX_LENGTH'])
 
     # Nuclei Vulnerability Scanner
+    settings['NUCLEI_ENABLED'] = project.get('nucleiEnabled', DEFAULT_SETTINGS['NUCLEI_ENABLED'])
     settings['NUCLEI_SEVERITY'] = project.get('nucleiSeverity', DEFAULT_SETTINGS['NUCLEI_SEVERITY'])
     settings['NUCLEI_TEMPLATES'] = project.get('nucleiTemplates', DEFAULT_SETTINGS['NUCLEI_TEMPLATES'])
     settings['NUCLEI_EXCLUDE_TEMPLATES'] = project.get('nucleiExcludeTemplates', DEFAULT_SETTINGS['NUCLEI_EXCLUDE_TEMPLATES'])
@@ -818,6 +828,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['CVE_LOOKUP_MIN_CVSS'] = project.get('cveLookupMinCvss', DEFAULT_SETTINGS['CVE_LOOKUP_MIN_CVSS'])
 
     # MITRE CWE/CAPEC Enrichment
+    settings['MITRE_ENABLED'] = project.get('mitreEnabled', DEFAULT_SETTINGS['MITRE_ENABLED'])
     settings['MITRE_AUTO_UPDATE_DB'] = project.get('mitreAutoUpdateDb', DEFAULT_SETTINGS['MITRE_AUTO_UPDATE_DB'])
     settings['MITRE_INCLUDE_CWE'] = project.get('mitreIncludeCwe', DEFAULT_SETTINGS['MITRE_INCLUDE_CWE'])
     settings['MITRE_INCLUDE_CAPEC'] = project.get('mitreIncludeCapec', DEFAULT_SETTINGS['MITRE_INCLUDE_CAPEC'])
@@ -859,6 +870,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['SECURITY_CHECK_MAX_WORKERS'] = project.get('securityCheckMaxWorkers', DEFAULT_SETTINGS['SECURITY_CHECK_MAX_WORKERS'])
 
     # Shodan Pipeline Enrichment
+    settings['SHODAN_ENABLED'] = project.get('shodanEnabled', DEFAULT_SETTINGS['SHODAN_ENABLED'])
     settings['SHODAN_HOST_LOOKUP'] = project.get('shodanHostLookup', DEFAULT_SETTINGS['SHODAN_HOST_LOOKUP'])
     settings['SHODAN_REVERSE_DNS'] = project.get('shodanReverseDns', DEFAULT_SETTINGS['SHODAN_REVERSE_DNS'])
     settings['SHODAN_DOMAIN_DNS'] = project.get('shodanDomainDns', DEFAULT_SETTINGS['SHODAN_DOMAIN_DNS'])
@@ -869,6 +881,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['URLSCAN_MAX_RESULTS'] = project.get('urlscanMaxResults', DEFAULT_SETTINGS['URLSCAN_MAX_RESULTS'])
 
     # OSINT & Threat Intelligence Enrichment
+    settings['OSINT_ENRICHMENT_ENABLED'] = project.get('osintEnrichmentEnabled', DEFAULT_SETTINGS['OSINT_ENRICHMENT_ENABLED'])
     settings['CENSYS_ENABLED'] = project.get('censysEnabled', DEFAULT_SETTINGS['CENSYS_ENABLED'])
     settings['FOFA_ENABLED'] = project.get('fofaEnabled', DEFAULT_SETTINGS['FOFA_ENABLED'])
     settings['FOFA_MAX_RESULTS'] = int(project.get('fofaMaxResults', DEFAULT_SETTINGS['FOFA_MAX_RESULTS']) or DEFAULT_SETTINGS['FOFA_MAX_RESULTS'])
@@ -883,6 +896,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['UNCOVER_DOCKER_IMAGE'] = project.get('uncoverDockerImage', DEFAULT_SETTINGS['UNCOVER_DOCKER_IMAGE'])
 
     # Subdomain Discovery Tool Toggles
+    settings['SUBDOMAIN_DISCOVERY_ENABLED'] = project.get('subdomainDiscoveryEnabled', DEFAULT_SETTINGS['SUBDOMAIN_DISCOVERY_ENABLED'])
     settings['CRTSH_ENABLED'] = project.get('crtshEnabled', DEFAULT_SETTINGS['CRTSH_ENABLED'])
     settings['CRTSH_MAX_RESULTS'] = project.get('crtshMaxResults', DEFAULT_SETTINGS['CRTSH_MAX_RESULTS'])
     settings['HACKERTARGET_ENABLED'] = project.get('hackerTargetEnabled', DEFAULT_SETTINGS['HACKERTARGET_ENABLED'])
@@ -1173,7 +1187,7 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     # --- Hakrawler: DISABLED (active crawler, no rate-limit control) ---
     settings['HAKRAWLER_ENABLED'] = False
 
-    # --- jsluice: keep enabled (passive) but reduce file count ---
+    # --- jsluice: keep enabled but reduce file count ---
     settings['JSLUICE_MAX_FILES'] = 20
 
     # --- FFuf: DISABLED (active directory brute-force) ---

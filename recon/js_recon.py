@@ -662,9 +662,8 @@ def run_js_recon(combined_result: dict, settings: dict) -> dict:
                     'source': 'js_recon',
                 })
 
-        # 6. Redact raw secrets before output (security: never write plaintext secrets to disk)
-        for secret in results.get('secrets', []):
-            secret.pop('matched_text', None)
+        # 6. Keep matched_text in output for copy-to-clipboard in the UI
+        # The redacted_value is still used for display; matched_text holds the full secret
 
         # 7. Build output
         duration = time.time() - start_time

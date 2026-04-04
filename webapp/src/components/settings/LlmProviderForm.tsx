@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { Loader2, CheckCircle, XCircle, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { useToast } from '@/components/ui'
 import { PROVIDER_TYPES, OPENAI_COMPAT_PRESETS } from '@/lib/llmProviderPresets'
 import type { ProviderType } from '@/lib/llmProviderPresets'
 import styles from './Settings.module.css'
@@ -48,6 +49,7 @@ const EMPTY_PROVIDER: ProviderData = {
 
 export function LlmProviderForm({ userId, provider, onSave, onCancel }: LlmProviderFormProps) {
   const isEditing = !!provider?.id
+  const toast = useToast()
   const [form, setForm] = useState<ProviderData>(() => provider || { ...EMPTY_PROVIDER })
   const [step, setStep] = useState<'type' | 'config'>(isEditing || form.providerType ? 'config' : 'type')
   const [saving, setSaving] = useState(false)
@@ -135,9 +137,11 @@ export function LlmProviderForm({ userId, provider, onSave, onCancel }: LlmProvi
         throw new Error(err.error || 'Failed to save')
       }
 
+      toast.success(isEditing ? 'Provider updated' : 'Provider added')
       onSave()
     } catch (err) {
       console.error('Failed to save provider:', err)
+      toast.error('Failed to save provider')
     } finally {
       setSaving(false)
     }

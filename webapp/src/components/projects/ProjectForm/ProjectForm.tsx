@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Save, X, Loader2, AlertTriangle, Download, ShieldAlert } from 'lucide-react'
+import { Save, X, Loader2, AlertTriangle, Download, ShieldAlert, Zap } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import { validateProjectForm } from '@/lib/validation'
 import { isHardBlockedDomain } from '@/lib/hard-guardrail'
 import { useProject } from '@/providers/ProjectProvider'
+import { useAlertModal, useToast } from '@/components/ui'
 import styles from './ProjectForm.module.css'
 
 // Import sections
@@ -40,6 +41,8 @@ import { CypherFixSettingsSection } from './sections/CypherFixSettingsSection'
 import { RoeSection } from './sections/RoeSection'
 import { OsintEnrichmentSection } from './sections/OsintEnrichmentSection'
 import { JsReconSection } from './sections/JsReconSection'
+import { ReconPresetModal } from './ReconPresetModal'
+import { getPresetById, type ReconPreset } from '@/lib/recon-presets'
 
 type ProjectFormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
@@ -78,6 +81,7 @@ const TAB_GROUPS = [
     label: 'Recon Pipeline',
     style: 'tabGroupRecon',
     tabs: [
+      { id: 'preset', label: 'Recon Preset' },
       { id: 'target', label: 'Target & Modules' },
       { id: 'discovery', label: 'Discovery & OSINT' },
       { id: 'port', label: 'Port Scanning' },
@@ -153,12 +157,23 @@ export function ProjectForm({
   mode,
   projectIdFromRoute,
 }: ProjectFormProps) {
+  const { alertError, alertWarning } = useAlertModal()
+  const toast = useToast()
   const [activeTab, setActiveTab] = useState<TabId>('target')
   const [isLoadingDefaults, setIsLoadingDefaults] = useState(mode === 'create')
   const [formData, setFormData] = useState<ProjectFormData>(() => ({
     ...MINIMAL_DEFAULTS,
     ...initialData
   } as ProjectFormData))
+
+  // Recon Preset
+  const [isPresetModalOpen, setIsPresetModalOpen] = useState(false)
+  const [appliedPreset, setAppliedPreset] = useState<ReconPreset | null>(() => {
+    if (initialData?.reconPresetId) {
+      return getPresetById(initialData.reconPresetId as string) ?? null
+    }
+    return null
+  })
 
   // Domain conflict checking
   const [conflict, setConflict] = useState<ConflictResult | null>(null)
@@ -260,23 +275,33 @@ export function ProjectForm({
     setFormData(prev => ({ ...prev, ...fields }))
   }
 
+  const applyPreset = useCallback(async (preset: ReconPreset) => {
+    // Only apply the preset's own parameters (recon pipeline fields only).
+    // User-entered fields (name, targetDomain, etc.) are preserved because
+    // preset.parameters only contains recon-relevant keys.
+    setFormData(prev => ({ ...prev, ...preset.parameters }))
+    setAppliedPreset(preset)
+    setIsPresetModalOpen(false)
+    toast.success(`Recon preset "${preset.name}" applied`, 'Preset Applied')
+  }, [toast])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!formData.name.trim()) {
-      alert('Project name is required')
+      alertWarning('Project name is required')
       return
     }
 
     if (!formData.ipMode && !formData.targetDomain.trim()) {
-      alert('Target domain is required')
+      alertWarning('Target domain is required')
       return
     }
 
     // Run field validation
     const validationErrors = validateProjectForm(formData as unknown as Record<string, unknown>)
     if (validationErrors.length > 0) {
-      alert('Validation errors:\n' + validationErrors.map(e => `- ${e.message}`).join('\n'))
+      alertWarning('Validation errors:\n' + validationErrors.map(e => `- ${e.message}`).join('\n'))
       return
     }
 
@@ -291,7 +316,7 @@ export function ProjectForm({
 
     // Block submission if there's a conflict
     if (conflict?.hasConflict) {
-      alert('Cannot save project: ' + conflict.message)
+      alertError('Cannot save project: ' + conflict.message)
       return
     }
 
@@ -299,6 +324,7 @@ export function ProjectForm({
       // Attach roeFile and pre-generated ID to form data for submission
       const submitData = {
         ...formData,
+        reconPresetId: appliedPreset?.id ?? formData.reconPresetId ?? null,
         ...(roeFile ? { roeFile } : {}),
         ...(mode === 'create' && projectId ? { id: projectId } : {}),
       }
@@ -312,7 +338,7 @@ export function ProjectForm({
           .replace(/^Target permanently blocked:\s*/i, '')
         setGuardrailError(reason || message)
       } else {
-        alert(message)
+        alertError(message)
       }
     }
   }
@@ -325,6 +351,9 @@ export function ProjectForm({
       <div className={styles.header}>
         <h1 className={styles.title}>
           {mode === 'create' ? 'Create New Project' : 'Project Settings'}
+          {appliedPreset && (
+            <span className={styles.presetBadge}>Started from: {appliedPreset.name}</span>
+          )}
         </h1>
         <div className={styles.actions}>
           <button
@@ -408,9 +437,16 @@ export function ProjectForm({
                     <button
                       key={tab.id}
                       type="button"
-                      className={`tab ${activeTab === tab.id ? 'tabActive' : ''} ${styles.compactTab} ${'wide' in tab && tab.wide ? styles.wideTab : ''}`}
-                      onClick={() => setActiveTab(tab.id)}
+                      className={`tab ${activeTab === tab.id ? 'tabActive' : ''} ${styles.compactTab} ${'wide' in tab && tab.wide ? styles.wideTab : ''} ${tab.id === 'preset' ? styles.presetTab : ''}`}
+                      onClick={() => {
+                        if (tab.id === 'preset') {
+                          setIsPresetModalOpen(true)
+                        } else {
+                          setActiveTab(tab.id)
+                        }
+                      }}
                     >
+                      {tab.id === 'preset' && <Zap size={15} className={styles.presetIcon} />}
                       {tab.label}
                     </button>
                   ))}
@@ -522,6 +558,14 @@ export function ProjectForm({
           </div>
         </>
       )}
+
+      {/* Recon Preset modal */}
+      <ReconPresetModal
+        isOpen={isPresetModalOpen}
+        onClose={() => setIsPresetModalOpen(false)}
+        onSelect={applyPreset}
+        currentPresetId={appliedPreset?.id}
+      />
 
       {/* Guardrail block modal */}
       {guardrailError && (

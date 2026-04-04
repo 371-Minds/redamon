@@ -24,7 +24,7 @@ export function JsluiceSection({ data, updateField }: JsluiceSectionProps) {
           <Code size={16} />
           jsluice JS Analyzer
           <NodeInfoTooltip section="Jsluice" />
-          <span className={styles.badgePassive}>Passive</span>
+          <span className={styles.badgeActive}>Active</span>
         </h2>
         <div className={styles.sectionHeaderRight}>
           <div onClick={(e) => e.stopPropagation()}>

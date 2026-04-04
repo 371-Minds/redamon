@@ -135,6 +135,9 @@ model Project {
   stealthMode                 Boolean  @default(false) @map("stealth_mode")
   targetGuardrailEnabled      Boolean  @default(true) @map("target_guardrail_enabled")
 
+  // ========== RECON PRESET ==========
+  reconPresetId               String?  @map("recon_preset_id")
+
   // ========== SCAN MODULES ==========
   scanModules                 String[] @default(["domain_discovery", "port_scan", "http_probe", "resource_enum", "vuln_scan"]) @map("scan_modules")
   updateGraphDb               Boolean  @default(true) @map("update_graph_db")
@@ -201,6 +204,7 @@ model Project {
   nmapHostTimeout             Int      @default(300) @map("nmap_host_timeout")
 
   // ========== HTTPX HTTP PROBING ==========
+  httpxEnabled                Boolean  @default(true)  @map("httpx_enabled")
   httpxDockerImage            String   @default("projectdiscovery/httpx:latest") @map("httpx_docker_image")
   httpxThreads                Int      @default(50) @map("httpx_threads")
   httpxTimeout                Int      @default(10) @map("httpx_timeout")
@@ -248,6 +252,7 @@ model Project {
   bannerGrabMaxLength         Int      @default(500) @map("banner_grab_max_length")
 
   // ========== NUCLEI VULNERABILITY SCANNER ==========
+  nucleiEnabled               Boolean  @default(true)  @map("nuclei_enabled")
   nucleiSeverity              String[] @default(["critical", "high", "medium", "low"]) @map("nuclei_severity")
   nucleiTemplates             String[] @default([]) @map("nuclei_templates")
   nucleiExcludeTemplates      String[] @default([]) @map("nuclei_exclude_templates")
@@ -415,6 +420,7 @@ model Project {
   cveLookupMinCvss            Float    @default(0.0) @map("cve_lookup_min_cvss")
 
   // ========== MITRE CWE/CAPEC ENRICHMENT ==========
+  mitreEnabled                Boolean  @default(true)  @map("mitre_enabled")
   mitreAutoUpdateDb           Boolean  @default(true) @map("mitre_auto_update_db")
   mitreIncludeCwe             Boolean  @default(true) @map("mitre_include_cwe")
   mitreIncludeCapec           Boolean  @default(true) @map("mitre_include_capec")
@@ -518,6 +524,9 @@ model Project {
   urlscanEnabled                        Boolean  @default(true)  @map("urlscan_enabled")
   urlscanMaxResults                     Int      @default(5000)  @map("urlscan_max_results")
 
+  // OSINT & Threat Intelligence Master Switch
+  osintEnrichmentEnabled                Boolean  @default(false) @map("osint_enrichment_enabled")
+
   // OSINT & Threat Intelligence Pipeline Enrichment
   censysEnabled                         Boolean  @default(false)  @map("censys_enabled_recon")
   fofaEnabled                           Boolean  @default(false)  @map("fofa_enabled")
@@ -531,6 +540,9 @@ model Project {
   uncoverEnabled                        Boolean  @default(false)  @map("uncover_enabled")
   uncoverMaxResults                     Int      @default(500)    @map("uncover_max_results")
   uncoverDockerImage                    String   @default("projectdiscovery/uncover:latest") @map("uncover_docker_image")
+
+  // Subdomain Discovery Master Switch
+  subdomainDiscoveryEnabled             Boolean  @default(true)  @map("subdomain_discovery_enabled")
 
   // Subdomain Discovery Tool Toggles
   crtshEnabled                          Boolean  @default(true)  @map("crtsh_enabled")

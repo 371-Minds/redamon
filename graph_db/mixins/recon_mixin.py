@@ -3172,6 +3172,7 @@ class ReconMixin:
                             s.detection_method = $detection_method,
                             s.key_type = $key_type,
                             s.validation_status = $validation_status,
+                            s.matched_text = $matched_text,
                             s.validation_info = $validation_info,
                             s.discovered_at = $discovered_at,
                             s.updated_at = datetime()
@@ -3182,6 +3183,7 @@ class ReconMixin:
                         source_url=source_url,
                         base_url=base_url or 'upload',
                         sample=secret.get("redacted_value", ""),
+                        matched_text=secret.get("matched_text", ""),
                         confidence=secret.get("confidence", "medium"),
                         detection_method=secret.get("detection_method", "regex"),
                         key_type=secret.get("category", ""),

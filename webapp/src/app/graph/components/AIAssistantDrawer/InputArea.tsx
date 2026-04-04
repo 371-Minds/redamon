@@ -2,6 +2,7 @@
 
 import React, { KeyboardEvent, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Send, Loader2, Square, Play, Zap, X, Download, Upload } from 'lucide-react'
+import { useAlertModal } from '@/components/ui'
 import styles from './AIAssistantDrawer.module.css'
 import type { ActiveSkill } from './hooks/useSendHandlers'
 
@@ -72,6 +73,7 @@ export function InputArea({
   setActiveSkill,
   onSkillActivate,
 }: InputAreaProps) {
+  const { alert: showAlert } = useAlertModal()
   const [skills, setSkills] = useState<ChatSkillSummary[]>([])
   const [skillsFetched, setSkillsFetched] = useState(false)
   const [showSkillPicker, setShowSkillPicker] = useState(false)
@@ -170,7 +172,7 @@ export function InputArea({
         const data = await res.json()
         // Refresh skills list
         setSkillsFetched(false)
-        alert(`Imported ${data.imported} skill${data.imported !== 1 ? 's' : ''}${data.skipped ? `, ${data.skipped} skipped (already exist)` : ''}`)
+        showAlert(`Imported ${data.imported} skill${data.imported !== 1 ? 's' : ''}${data.skipped ? `, ${data.skipped} skipped (already exist)` : ''}`)
       }
     } catch { /* silent */ }
     setImporting(false)

@@ -26,10 +26,13 @@ import { useProjectById } from '@/hooks/useProjects'
 import { useProject } from '@/providers/ProjectProvider'
 import { GVM_PHASES, GITHUB_HUNT_PHASES, TRUFFLEHOG_PHASES } from '@/lib/recon-types'
 import { OtherScansModal } from './components/OtherScansModal/OtherScansModal'
+import { useAlertModal, useToast } from '@/components/ui'
 import styles from './page.module.css'
 
 export default function GraphPage() {
   const router = useRouter()
+  const { alertError } = useAlertModal()
+  const toast = useToast()
   const { projectId, userId, currentProject, setCurrentProject, isLoading: projectLoading } = useProject()
 
   const [activeView, setActiveView] = useState<ViewMode>('graph')
@@ -533,16 +536,22 @@ export default function GraphPage() {
   }, [])
 
   const handleExportExcel = useCallback(() => {
-    let rows = effectiveTableRows
-    if (globalFilter) {
-      const search = globalFilter.toLowerCase()
-      rows = rows.filter(r =>
-        r.node.name?.toLowerCase().includes(search) ||
-        r.node.type?.toLowerCase().includes(search)
-      )
+    try {
+      let rows = effectiveTableRows
+      if (globalFilter) {
+        const search = globalFilter.toLowerCase()
+        rows = rows.filter(r =>
+          r.node.name?.toLowerCase().includes(search) ||
+          r.node.type?.toLowerCase().includes(search)
+        )
+      }
+      exportToExcel(rows)
+      toast.success('Excel exported')
+    } catch (err) {
+      console.error('Failed to export Excel:', err)
+      toast.error('Failed to export Excel')
     }
-    exportToExcel(rows)
-  }, [effectiveTableRows, globalFilter])
+  }, [effectiveTableRows, globalFilter, toast])
 
   // ── End table view state ──────────────────────────────────────────────
 
@@ -733,8 +742,9 @@ export default function GraphPage() {
     if (result) {
       setIsReconModalOpen(false)
       setActiveLogsDrawer('recon')
+      toast.info('Recon scan started')
     }
-  }, [startRecon, clearLogs])
+  }, [startRecon, clearLogs, toast])
 
   const handleDownloadJSON = useCallback(async () => {
     if (!projectId) return
@@ -748,11 +758,12 @@ export default function GraphPage() {
     })
     if (!res.ok) {
       const data = await res.json()
-      alert(data.error || 'Failed to delete node')
+      alertError(data.error || 'Failed to delete node')
       return
     }
+    toast.success('Node deleted')
     refetchGraph()
-  }, [projectId, refetchGraph])
+  }, [projectId, refetchGraph, toast])
 
   const handleToggleLogs = useCallback(() => {
     setActiveLogsDrawer(prev => prev === 'recon' ? null : 'recon')
@@ -768,8 +779,9 @@ export default function GraphPage() {
     if (result) {
       setIsGvmModalOpen(false)
       setActiveLogsDrawer('gvm')
+      toast.info('GVM scan started')
     }
-  }, [startGvm, clearGvmLogs])
+  }, [startGvm, clearGvmLogs, toast])
 
   const handleDownloadGvmJSON = useCallback(async () => {
     if (!projectId) return
@@ -781,12 +793,18 @@ export default function GraphPage() {
   }, [])
 
   const handleStartGithubHunt = useCallback(async () => {
-    clearGithubHuntLogs()
-    const result = await startGithubHunt()
-    if (result) {
-      setActiveLogsDrawer('githubHunt')
+    try {
+      clearGithubHuntLogs()
+      const result = await startGithubHunt()
+      if (result) {
+        setActiveLogsDrawer('githubHunt')
+        toast.info('GitHub Hunt started')
+      }
+    } catch (err) {
+      console.error('Failed to start GitHub Hunt:', err)
+      toast.error('Failed to start GitHub Hunt')
     }
-  }, [startGithubHunt, clearGithubHuntLogs])
+  }, [startGithubHunt, clearGithubHuntLogs, toast])
 
   const handleDownloadGithubHuntJSON = useCallback(async () => {
     if (!projectId) return
@@ -798,12 +816,18 @@ export default function GraphPage() {
   }, [])
 
   const handleStartTrufflehog = useCallback(async () => {
-    clearTrufflehogLogs()
-    const result = await startTrufflehog()
-    if (result) {
-      setActiveLogsDrawer('trufflehog')
+    try {
+      clearTrufflehogLogs()
+      const result = await startTrufflehog()
+      if (result) {
+        setActiveLogsDrawer('trufflehog')
+        toast.info('Trufflehog scan started')
+      }
+    } catch (err) {
+      console.error('Failed to start Trufflehog:', err)
+      toast.error('Failed to start Trufflehog')
     }
-  }, [startTrufflehog, clearTrufflehogLogs])
+  }, [startTrufflehog, clearTrufflehogLogs, toast])
 
   const handleDownloadTrufflehogJSON = useCallback(async () => {
     if (!projectId) return
@@ -818,9 +842,9 @@ export default function GraphPage() {
   const handlePauseRecon = useCallback(async () => { await pauseRecon() }, [pauseRecon])
   const handleResumeRecon = useCallback(async () => { await resumeRecon() }, [resumeRecon])
   const handleStopRecon = useCallback(async () => { await stopRecon() }, [stopRecon])
-  const handlePauseGvm = useCallback(async () => { await pauseGvm() }, [pauseGvm])
-  const handleResumeGvm = useCallback(async () => { await resumeGvm() }, [resumeGvm])
-  const handleStopGvm = useCallback(async () => { await stopGvm() }, [stopGvm])
+  const handlePauseGvm = useCallback(async () => { await pauseGvm(); toast.info('GVM scan paused') }, [pauseGvm, toast])
+  const handleResumeGvm = useCallback(async () => { await resumeGvm(); toast.info('GVM scan resumed') }, [resumeGvm, toast])
+  const handleStopGvm = useCallback(async () => { await stopGvm(); toast.info('GVM scan stopped') }, [stopGvm, toast])
   const handlePauseGithubHunt = useCallback(async () => { await pauseGithubHunt() }, [pauseGithubHunt])
   const handleResumeGithubHunt = useCallback(async () => { await resumeGithubHunt() }, [resumeGithubHunt])
   const handleStopGithubHunt = useCallback(async () => { await stopGithubHunt() }, [stopGithubHunt])

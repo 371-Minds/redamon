@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ProjectForm } from '@/components/projects'
 import { useProjectById, useUpdateProject } from '@/hooks/useProjects'
 import { useProject } from '@/providers/ProjectProvider'
+import { useAlertModal } from '@/components/ui'
 import styles from './page.module.css'
 
 export default function ProjectSettingsPage() {
@@ -14,6 +15,7 @@ export default function ProjectSettingsPage() {
 
   const { data: project, isLoading, error } = useProjectById(projectId)
   const updateProjectMutation = useUpdateProject()
+  const { alertError } = useAlertModal()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleSubmit = async (data: any) => {
@@ -39,7 +41,7 @@ export default function ProjectSettingsPage() {
       if (message.toLowerCase().includes('guardrail')) {
         throw error // Let ProjectForm handle guardrail errors with its modal
       }
-      alert(message)
+      alertError(message)
     }
   }
 

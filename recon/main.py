@@ -683,7 +683,7 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     # =====================================================================
     # GROUP 2b — Uncover Target Expansion (before port scan / OSINT)
     # =====================================================================
-    if settings.get('UNCOVER_ENABLED', False):
+    if settings.get('OSINT_ENRICHMENT_ENABLED', False) and settings.get('UNCOVER_ENABLED', False):
         try:
             from recon.uncover_enrich import run_uncover_expansion, merge_uncover_into_pipeline
             uncover_data = run_uncover_expansion(combined_result, settings)
@@ -699,7 +699,7 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     # =====================================================================
     # Shodan + Port Scan (parallel fan-out) — same pattern as domain recon
     # =====================================================================
-    shodan_enabled = any([
+    shodan_enabled = settings.get('SHODAN_ENABLED', True) and any([
         settings.get('SHODAN_HOST_LOOKUP'),
         settings.get('SHODAN_REVERSE_DNS'),
         settings.get('SHODAN_DOMAIN_DNS'),
@@ -773,15 +773,18 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         'zoomeye': ('ZOOMEYE_ENABLED', 'recon.zoomeye_enrich', 'run_zoomeye_enrichment_isolated', 'update_graph_from_zoomeye'),
         'criminalip': ('CRIMINALIP_ENABLED', 'recon.criminalip_enrich', 'run_criminalip_enrichment_isolated', 'update_graph_from_criminalip'),
     }
-    enabled_ip_osint = {
-        name: cfg for name, cfg in _ip_osint_tools.items()
-        if settings.get(cfg[0], False)
-        and (
-            settings.get(f'{name.upper()}_API_KEY', '')
-            or (name == 'censys' and settings.get('CENSYS_API_TOKEN', ''))
-            or name == 'otx'  # OTX supports anonymous requests without an API key
-        )
-    }
+    if not settings.get('OSINT_ENRICHMENT_ENABLED', False):
+        enabled_ip_osint = {}
+    else:
+        enabled_ip_osint = {
+            name: cfg for name, cfg in _ip_osint_tools.items()
+            if settings.get(cfg[0], False)
+            and (
+                settings.get(f'{name.upper()}_API_KEY', '')
+                or (name == 'censys' and settings.get('CENSYS_API_TOKEN', ''))
+                or name == 'otx'  # OTX supports anonymous requests without an API key
+            )
+        }
     if enabled_ip_osint:
         print(f"\n[*][Pipeline] OSINT Enrichment ({', '.join(enabled_ip_osint.keys())}) — parallel")
         print("-" * 40)
@@ -809,13 +812,16 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
 
     # HTTP Probe
     if "http_probe" in SCAN_MODULES:
-        combined_result = run_http_probe(combined_result, output_file=output_file, settings=settings)
-        combined_result["metadata"]["modules_executed"].append("http_probe")
-        save_recon_file(combined_result, output_file)
+        if not settings.get('HTTPX_ENABLED', True):
+            print("\n[*][httpx] HTTP probing disabled -- skipping")
+        else:
+            combined_result = run_http_probe(combined_result, output_file=output_file, settings=settings)
+            combined_result["metadata"]["modules_executed"].append("http_probe")
+            save_recon_file(combined_result, output_file)
 
-        _graph_update_bg("update_graph_from_http_probe", combined_result, USER_ID, PROJECT_ID)
-        if 'urlscan' in combined_result:
-            _graph_update_bg("update_graph_from_urlscan_enrichment", combined_result, USER_ID, PROJECT_ID)
+            _graph_update_bg("update_graph_from_http_probe", combined_result, USER_ID, PROJECT_ID)
+            if 'urlscan' in combined_result:
+                _graph_update_bg("update_graph_from_urlscan_enrichment", combined_result, USER_ID, PROJECT_ID)
 
     # Check if active scans should be skipped
     skip_active_scans, skip_reason = should_skip_active_scans(combined_result)
@@ -850,7 +856,8 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
             combined_result["metadata"]["modules_executed"].append("vuln_scan")
             save_recon_file(combined_result, output_file)
 
-            combined_result = run_mitre_enrichment(combined_result, output_file=output_file, settings=settings)
+            if settings.get('MITRE_ENABLED', True):
+                combined_result = run_mitre_enrichment(combined_result, output_file=output_file, settings=settings)
             save_recon_file(combined_result, output_file)
             _graph_update_bg("update_graph_from_vuln_scan", combined_result, USER_ID, PROJECT_ID)
 
@@ -1011,11 +1018,14 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                     whois_lookup, root_domain, save_output=False, settings=_settings
                 )
 
-            g1_futures["discovery"] = g1_exec.submit(
-                discover_subdomains, root_domain,
-                anonymous=anonymous, bruteforce=bruteforce,
-                resolve=dns_enabled, save_output=False, settings=_settings
-            )
+            if _settings.get('SUBDOMAIN_DISCOVERY_ENABLED', True):
+                g1_futures["discovery"] = g1_exec.submit(
+                    discover_subdomains, root_domain,
+                    anonymous=anonymous, bruteforce=bruteforce,
+                    resolve=dns_enabled, save_output=False, settings=_settings
+                )
+            else:
+                print(f"[-][Discovery] Subdomain discovery disabled -- using root domain only")
 
             if _settings.get('URLSCAN_ENABLED'):
                 from recon.urlscan_enrich import run_urlscan_discovery_only
@@ -1086,7 +1096,7 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # =====================================================================
     # GROUP 2b — Uncover Target Expansion (before port scan / OSINT)
     # =====================================================================
-    if _settings.get('UNCOVER_ENABLED', False):
+    if _settings.get('OSINT_ENRICHMENT_ENABLED', False) and _settings.get('UNCOVER_ENABLED', False):
         try:
             from recon.uncover_enrich import run_uncover_expansion, merge_uncover_into_pipeline
             uncover_data = run_uncover_expansion(combined_result, _settings)
@@ -1103,7 +1113,7 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # GROUP 3 — Fan-Out: Shodan + Port Scan (parallel)
     # Both need IPs/hostnames from DNS. Independent of each other.
     # =====================================================================
-    shodan_enabled = any([
+    shodan_enabled = _settings.get('SHODAN_ENABLED', True) and any([
         _settings.get('SHODAN_HOST_LOOKUP'),
         _settings.get('SHODAN_REVERSE_DNS'),
         _settings.get('SHODAN_DOMAIN_DNS'),
@@ -1212,15 +1222,18 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         'criminalip': ('CRIMINALIP_ENABLED', 'recon.criminalip_enrich', 'run_criminalip_enrichment_isolated', 'update_graph_from_criminalip'),
     }
 
-    enabled_osint = {
-        name: cfg for name, cfg in _osint_tools.items()
-        if _settings.get(cfg[0], False)
-        and (
-            _settings.get(f'{name.upper()}_API_KEY', '')
-            or (name == 'censys' and _settings.get('CENSYS_API_TOKEN', ''))
-            or name == 'otx'  # OTX supports anonymous requests without an API key
-        )
-    }
+    if not _settings.get('OSINT_ENRICHMENT_ENABLED', False):
+        enabled_osint = {}
+    else:
+        enabled_osint = {
+            name: cfg for name, cfg in _osint_tools.items()
+            if _settings.get(cfg[0], False)
+            and (
+                _settings.get(f'{name.upper()}_API_KEY', '')
+                or (name == 'censys' and _settings.get('CENSYS_API_TOKEN', ''))
+                or name == 'otx'  # OTX supports anonymous requests without an API key
+            )
+        }
 
     if enabled_osint:
         print(f"\n[*][Pipeline] GROUP 3b: OSINT Enrichment ({', '.join(enabled_osint.keys())}) — parallel")
@@ -1257,14 +1270,17 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # Depends on: port scan data (open ports) + hostnames
     # =====================================================================
     if "http_probe" in SCAN_MODULES:
-        combined_result = run_http_probe(combined_result, output_file=output_file, settings=_settings)
-        combined_result["metadata"]["modules_executed"].append("http_probe")
-        save_recon_file(combined_result, output_file)
+        if not _settings.get('HTTPX_ENABLED', True):
+            print("\n[*][httpx] HTTP probing disabled -- skipping")
+        else:
+            combined_result = run_http_probe(combined_result, output_file=output_file, settings=_settings)
+            combined_result["metadata"]["modules_executed"].append("http_probe")
+            save_recon_file(combined_result, output_file)
 
-        # Background graph updates
-        _graph_update_bg("update_graph_from_http_probe", combined_result, USER_ID, PROJECT_ID)
-        if 'urlscan' in combined_result:
-            _graph_update_bg("update_graph_from_urlscan_enrichment", combined_result, USER_ID, PROJECT_ID)
+            # Background graph updates
+            _graph_update_bg("update_graph_from_http_probe", combined_result, USER_ID, PROJECT_ID)
+            if 'urlscan' in combined_result:
+                _graph_update_bg("update_graph_from_urlscan_enrichment", combined_result, USER_ID, PROJECT_ID)
 
     # Check if we should skip active scanning modules (resource_enum, vuln_scan)
     # These require live targets from http_probe to work
@@ -1305,7 +1321,8 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             combined_result["metadata"]["modules_executed"].append("vuln_scan")
             save_recon_file(combined_result, output_file)
 
-            combined_result = run_mitre_enrichment(combined_result, output_file=output_file, settings=_settings)
+            if _settings.get('MITRE_ENABLED', True):
+                combined_result = run_mitre_enrichment(combined_result, output_file=output_file, settings=_settings)
             save_recon_file(combined_result, output_file)
 
             _graph_update_bg("update_graph_from_vuln_scan", combined_result, USER_ID, PROJECT_ID)
@@ -1601,38 +1618,41 @@ def main():
         
         # Run http_probe if in SCAN_MODULES (when domain_discovery is skipped)
         if "http_probe" in SCAN_MODULES:
-            domain_result = run_http_probe(domain_result, output_file=output_file, settings=_settings)
-            if "metadata" in domain_result and "modules_executed" in domain_result["metadata"]:
-                if "http_probe" not in domain_result["metadata"]["modules_executed"]:
-                    domain_result["metadata"]["modules_executed"].append("http_probe")
-            with open(output_file, 'w') as f:
-                json.dump(domain_result, f, indent=2)
-
-            # Update Graph DB with http probe data
-            if UPDATE_GRAPH_DB:
-                print(f"\n[*][graph-db] GRAPH UPDATE: HTTP Probe Data")
-                print("-" * 40)
-                try:
-                    from graph_db import Neo4jClient
-                    with Neo4jClient() as graph_client:
-                        if graph_client.verify_connection():
-                            http_stats = graph_client.update_graph_from_http_probe(domain_result, USER_ID, PROJECT_ID)
-                            domain_result["metadata"]["graph_db_http_probe_updated"] = True
-                            domain_result["metadata"]["graph_db_http_probe_stats"] = http_stats
-                            print(f"[+][graph-db] Graph database updated with http probe data")
-                        else:
-                            print(f"[!][graph-db] Could not connect to Neo4j - skipping http probe graph update")
-                            domain_result["metadata"]["graph_db_http_probe_updated"] = False
-                except ImportError:
-                    print(f"[!][graph-db] Neo4j client not available - skipping http probe graph update")
-                    domain_result["metadata"]["graph_db_http_probe_updated"] = False
-                except Exception as e:
-                    print(f"[!][graph-db] HTTP probe graph update failed: {e}")
-                    domain_result["metadata"]["graph_db_http_probe_updated"] = False
-                    domain_result["metadata"]["graph_db_http_probe_error"] = str(e)
-
+            if not _settings.get('HTTPX_ENABLED', True):
+                print("\n[*][httpx] HTTP probing disabled -- skipping")
+            else:
+                domain_result = run_http_probe(domain_result, output_file=output_file, settings=_settings)
+                if "metadata" in domain_result and "modules_executed" in domain_result["metadata"]:
+                    if "http_probe" not in domain_result["metadata"]["modules_executed"]:
+                        domain_result["metadata"]["modules_executed"].append("http_probe")
                 with open(output_file, 'w') as f:
                     json.dump(domain_result, f, indent=2)
+
+                # Update Graph DB with http probe data
+                if UPDATE_GRAPH_DB:
+                    print(f"\n[*][graph-db] GRAPH UPDATE: HTTP Probe Data")
+                    print("-" * 40)
+                    try:
+                        from graph_db import Neo4jClient
+                        with Neo4jClient() as graph_client:
+                            if graph_client.verify_connection():
+                                http_stats = graph_client.update_graph_from_http_probe(domain_result, USER_ID, PROJECT_ID)
+                                domain_result["metadata"]["graph_db_http_probe_updated"] = True
+                                domain_result["metadata"]["graph_db_http_probe_stats"] = http_stats
+                                print(f"[+][graph-db] Graph database updated with http probe data")
+                            else:
+                                print(f"[!][graph-db] Could not connect to Neo4j - skipping http probe graph update")
+                                domain_result["metadata"]["graph_db_http_probe_updated"] = False
+                    except ImportError:
+                        print(f"[!][graph-db] Neo4j client not available - skipping http probe graph update")
+                        domain_result["metadata"]["graph_db_http_probe_updated"] = False
+                    except Exception as e:
+                        print(f"[!][graph-db] HTTP probe graph update failed: {e}")
+                        domain_result["metadata"]["graph_db_http_probe_updated"] = False
+                        domain_result["metadata"]["graph_db_http_probe_error"] = str(e)
+
+                    with open(output_file, 'w') as f:
+                        json.dump(domain_result, f, indent=2)
 
         # Check if we should skip active scanning modules (resource_enum, vuln_scan)
         # These require live targets from http_probe to work
@@ -1725,7 +1745,8 @@ def main():
                     json.dump(domain_result, f, indent=2)
 
                 # Automatically run MITRE CWE/CAPEC enrichment after vuln_scan
-                domain_result = run_mitre_enrichment(domain_result, output_file=output_file, settings=_settings)
+                if _settings.get('MITRE_ENABLED', True):
+                    domain_result = run_mitre_enrichment(domain_result, output_file=output_file, settings=_settings)
                 with open(output_file, 'w') as f:
                     json.dump(domain_result, f, indent=2)
 

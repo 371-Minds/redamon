@@ -308,7 +308,7 @@ A fully automated, **parallelized** scanning engine running inside a Kali Linux 
 | | **OSINT Enrichment** | Shodan / InternetDB | Passive | Parallel with port scan |
 | | **Uncover Expansion** | ProjectDiscovery Uncover (13 engines: Shodan, Censys, FOFA, ZoomEye, Netlas, CriminalIP, Quake, Hunter, PublicWWW, HunterHow, Google, Onyphe, Driftnet) | Passive | Before port scan (GROUP 2b) |
 | | **Threat Intel Enrichment** | Censys, FOFA, OTX (AlienVault), Netlas, VirusTotal, ZoomEye, CriminalIP | Passive | 7 tools parallel (GROUP 3b) |
-| **Port Scanning** | **Port Scanning** | Masscan, Naabu | Active | Both parallel |
+| **Port Scanning** | **Port Scanning** | Masscan, Naabu | Active / Passive | Both parallel (Naabu supports passive InternetDB mode) |
 | **Nmap Service Detection** | **Service Version Detection** | Nmap (-sV, --script vuln) | Active | Sequential per target |
 | **HTTP Probing** | **HTTP Probing** | httpx | Active | Internal parallel |
 | | **Tech Detection** | Wappalyzer | Passive | Sequential (post-probe) |
@@ -316,9 +316,9 @@ A fully automated, **parallelized** scanning engine running inside a Kali Linux 
 | **Resource Enum** | **Web Crawling** | Katana, Hakrawler | Active | Parallel |
 | | **Archive Discovery** | GAU (Wayback, CommonCrawl, OTX) | Passive | Parallel with crawlers |
 | | **Parameter Mining** | ParamSpider (Wayback CDX) | Passive | Parallel with crawlers |
-| | **JS Analysis** | jsluice | Passive | Sequential (post-crawl) |
+| | **JS Analysis** | jsluice | Active | Sequential (post-crawl) |
 | | **Directory Fuzzing** | FFuf | Active | Sequential (post-jsluice) |
-| | **Parameter Discovery** | Arjun | Active | Methods parallel (GET/POST/JSON/XML) |
+| | **Parameter Discovery** | Arjun | Active / Passive | Methods parallel (GET/POST/JSON/XML) |
 | | **API Discovery** | Kiterunner | Active | Sequential per wordlist |
 | **JS Recon** | **JS Secret Detection** | 100 regex patterns + custom uploads | Passive | Parallel per file |
 | | **Key Validation** | 21 service validators (AWS, GitHub, Stripe, etc.) | Active | Rate-limited (1/sec/svc) |

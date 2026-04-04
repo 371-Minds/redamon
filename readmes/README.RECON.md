@@ -852,7 +852,7 @@ flowchart TB
 | **Hakrawler** | Active crawling | Links, forms, DOM-discovered URLs |
 | **GAU** | Passive archives | Historical/deleted pages |
 | **Kiterunner** | API bruteforce | Hidden API routes |
-| **jsluice** | Passive JS analysis | URLs, endpoints, and secrets from JS files |
+| **jsluice** | JS analysis (active download) | URLs, endpoints, and secrets from JS files |
 
 📖 **Detailed documentation:** [readmes/README.RESOURCE_ENUM.md](README.RESOURCE_ENUM.md)
 
@@ -1132,7 +1132,7 @@ flowchart TB
 | Katana | 1-5 minutes | Crawl depth 3 |
 | Hakrawler | 30-120 seconds | Active crawling, depth 2 |
 | GAU | 10-30 seconds | Passive |
-| jsluice | 10-60 seconds | Passive JS analysis |
+| jsluice | 10-60 seconds | Active JS download + analysis |
 | Nuclei | 1-30 minutes | Depends on templates |
 | GVM | 30 min - 2+ hours | Full scan |
 

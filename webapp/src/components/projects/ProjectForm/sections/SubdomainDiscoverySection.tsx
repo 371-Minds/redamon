@@ -26,10 +26,18 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
           Subdomain Discovery
           <NodeInfoTooltip section="SubdomainDiscovery" />
         </h2>
-        <ChevronDown
-          size={16}
-          className={`${styles.sectionIcon} ${isOpen ? styles.sectionIconOpen : ''}`}
-        />
+        <div className={styles.sectionHeaderRight}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <Toggle
+              checked={data.subdomainDiscoveryEnabled}
+              onChange={(checked) => updateField('subdomainDiscoveryEnabled', checked)}
+            />
+          </div>
+          <ChevronDown
+            size={16}
+            className={`${styles.sectionIcon} ${isOpen ? styles.sectionIconOpen : ''}`}
+          />
+        </div>
       </div>
 
       {isOpen && (
@@ -39,6 +47,8 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
             databases without touching the target. Active discovery sends DNS queries directly.
           </p>
 
+          {data.subdomainDiscoveryEnabled && (
+          <>
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Sources <span className={styles.badgePassive}>Passive</span></h3>
 
@@ -367,6 +377,8 @@ export function SubdomainDiscoverySection({ data, updateField }: SubdomainDiscov
               />
             </div>
           </div>
+          </>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, memo } from 'react'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, AlertTriangle, Copy, Check } from 'lucide-react'
 import styles from './JsReconTable.module.css'
 
 export type { JsReconData }
@@ -51,7 +51,9 @@ export async function exportJsReconXlsx(data: JsReconData) {
       const row: Record<string, unknown> = {}
       for (const col of columns) {
         const val = col.includes('.') ? col.split('.').reduce((o: any, k) => o?.[k], r) : r[col]
-        row[col] = Array.isArray(val) ? val.join(', ') : typeof val === 'object' && val !== null ? JSON.stringify(val) : val ?? ''
+        row[col] = Array.isArray(val)
+          ? val.map(v => typeof v === 'object' && v !== null ? JSON.stringify(v) : v).join(', ')
+          : typeof val === 'object' && val !== null ? JSON.stringify(val) : val ?? ''
       }
       return row
     })
@@ -59,17 +61,17 @@ export async function exportJsReconXlsx(data: JsReconData) {
     XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31))
   }
 
-  addSheet('Secrets', data.secrets || [], ['severity', 'name', 'redacted_value', 'source_url', 'validation.status', 'confidence', 'category'])
-  addSheet('Endpoints', data.endpoints || [], ['severity', 'method', 'path', 'full_url', 'type', 'category', 'source_js'])
-  addSheet('Dependencies', data.dependencies || [], ['severity', 'package_name', 'scope', 'npm_exists', 'title', 'detail', 'recommendation'])
-  addSheet('Source Maps', data.source_maps || [], ['js_url', 'map_url', 'accessible', 'files_count', 'secrets_in_source', 'discovery_method'])
-  addSheet('DOM Sinks', data.dom_sinks || [], ['severity', 'type', 'pattern', 'description', 'source_url', 'line'])
-  addSheet('Frameworks', data.frameworks || [], ['name', 'version', 'source_url', 'confidence'])
-  addSheet('Dev Comments', data.dev_comments || [], ['severity', 'type', 'content', 'source_url', 'line'])
+  addSheet('Secrets', data.secrets || [], ['severity', 'name', 'redacted_value', 'matched_text', 'category', 'source_url', 'line_number', 'context', 'detection_method', 'validation.status', 'confidence', 'validator_ref'])
+  addSheet('Endpoints', data.endpoints || [], ['severity', 'method', 'path', 'full_url', 'type', 'category', 'base_url', 'source_js', 'parameters', 'line_number'])
+  addSheet('Dependencies', data.dependencies || [], ['severity', 'finding_type', 'package_name', 'scope', 'npm_exists', 'confidence', 'title', 'detail', 'recommendation', 'source_urls'])
+  addSheet('Source Maps', data.source_maps || [], ['severity', 'finding_type', 'js_url', 'map_url', 'accessible', 'discovery_method', 'files_count', 'source_files', 'secrets_in_source', 'secrets'])
+  addSheet('DOM Sinks', data.dom_sinks || [], ['severity', 'finding_type', 'type', 'pattern', 'description', 'source_url', 'line', 'confidence'])
+  addSheet('Frameworks', data.frameworks || [], ['name', 'version', 'severity', 'finding_type', 'source_url', 'confidence'])
+  addSheet('Dev Comments', data.dev_comments || [], ['severity', 'type', 'content', 'source_url', 'line', 'confidence'])
   addSheet('Cloud Assets', data.cloud_assets || [], ['provider', 'type', 'url', 'source_url'])
-  addSheet('Emails', data.emails || [], ['email', 'category', 'source_url'])
-  addSheet('IPs', data.ip_addresses || [], ['ip', 'type', 'source_url'])
-  addSheet('Object Refs', data.object_references || [], ['type', 'value', 'source_url', 'potential_idor'])
+  addSheet('Emails', data.emails || [], ['email', 'category', 'source_url', 'context'])
+  addSheet('IPs', data.ip_addresses || [], ['ip', 'type', 'source_url', 'context'])
+  addSheet('Object Refs', data.object_references || [], ['type', 'value', 'source_url', 'context', 'potential_idor'])
   addSheet('Subdomains', (data.discovered_subdomains || []).map(s => ({ subdomain: s })), ['subdomain'])
   addSheet('External Domains', data.external_domains || [], ['domain', 'times_seen'])
 
@@ -201,6 +203,27 @@ function filterRows(rows: any[], search: string): any[] {
   })
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }, [text])
+  if (!text) return null
+  return (
+    <button
+      type="button"
+      className={styles.copyButton}
+      onClick={handleCopy}
+      title="Copy full value"
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  )
+}
+
 function SecretsTable({ rows, search, limit }: { rows: any[]; search: string; limit: number }) {
   const filtered = filterRows(rows, search).slice(0, limit)
   if (!filtered.length) return <div className={styles.stateContainer}>No secrets found.</div>
@@ -212,7 +235,10 @@ function SecretsTable({ rows, search, limit }: { rows: any[]; search: string; li
           <tr key={s.id || i}>
             <td>{sevBadge(s.severity)}</td>
             <td>{s.name}</td>
-            <td><code className={styles.mono}>{s.redacted_value}</code></td>
+            <td>
+              <code className={styles.mono}>{s.redacted_value}</code>
+              <CopyButton text={s.matched_text || ''} />
+            </td>
             <td className={styles.truncate} title={s.source_url}>{s.source_url}</td>
             <td>{valBadge(s.validation?.status)}</td>
             <td>{s.confidence}</td>
