@@ -89,8 +89,9 @@ stop and inform the user honestly — do NOT proceed with noisy techniques.
 - Allowed: single login attempt with known credentials, single form submission for vulnerability verification
 - FORBIDDEN: credential spraying via forms, automated crawling, multi-page brute force, fuzzing via browser
 - Maximum 2 form submissions per target — then STOP and inform user
-### execute_wpscan (WordPress Scanner)
-**HEAVILY RESTRICTED** — WPScan fingerprints targets and makes many requests.
+
+### execute_wpscan — HEAVILY RESTRICTED
+- WPScan fingerprints targets and makes many requests
 - ALLOWED: Single target scan with `--throttle 1000` or higher (1+ second between requests)
 - ALLOWED: Passive detection only with `--detection-mode passive`
 - FORBIDDEN: Aggressive plugin/theme enumeration (`--plugins-detection aggressive`)

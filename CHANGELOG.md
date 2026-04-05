@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.5.1] - 2026-04-05
 
+### Added
+
+- **WPScan WordPress scanner** -- new `execute_wpscan` agentic tool (Type B MCP) for WordPress vulnerability scanning. Detects vulnerable plugins, themes, users, config backups, and misconfigurations. 600s timeout, HEAVILY RESTRICTED in stealth mode, added to brute_force RoE category. Available in informational and exploitation phases.
+
 ### Fixed
 
 - **Graph 3D rendering** -- removed LOD (Level-of-Detail) system that was causing disconnected edges and low-quality nodes during live recon. 3D now always renders at full quality (16-segment spheres, glow, wireframes, labels, particles)

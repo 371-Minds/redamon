@@ -135,13 +135,13 @@ export function ToolMatrixSection({ data, updateField }: ToolMatrixSectionProps)
               { id: 'execute_naabu', label: 'execute_naabu' },
               { id: 'execute_nmap', label: 'execute_nmap' },
               { id: 'execute_nuclei', label: 'execute_nuclei' },
+              { id: 'execute_wpscan', label: 'execute_wpscan' },
               { id: 'kali_shell', label: 'kali_shell' },
               { id: 'execute_code', label: 'execute_code' },
               { id: 'execute_playwright', label: 'execute_playwright' },
               { id: 'execute_hydra', label: 'execute_hydra' },
               { id: 'metasploit_console', label: 'metasploit_console' },
               { id: 'msf_restart', label: 'msf_restart' },
-              { id: 'execute_wpscan', label: 'execute_wpscan' },
             ].map(tool => {
               const phaseMap = (typeof data.agentToolPhaseMap === 'string'
                 ? JSON.parse(data.agentToolPhaseMap)

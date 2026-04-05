@@ -361,6 +361,7 @@ A **LangGraph-based autonomous agent** implementing the ReAct pattern. It progre
 | **Scanning** | **execute_naabu** | Fast port scanning and verification | Info, Exploit | network_recon :8000 |
 | | **execute_nmap** | Deep service detection (-sV), OS fingerprint, NSE scripts | All | nmap :8004 |
 | | **execute_nuclei** | CVE verification and exploitation with 9,000+ templates + custom uploads | Info, Exploit | nuclei :8002 |
+| | **execute_wpscan** | WordPress vulnerability scanner -- detects vulnerable plugins, themes, users, misconfigurations | Info, Exploit | network_recon :8000 |
 | **Web & HTTP** | **execute_curl** | HTTP requests -- reachability, headers, status codes, banners | All | network_recon :8000 |
 | | **execute_playwright** | Headless Chromium browser automation -- JS-rendered content extraction and interactive scripting for SPAs, form testing, XSS verification | All | playwright :8005 |
 | **Exploitation** | **metasploit_console** | Persistent msfconsole -- exploit execution, session management, post-exploitation | Exploit, Post | metasploit :8003 |

@@ -259,7 +259,7 @@ interface JsReconSectionProps {
 }
 
 export function JsReconSection({ data, updateField, projectId, mode }: JsReconSectionProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(true)
   const [showCustomFiles, setShowCustomFiles] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [customFiles, setCustomFiles] = useState<CustomFileState>({})
