@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.1] - 2026-04-05
+
+### Fixed
+
+- **WorkflowView build failure** -- aligned `onSave` prop type from `() => void` to `() => Promise<void>` to match `WorkflowNodeModal`'s expected signature
+
+---
+
 ## [3.6.0] - 2026-04-05
 
 ### Added

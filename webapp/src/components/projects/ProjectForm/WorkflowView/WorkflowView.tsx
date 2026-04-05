@@ -24,7 +24,7 @@ interface WorkflowViewProps {
   updateField: <K extends keyof FormData>(field: K, value: FormData[K]) => void
   projectId?: string
   mode: 'create' | 'edit'
-  onSave?: () => void
+  onSave?: () => Promise<void>
 }
 
 const nodeTypes = {
