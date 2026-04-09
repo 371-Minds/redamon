@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, Pencil, Trash2, Loader2, Eye, EyeOff, Upload, Download, Swords, RotateCw, Copy, Check, ExternalLink, ChevronDown, ChevronRight, Info, BookOpen } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
@@ -11,6 +11,8 @@ import { PROVIDER_TYPES } from '@/lib/llmProviderPresets'
 import { Modal } from '@/components/ui/Modal/Modal'
 import { useAlertModal, useToast } from '@/components/ui'
 import styles from '@/components/settings/Settings.module.css'
+import { buildTemplate, templateToJson, validateAndParse, isValidationError } from '@/lib/apiKeysTemplate'
+import type { ParsedImport } from '@/lib/apiKeysTemplate'
 
 interface UserSettings {
   githubAccessToken: string
@@ -131,6 +133,10 @@ export default function SettingsPage() {
   const [rotationModal, setRotationModal] = useState<string | null>(null) // toolName or null
   const [rotationDraft, setRotationDraft] = useState({ extraKeys: '', rotateEveryN: 10 })
   const [rotationDraftDirty, setRotationDraftDirty] = useState(false) // true = user typed new keys
+
+  // API Keys Import
+  const [pendingImport, setPendingImport] = useState<ParsedImport | null>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   // Attack Skills
   const [attackSkills, setAttackSkills] = useState<{ id: string; name: string; description?: string | null; createdAt: string }[]>([])
@@ -701,6 +707,70 @@ export default function SettingsPage() {
     closeRotationModal()
   }, [rotationModal, closeRotationModal])
 
+  // --- API Keys Import / Export ---------------------------------------------------
+
+  const downloadKeysTemplate = useCallback(() => {
+    const keyFields: Record<string, string> = {}
+    const tunnelFields: Record<string, string> = {}
+    for (const [k, v] of Object.entries(settings)) {
+      if (['ngrokAuthtoken', 'chiselServerUrl', 'chiselAuth'].includes(k)) {
+        tunnelFields[k] = v
+      } else {
+        keyFields[k] = v
+      }
+    }
+    const template = buildTemplate(keyFields, tunnelFields)
+    const json = templateToJson(template)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'redamon-api-keys-template.json'
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Template downloaded')
+  }, [settings])
+
+  const handleKeysFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (importFileRef.current) importFileRef.current.value = ''
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const raw = reader.result as string
+      const result = validateAndParse(raw, file.size)
+      if (isValidationError(result)) {
+        toast.error(result.message)
+        return
+      }
+      if (result.keyCount === 0 && result.rotationCount === 0 && result.tunnelingCount === 0) {
+        toast.error('No keys to import — all values are empty or masked.')
+        return
+      }
+      setPendingImport(result)
+    }
+    reader.onerror = () => toast.error('Failed to read file.')
+    reader.readAsText(file)
+  }, [])
+
+  const confirmImport = useCallback(() => {
+    if (!pendingImport) return
+    setSettings(prev => ({ ...prev, ...pendingImport.keys, ...pendingImport.tunneling }))
+    for (const [tool, cfg] of Object.entries(pendingImport.rotation)) {
+      setRotationConfigs(prev => ({
+        ...prev,
+        [tool]: {
+          extraKeyCount: cfg.extraKeys.length,
+          rotateEveryN: cfg.rotateEveryN,
+          _extraKeys: cfg.extraKeys.join('\n'),
+        } as RotationInfo & { _extraKeys: string },
+      }))
+    }
+    setSettingsDirty(true)
+    setPendingImport(null)
+    toast.success('Keys imported — click "Save Settings" to persist.')
+  }, [pendingImport])
+
   const searchParams = useSearchParams()
   const validTabs = ['providers', 'skills', 'chat-skills', 'keys', 'system']
   const initialTab = searchParams.get('tab') || 'providers'
@@ -952,6 +1022,21 @@ export default function SettingsPage() {
       {activeTab === 'keys' && <><div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>API Keys</h2>
+          <div className={styles.sectionHeaderActions}>
+            <button className={styles.sectionHeaderBtn} onClick={downloadKeysTemplate} title="Download a JSON template to fill in your API keys offline">
+              <Download size={13} /> Download Template
+            </button>
+            <button className={styles.sectionHeaderBtn} onClick={() => importFileRef.current?.click()} title="Import API keys from a JSON template file">
+              <Upload size={13} /> Import Keys
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".json"
+              style={{ display: 'none' }}
+              onChange={handleKeysFileSelect}
+            />
+          </div>
         </div>
         {settingsLoading ? (
           <div className={styles.emptyState}><Loader2 size={16} className={styles.spin} /> Loading...</div>
@@ -1614,6 +1699,36 @@ export default function SettingsPage() {
             After this many API calls, switch to the next key in the pool (default: 10).
           </span>
         </div>
+      </Modal>
+
+      {/* Import Keys Confirmation Modal */}
+      <Modal
+        isOpen={!!pendingImport}
+        onClose={() => setPendingImport(null)}
+        title="Import API Keys"
+        size="small"
+        footer={
+          <>
+            <button className="secondaryButton" onClick={() => setPendingImport(null)}>Cancel</button>
+            <button className="primaryButton" onClick={confirmImport}>
+              <Upload size={14} /> Import
+            </button>
+          </>
+        }
+      >
+        {pendingImport && (
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            <p style={{ marginBottom: '12px' }}>The following will be loaded into the form:</p>
+            <ul style={{ margin: 0, paddingLeft: '18px' }}>
+              {pendingImport.keyCount > 0 && <li><strong>{pendingImport.keyCount}</strong> API key{pendingImport.keyCount > 1 ? 's' : ''}</li>}
+              {pendingImport.rotationCount > 0 && <li><strong>{pendingImport.rotationCount}</strong> rotation config{pendingImport.rotationCount > 1 ? 's' : ''}</li>}
+              {pendingImport.tunnelingCount > 0 && <li><strong>{pendingImport.tunnelingCount}</strong> tunneling field{pendingImport.tunnelingCount > 1 ? 's' : ''}</li>}
+            </ul>
+            <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+              Empty values and masked values are skipped. You must click <strong>Save Settings</strong> after import to persist.
+            </p>
+          </div>
+        )}
       </Modal>
 
     </div>
