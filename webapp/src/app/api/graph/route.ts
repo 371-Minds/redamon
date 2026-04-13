@@ -18,6 +18,14 @@ export async function GET(request: NextRequest) {
 
   if (GRAPH_PERF_DEBUG) console.log(`[GraphPerf:API] GET /api/graph projectId=${projectId}`)
 
+  // Allow clients to bypass server cache (used after pipeline completion
+  // to ensure background graph-DB writes are picked up)
+  const fresh = searchParams.get('fresh') === '1'
+  if (fresh) {
+    invalidateCache(projectId)
+    if (GRAPH_PERF_DEBUG) console.log(`[GraphPerf:API] Fresh request -- cache invalidated for ${projectId}`)
+  }
+
   // Check If-None-Match header for ETag-based conditional request
   const ifNoneMatch = request.headers.get('if-none-match')
 
@@ -34,7 +42,7 @@ export async function GET(request: NextRequest) {
         status: 304,
         headers: {
           'ETag': `"${cached.etag}"`,
-          'Cache-Control': 'private, max-age=5',
+          'Cache-Control': 'private, no-cache',
         },
       })
     }
@@ -45,7 +53,7 @@ export async function GET(request: NextRequest) {
       {
         headers: {
           'ETag': `"${cached.etag}"`,
-          'Cache-Control': 'private, max-age=5',
+          'Cache-Control': 'private, no-cache',
         },
       }
     )
@@ -179,7 +187,7 @@ export async function GET(request: NextRequest) {
         status: 304,
         headers: {
           'ETag': `"${etag}"`,
-          'Cache-Control': 'private, max-age=5',
+          'Cache-Control': 'private, no-cache',
         },
       })
     }
@@ -192,7 +200,7 @@ export async function GET(request: NextRequest) {
       headers: {
         'Content-Type': 'application/json',
         'ETag': `"${etag}"`,
-        'Cache-Control': 'private, max-age=5',
+        'Cache-Control': 'private, no-cache',
       },
     })
   } catch (error) {

@@ -26,18 +26,18 @@ def test_default_settings_have_new_fields():
     from recon.project_settings import DEFAULT_SETTINGS
 
     expected = {
-        'KATANA_PARALLELISM': 5,
-        'KATANA_CONCURRENCY': 10,
-        'HAKRAWLER_PARALLELISM': 4,
+        'KATANA_PARALLELISM': 8,
+        'KATANA_CONCURRENCY': 15,
+        'HAKRAWLER_PARALLELISM': 5,
         'GAU_WORKERS': 10,
-        'PARAMSPIDER_WORKERS': 5,
-        'FFUF_PARALLELISM': 3,
-        'KITERUNNER_PARALLELISM': 2,
-        'JSLUICE_PARALLELISM': 3,
+        'PARAMSPIDER_WORKERS': 8,
+        'FFUF_PARALLELISM': 4,
+        'KITERUNNER_PARALLELISM': 3,
+        'JSLUICE_PARALLELISM': 5,
         'SHODAN_WORKERS': 5,
-        'DNS_MAX_WORKERS': 50,
+        'DNS_MAX_WORKERS': 80,
         'DNS_RECORD_PARALLELISM': True,
-        'NMAP_PARALLELISM': 2,
+        'NMAP_PARALLELISM': 5,
         'OTX_WORKERS': 5,
         'VIRUSTOTAL_WORKERS': 3,
         'CENSYS_WORKERS': 5,
@@ -106,11 +106,11 @@ def test_settings_defaults_for_old_projects():
     settings['GAU_WORKERS'] = old_project.get('gauWorkers', DEFAULT_SETTINGS['GAU_WORKERS'])
     settings['DNS_MAX_WORKERS'] = old_project.get('dnsMaxWorkers', DEFAULT_SETTINGS['DNS_MAX_WORKERS'])
 
-    assert settings['KATANA_PARALLELISM'] == 5
-    assert settings['KATANA_CONCURRENCY'] == 10
-    assert settings['HAKRAWLER_PARALLELISM'] == 4
+    assert settings['KATANA_PARALLELISM'] == 8
+    assert settings['KATANA_CONCURRENCY'] == 15
+    assert settings['HAKRAWLER_PARALLELISM'] == 5
     assert settings['GAU_WORKERS'] == 10
-    assert settings['DNS_MAX_WORKERS'] == 50
+    assert settings['DNS_MAX_WORKERS'] == 80
 
     print("PASS: test_settings_defaults_for_old_projects")
 

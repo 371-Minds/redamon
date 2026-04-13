@@ -44,7 +44,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'WHOIS_MAX_RETRIES': 6,
     'DNS_ENABLED': True,
     'DNS_MAX_RETRIES': 3,
-    'DNS_MAX_WORKERS': 50,
+    'DNS_MAX_WORKERS': 80,
     'DNS_RECORD_PARALLELISM': True,
 
     # Naabu Port Scanner
@@ -70,7 +70,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NMAP_TIMING_TEMPLATE': 'T3',
     'NMAP_TIMEOUT': 600,
     'NMAP_HOST_TIMEOUT': 300,
-    'NMAP_PARALLELISM': 2,
+    'NMAP_PARALLELISM': 5,
 
     # Masscan Port Scanner (disabled by default -- only useful for large IP ranges/CIDRs)
     'MASSCAN_ENABLED': False,
@@ -221,8 +221,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language: en-US,en;q=0.9',
     ],
-    'KATANA_PARALLELISM': 5,
-    'KATANA_CONCURRENCY': 10,
+    'KATANA_PARALLELISM': 8,
+    'KATANA_CONCURRENCY': 15,
 
     # GAU Passive URL Discovery
     'GAU_ENABLED': False,
@@ -257,7 +257,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'PARAMSPIDER_ENABLED': False,
     'PARAMSPIDER_PLACEHOLDER': 'FUZZ',
     'PARAMSPIDER_TIMEOUT': 120,
-    'PARAMSPIDER_WORKERS': 5,
+    'PARAMSPIDER_WORKERS': 8,
 
     # Hakrawler Web Crawler
     'HAKRAWLER_ENABLED': True,
@@ -269,7 +269,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'HAKRAWLER_INCLUDE_SUBS': True,
     'HAKRAWLER_INSECURE': True,
     'HAKRAWLER_CUSTOM_HEADERS': [],
-    'HAKRAWLER_PARALLELISM': 4,
+    'HAKRAWLER_PARALLELISM': 5,
 
     # jsluice JavaScript Analyzer
     'JSLUICE_ENABLED': True,
@@ -278,7 +278,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'JSLUICE_EXTRACT_URLS': True,
     'JSLUICE_EXTRACT_SECRETS': True,
     'JSLUICE_CONCURRENCY': 5,
-    'JSLUICE_PARALLELISM': 3,
+    'JSLUICE_PARALLELISM': 5,
 
     # ========== JS RECON SCANNER ==========
     'JS_RECON_ENABLED': False,
@@ -324,7 +324,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'FFUF_FOLLOW_REDIRECTS': False,
     'FFUF_CUSTOM_HEADERS': [],
     'FFUF_SMART_FUZZ': True,
-    'FFUF_PARALLELISM': 3,
+    'FFUF_PARALLELISM': 4,
 
     # Arjun Parameter Discovery
     'ARJUN_ENABLED': True,
@@ -358,7 +358,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'KITERUNNER_METHOD_DETECT_TIMEOUT': 5,
     'KITERUNNER_METHOD_DETECT_RATE_LIMIT': 50,
     'KITERUNNER_METHOD_DETECT_THREADS': 25,
-    'KITERUNNER_PARALLELISM': 2,
+    'KITERUNNER_PARALLELISM': 3,
 
     # CVE Lookup
     'CVE_LOOKUP_ENABLED': True,

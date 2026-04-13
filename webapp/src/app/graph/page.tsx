@@ -209,7 +209,7 @@ export default function GraphPage() {
   const isAgentRunning = agentSummary.activeCount > 0
 
   // Graph data with auto-refresh every 5 seconds while recon or agent is running
-  const { data, isLoading, error, refetch: refetchGraph } = useGraphData(projectId, {
+  const { data, isLoading, error, refetch: refetchGraph, refetchFresh } = useGraphData(projectId, {
     isReconRunning,
     isAgentRunning,
   })
@@ -669,44 +669,56 @@ export default function GraphPage() {
     checkTrufflehogData()
   }, [checkReconData, checkGvmData, checkGithubHuntData, checkTrufflehogData])
 
+  // Bypass all caches and refetch, with a delayed second fetch
+  // to catch background graph-DB writes that may still be flushing.
+  const refetchAfterCompletion = useCallback(() => {
+    refetchFresh()
+    const t = setTimeout(() => refetchFresh(), 3000)
+    return () => clearTimeout(t)
+  }, [refetchFresh])
+
   // Refresh graph data when recon completes
   useEffect(() => {
     if (reconState?.status === 'completed' || reconState?.status === 'error') {
-      refetchGraph()
+      const cleanup = refetchAfterCompletion()
       checkReconData()
+      return cleanup
     }
-  }, [reconState?.status, refetchGraph, checkReconData])
+  }, [reconState?.status, refetchAfterCompletion, checkReconData])
 
   // Refresh graph when GVM scan completes
   useEffect(() => {
     if (gvmState?.status === 'completed' || gvmState?.status === 'error') {
-      refetchGraph()
+      const cleanup = refetchAfterCompletion()
       checkGvmData()
+      return cleanup
     }
-  }, [gvmState?.status, refetchGraph, checkGvmData])
+  }, [gvmState?.status, refetchAfterCompletion, checkGvmData])
 
   // Refresh when GitHub Hunt completes
   useEffect(() => {
     if (githubHuntState?.status === 'completed' || githubHuntState?.status === 'error') {
-      refetchGraph()
+      const cleanup = refetchAfterCompletion()
       checkGithubHuntData()
+      return cleanup
     }
-  }, [githubHuntState?.status, refetchGraph, checkGithubHuntData])
+  }, [githubHuntState?.status, refetchAfterCompletion, checkGithubHuntData])
 
   // Refresh when TruffleHog completes
   useEffect(() => {
     if (trufflehogState?.status === 'completed' || trufflehogState?.status === 'error') {
-      refetchGraph()
+      const cleanup = refetchAfterCompletion()
       checkTrufflehogData()
+      return cleanup
     }
-  }, [trufflehogState?.status, refetchGraph, checkTrufflehogData])
+  }, [trufflehogState?.status, refetchAfterCompletion, checkTrufflehogData])
 
   // Refresh graph when partial recon completes
   useEffect(() => {
     if (partialReconState?.status === 'completed' || partialReconState?.status === 'error') {
-      refetchGraph()
+      return refetchAfterCompletion()
     }
-  }, [partialReconState?.status, refetchGraph])
+  }, [partialReconState?.status, refetchAfterCompletion])
 
   const handleToggleAI = useCallback(() => {
     setIsAIOpen((prev) => !prev)

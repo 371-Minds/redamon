@@ -1,18 +1,26 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { GraphData } from '../types'
 
 // Store last ETag and data outside component to survive re-renders
 const etagStore = new Map<string, { etag: string; data: GraphData }>()
 
-async function fetchGraphData(projectId: string): Promise<GraphData> {
+
+async function fetchGraphData(projectId: string, fresh = false): Promise<GraphData> {
   const stored = etagStore.get(projectId)
   const headers: Record<string, string> = {}
+  const fetchOpts: RequestInit = { headers }
 
-  if (stored?.etag) {
+  if (fresh) {
+    // Bypass server in-memory cache (?fresh=1) and client ETag store.
+    // Browser cache is already handled via Cache-Control: no-cache.
+    etagStore.delete(projectId)
+  } else if (stored?.etag) {
     headers['If-None-Match'] = `"${stored.etag}"`
   }
 
-  const response = await fetch(`/api/graph?projectId=${projectId}`, { headers })
+  const url = `/api/graph?projectId=${projectId}${fresh ? '&fresh=1' : ''}`
+  const response = await fetch(url, fetchOpts)
 
   // 304 Not Modified -- return previous data, skip JSON parse entirely
   if (response.status === 304) {
@@ -48,6 +56,7 @@ interface UseGraphDataOptions {
 
 export function useGraphData(projectId: string | null, options?: UseGraphDataOptions) {
   const { isReconRunning = false, isAgentRunning = false } = options || {}
+  const queryClient = useQueryClient()
 
   const shouldPoll = isReconRunning || isAgentRunning
 
@@ -69,5 +78,13 @@ export function useGraphData(projectId: string | null, options?: UseGraphDataOpt
     notifyOnChangeProps: ['data', 'error', 'isLoading'],
   })
 
-  return query
+  // Bypass all three cache layers (browser, server, client ETag) and
+  // update react-query cache directly. Used after pipeline completion.
+  const refetchFresh = useCallback(async () => {
+    if (!projectId) return
+    const data = await fetchGraphData(projectId, true)
+    queryClient.setQueryData(['graph', projectId], data)
+  }, [projectId, queryClient])
+
+  return { ...query, refetchFresh }
 }

@@ -1,136 +1,283 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
-import { readFile, stat, open } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
+import { createHash } from 'crypto'
 
-const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/recon/output'
+// Reuse the graph API's Neo4j driver
+import { getSession } from '../../../graph/neo4j'
+
 const PROJECT_ID_RE = /^[a-zA-Z0-9_-]+$/
+
+// Simple in-memory cache (same pattern as graph route)
+interface CacheEntry {
+  data: JsReconResponse
+  etag: string
+  timestamp: number
+}
+const cache = new Map<string, CacheEntry>()
+const TTL = 10_000 // 10s
+
+interface JsReconResponse {
+  scan_metadata: { js_files_analyzed: number }
+  secrets: any[]
+  endpoints: any[]
+  dependencies: any[]
+  source_maps: any[]
+  dom_sinks: any[]
+  frameworks: any[]
+  dev_comments: any[]
+  summary: {
+    total_secrets: number
+    total_endpoints: number
+    total_findings: number
+    validated_keys?: { live: number }
+  }
+}
+
+function generateEtag(data: JsReconResponse): string {
+  const raw = `${data.secrets.length}:${data.endpoints.length}:${data.dependencies.length}:${data.dom_sinks.length}:${data.frameworks.length}:${data.source_maps.length}:${data.dev_comments.length}`
+  return createHash('md5').update(raw).digest('hex').slice(0, 16)
+}
 
 interface RouteParams {
   params: Promise<{ projectId: string }>
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  const { projectId } = await params
+  if (!PROJECT_ID_RE.test(projectId)) {
+    return new NextResponse(null, { status: 400 })
+  }
+
+  const fresh = request.nextUrl.searchParams.get('fresh') === '1'
+  if (fresh) cache.delete(projectId)
+
+  // ETag conditional request
+  const ifNoneMatch = request.headers.get('if-none-match')
+
+  // Check cache
+  const cached = cache.get(projectId)
+  if (cached && Date.now() - cached.timestamp < TTL) {
+    if (ifNoneMatch && ifNoneMatch === `"${cached.etag}"`) {
+      return new NextResponse(null, { status: 304, headers: { 'ETag': `"${cached.etag}"`, 'Cache-Control': 'private, no-cache' } })
+    }
+    return NextResponse.json(cached.data, { headers: { 'ETag': `"${cached.etag}"`, 'Cache-Control': 'private, no-cache' } })
+  }
+  cache.delete(projectId)
+
+  const session = getSession()
   try {
-    const { projectId } = await params
-    if (!PROJECT_ID_RE.test(projectId)) {
-      return new NextResponse(null, { status: 400 })
+    // 1. JsReconFinding nodes (files + findings)
+    const findingsResult = await session.run(
+      `
+      MATCH (jf:JsReconFinding {project_id: $pid})
+      RETURN jf.finding_type AS findingType,
+             jf.severity AS severity,
+             jf.confidence AS confidence,
+             jf.title AS title,
+             jf.detail AS detail,
+             jf.evidence AS evidence,
+             jf.source_url AS sourceUrl,
+             jf.base_url AS baseUrl,
+             jf.id AS id
+      `,
+      { pid: projectId }
+    )
+
+    // 2. Secrets with source='js_recon'
+    const secretsResult = await session.run(
+      `
+      MATCH (s:Secret {project_id: $pid, source: 'js_recon'})
+      RETURN s.id AS id,
+             s.secret_type AS name,
+             s.severity AS severity,
+             s.sample AS redacted_value,
+             s.matched_text AS matched_text,
+             s.key_type AS category,
+             s.source_url AS source_url,
+             s.confidence AS confidence,
+             s.detection_method AS detection_method,
+             s.validation_status AS validation_status,
+             s.validation_info AS validation_info
+      `,
+      { pid: projectId }
+    )
+
+    // 3. Endpoints with source='js_recon' or js_recon_source=true
+    //    Traverse HAS_ENDPOINT to get the source JS file URL
+    const endpointsResult = await session.run(
+      `
+      MATCH (e:Endpoint {project_id: $pid})
+      WHERE e.source = 'js_recon' OR e.js_recon_source = true
+      OPTIONAL MATCH (jf:JsReconFinding {finding_type: 'js_file'})-[:HAS_ENDPOINT]->(e)
+      RETURN e.path AS path,
+             e.method AS method,
+             e.full_url AS full_url,
+             e.endpoint_type AS type,
+             e.category AS category,
+             e.baseurl AS base_url,
+             jf.source_url AS source_js
+      `,
+      { pid: projectId }
+    )
+
+    // Map findings by type
+    const dependencies: any[] = []
+    const source_maps: any[] = []
+    const dom_sinks: any[] = []
+    const frameworks: any[] = []
+    const dev_comments: any[] = []
+    let jsFilesCount = 0
+
+    for (const record of findingsResult.records) {
+      const type = record.get('findingType')
+      const base = {
+        id: record.get('id'),
+        severity: record.get('severity'),
+        confidence: record.get('confidence'),
+        title: record.get('title'),
+        detail: record.get('detail'),
+        evidence: record.get('evidence'),
+        source_url: record.get('sourceUrl'),
+        base_url: record.get('baseUrl'),
+        finding_type: type,
+      }
+
+      switch (type) {
+        case 'js_file':
+          jsFilesCount++
+          break
+        case 'dependency_confusion':
+          dependencies.push({
+            ...base,
+            package_name: base.title,
+          })
+          break
+        case 'source_map_exposure':
+          source_maps.push({
+            ...base,
+            js_url: base.source_url,
+          })
+          break
+        case 'dom_sink':
+          dom_sinks.push({
+            ...base,
+            type: base.title,
+            pattern: base.evidence,
+          })
+          break
+        case 'framework':
+          frameworks.push({
+            ...base,
+            name: base.evidence || base.title,
+            version: base.title?.replace(base.evidence || '', '').trim() || null,
+          })
+          break
+        case 'dev_comment':
+          dev_comments.push({
+            ...base,
+            type: base.title,
+            content: base.detail || base.evidence,
+          })
+          break
+      }
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true, name: true }
+    // Map secrets
+    const secrets = secretsResult.records.map((r: any) => {
+      let validation: Record<string, any> = { status: r.get('validation_status') || 'unvalidated' }
+      const vi = r.get('validation_info')
+      if (vi) {
+        try { validation = JSON.parse(vi) } catch {}
+      }
+      return {
+        id: r.get('id'),
+        name: r.get('name'),
+        severity: r.get('severity'),
+        redacted_value: r.get('redacted_value'),
+        matched_text: r.get('matched_text'),
+        category: r.get('category'),
+        source_url: r.get('source_url'),
+        confidence: r.get('confidence'),
+        detection_method: r.get('detection_method'),
+        validation,
+      }
     })
 
-    if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-    }
+    // Map endpoints
+    const endpoints = endpointsResult.records.map((r: any) => ({
+      method: r.get('method'),
+      path: r.get('path'),
+      full_url: r.get('full_url'),
+      type: r.get('type'),
+      category: r.get('category'),
+      base_url: r.get('base_url'),
+      source_js: r.get('source_js') || '',
+    }))
 
-    // JS Recon data is inside the main recon JSON under the 'js_recon' key,
-    // but also check for standalone output file
-    const standaloneFile = path.join(RECON_OUTPUT_PATH, `js_recon_${projectId}.json`)
-    const reconFile = path.join(RECON_OUTPUT_PATH, `recon_${projectId}.json`)
-
-    let jsReconData = null
-
-    // Try standalone file first
-    if (existsSync(standaloneFile)) {
-      const content = await readFile(standaloneFile, 'utf-8')
-      jsReconData = content
-    }
-    // Fall back to extracting from main recon JSON
-    else if (existsSync(reconFile)) {
-      const fileStat = await stat(reconFile)
-      // Guard against extremely large files (>100MB)
-      if (fileStat.size > 100 * 1024 * 1024) {
-        return NextResponse.json(
-          { error: 'Recon file too large for extraction. Run JS Recon standalone to generate a separate output file.' },
-          { status: 413 }
-        )
-      }
-      const content = await readFile(reconFile, 'utf-8')
-      try {
-        const reconData = JSON.parse(content)
-        if (reconData.js_recon) {
-          jsReconData = JSON.stringify(reconData.js_recon, null, 2)
-        }
-      } catch {
-        // Invalid JSON
-      }
-    }
-
-    if (!jsReconData) {
+    // Check if any data exists
+    if (jsFilesCount === 0 && secrets.length === 0 && endpoints.length === 0) {
       return NextResponse.json(
-        { error: 'JS Recon data not found. Run a JS Recon scan first.' },
+        { error: 'No JS Recon data. Run a recon scan with JS Recon enabled.' },
         { status: 404 }
       )
     }
 
-    const jsonFileName = `js_recon_${projectId}.json`
+    const liveCount = secrets.filter((s: any) => s.validation?.status === 'validated').length
 
-    return new NextResponse(jsReconData, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Disposition': `attachment; filename="${jsonFileName}"`,
-        'Cache-Control': 'no-cache',
+    const data: JsReconResponse = {
+      scan_metadata: { js_files_analyzed: jsFilesCount },
+      secrets,
+      endpoints,
+      dependencies,
+      source_maps,
+      dom_sinks,
+      frameworks,
+      dev_comments,
+      summary: {
+        total_secrets: secrets.length,
+        total_endpoints: endpoints.length,
+        total_findings: dependencies.length + source_maps.length + dom_sinks.length + frameworks.length + dev_comments.length,
+        ...(liveCount > 0 ? { validated_keys: { live: liveCount } } : {}),
       },
+    }
+
+    const etag = generateEtag(data)
+    cache.set(projectId, { data, etag, timestamp: Date.now() })
+
+    if (ifNoneMatch && ifNoneMatch === `"${etag}"`) {
+      return new NextResponse(null, { status: 304, headers: { 'ETag': `"${etag}"`, 'Cache-Control': 'private, no-cache' } })
+    }
+
+    return NextResponse.json(data, {
+      headers: { 'ETag': `"${etag}"`, 'Cache-Control': 'private, no-cache' },
     })
   } catch (error) {
-    console.error('Error downloading JS Recon data:', error)
+    console.error('JS Recon query error:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Query failed' },
       { status: 500 }
     )
+  } finally {
+    await session.close()
   }
 }
 
-export async function HEAD(request: NextRequest, { params }: RouteParams) {
+export async function HEAD(_request: NextRequest, { params }: RouteParams) {
+  const { projectId } = await params
+  if (!PROJECT_ID_RE.test(projectId)) {
+    return new NextResponse(null, { status: 400 })
+  }
+
+  const session = getSession()
   try {
-    const { projectId } = await params
-    if (!PROJECT_ID_RE.test(projectId)) {
-      return new NextResponse(null, { status: 400 })
-    }
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true }
-    })
-
-    if (!project) {
-      return new NextResponse(null, { status: 404 })
-    }
-
-    const standaloneFile = path.join(RECON_OUTPUT_PATH, `js_recon_${projectId}.json`)
-    const reconFile = path.join(RECON_OUTPUT_PATH, `recon_${projectId}.json`)
-
-    if (existsSync(standaloneFile)) {
-      return new NextResponse(null, { status: 200 })
-    }
-
-    if (existsSync(reconFile)) {
-      // Read only first 16KB to check for js_recon key (avoids loading entire file)
-      try {
-        const fd = await open(reconFile, 'r')
-        const buffer = Buffer.alloc(16384)
-        await fd.read(buffer, 0, 16384, 0)
-        await fd.close()
-        // js_recon key appears early in the JSON if present (in metadata.modules_executed or as top-level key)
-        if (buffer.toString('utf-8').includes('"js_recon"')) {
-          return new NextResponse(null, { status: 200 })
-        }
-      } catch {
-        // Fall back to full read if partial read fails
-        const content = await readFile(reconFile, 'utf-8')
-        if (content.includes('"js_recon"')) {
-          return new NextResponse(null, { status: 200 })
-        }
-      }
-    }
-
-    return new NextResponse(null, { status: 404 })
+    const result = await session.run(
+      `MATCH (jf:JsReconFinding {project_id: $pid}) RETURN count(jf) AS cnt LIMIT 1`,
+      { pid: projectId }
+    )
+    const count = result.records[0]?.get('cnt')?.low ?? 0
+    return new NextResponse(null, { status: count > 0 ? 200 : 404 })
   } catch {
     return new NextResponse(null, { status: 500 })
+  } finally {
+    await session.close()
   }
 }

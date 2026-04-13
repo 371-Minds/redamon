@@ -151,7 +151,7 @@ model Project {
   whoisMaxRetries             Int      @default(6) @map("whois_max_retries")
   dnsEnabled                  Boolean  @default(true) @map("dns_enabled")
   dnsMaxRetries               Int      @default(3) @map("dns_max_retries")
-  dnsMaxWorkers               Int      @default(50) @map("dns_max_workers")
+  dnsMaxWorkers               Int      @default(80) @map("dns_max_workers")
   dnsRecordParallelism        Boolean  @default(true) @map("dns_record_parallelism")
 
   // ========== GITHUB SECRET HUNT ==========
@@ -206,7 +206,7 @@ model Project {
   nmapTimingTemplate          String   @default("T3") @map("nmap_timing_template")
   nmapTimeout                 Int      @default(600) @map("nmap_timeout")
   nmapHostTimeout             Int      @default(300) @map("nmap_host_timeout")
-  nmapParallelism             Int      @default(2) @map("nmap_parallelism")
+  nmapParallelism             Int      @default(5) @map("nmap_parallelism")
 
   // ========== HTTPX HTTP PROBING ==========
   httpxEnabled                Boolean  @default(true)  @map("httpx_enabled")
@@ -293,8 +293,8 @@ model Project {
   katanaExcludePatterns       String[] @default([]) @map("katana_exclude_patterns")
   katanaScope                 String   @default("dn") @map("katana_scope")
   katanaCustomHeaders         String[] @default([]) @map("katana_custom_headers")
-  katanaParallelism           Int      @default(5) @map("katana_parallelism")
-  katanaConcurrency           Int      @default(10) @map("katana_concurrency")
+  katanaParallelism           Int      @default(8) @map("katana_parallelism")
+  katanaConcurrency           Int      @default(15) @map("katana_concurrency")
 
   // ========== HAKRAWLER WEB CRAWLER ==========
   hakrawlerEnabled            Boolean  @default(true) @map("hakrawler_enabled")
@@ -306,7 +306,7 @@ model Project {
   hakrawlerIncludeSubs        Boolean  @default(true) @map("hakrawler_include_subs")
   hakrawlerInsecure           Boolean  @default(true) @map("hakrawler_insecure")
   hakrawlerCustomHeaders      String[] @default([]) @map("hakrawler_custom_headers")
-  hakrawlerParallelism        Int      @default(4) @map("hakrawler_parallelism")
+  hakrawlerParallelism        Int      @default(5) @map("hakrawler_parallelism")
 
   // ========== JSLUICE JS ANALYZER ==========
   jsluiceEnabled              Boolean  @default(true) @map("jsluice_enabled")
@@ -315,7 +315,7 @@ model Project {
   jsluiceExtractUrls          Boolean  @default(true) @map("jsluice_extract_urls")
   jsluiceExtractSecrets       Boolean  @default(true) @map("jsluice_extract_secrets")
   jsluiceConcurrency          Int      @default(5) @map("jsluice_concurrency")
-  jsluiceParallelism          Int      @default(3) @map("jsluice_parallelism")
+  jsluiceParallelism          Int      @default(5) @map("jsluice_parallelism")
 
   // ========== JS RECON SCANNER ==========
   jsReconEnabled              Boolean  @default(false) @map("js_recon_enabled")
@@ -361,7 +361,7 @@ model Project {
   ffufFollowRedirects         Boolean  @default(false) @map("ffuf_follow_redirects")
   ffufCustomHeaders           String[] @default([]) @map("ffuf_custom_headers")
   ffufSmartFuzz               Boolean  @default(true) @map("ffuf_smart_fuzz")
-  ffufParallelism             Int      @default(3) @map("ffuf_parallelism")
+  ffufParallelism             Int      @default(4) @map("ffuf_parallelism")
 
   // ========== ARJUN PARAMETER DISCOVERY ==========
   arjunEnabled                Boolean  @default(true) @map("arjun_enabled")
@@ -404,7 +404,7 @@ model Project {
   paramspiderEnabled          Boolean  @default(false) @map("paramspider_enabled")
   paramspiderPlaceholder      String   @default("FUZZ") @map("paramspider_placeholder")
   paramspiderTimeout          Int      @default(120) @map("paramspider_timeout")
-  paramspiderWorkers          Int      @default(5) @map("paramspider_workers")
+  paramspiderWorkers          Int      @default(8) @map("paramspider_workers")
 
   // ========== KITERUNNER API DISCOVERY ==========
   kiterunnerEnabled           Boolean  @default(false) @map("kiterunner_enabled")
@@ -424,7 +424,7 @@ model Project {
   kiterunnerMethodDetectTimeout Int    @default(5) @map("kiterunner_method_detect_timeout")
   kiterunnerMethodDetectRateLimit Int  @default(50) @map("kiterunner_method_detect_rate_limit")
   kiterunnerMethodDetectThreads Int    @default(25) @map("kiterunner_method_detect_threads")
-  kiterunnerParallelism       Int      @default(2) @map("kiterunner_parallelism")
+  kiterunnerParallelism       Int      @default(3) @map("kiterunner_parallelism")
 
   // ========== CVE LOOKUP ==========
   cveLookupEnabled            Boolean  @default(true) @map("cve_lookup_enabled")

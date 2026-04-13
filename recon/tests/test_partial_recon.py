@@ -22,6 +22,12 @@ sys.modules['neo4j'] = MagicMock()
 # Import only load_config and helpers at module level (doesn't trigger lazy imports)
 from partial_recon import load_config, _classify_ip, _is_ip_or_cidr, _is_valid_hostname
 
+# After the refactoring into partial_recon_modules/, monkey-patching pr._resolve_hostname
+# no longer affects submodule calls. Import the submodules so tests can patch at the right level.
+import recon.partial_recon_modules.port_scanning as _port_scanning_mod
+import recon.partial_recon_modules.http_probing as _http_probing_mod
+import recon.partial_recon_modules.osint_enrichment as _osint_enrichment_mod
+
 
 class TestLoadConfig(unittest.TestCase):
     """Tests for config loading from JSON file."""
@@ -921,13 +927,13 @@ class TestRunNaabuHostnameInputs(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            # Patch _resolve_hostname to return controlled results
-            original_resolve = pr._resolve_hostname
-            pr._resolve_hostname = lambda h: _resolve.get(h, {"ipv4": [], "ipv6": []})
+            # Patch _resolve_hostname at the submodule level (where it's actually called)
+            original_resolve = _port_scanning_mod._resolve_hostname
+            _port_scanning_mod._resolve_hostname = lambda h: _resolve.get(h, {"ipv4": [], "ipv6": []})
             try:
                 pr.run_naabu(config)
             finally:
-                pr._resolve_hostname = original_resolve
+                _port_scanning_mod._resolve_hostname = original_resolve
         finally:
             for name, mod in saved.items():
                 if mod is None:
@@ -1098,12 +1104,12 @@ class TestRunNaabuStructuredTargets(unittest.TestCase):
             import importlib
             import partial_recon as pr
             importlib.reload(pr)
-            original_resolve = pr._resolve_hostname
-            pr._resolve_hostname = lambda h: _resolve.get(h, {"ipv4": [], "ipv6": []})
+            original_resolve = _port_scanning_mod._resolve_hostname
+            _port_scanning_mod._resolve_hostname = lambda h: _resolve.get(h, {"ipv4": [], "ipv6": []})
             try:
                 pr.run_naabu(config)
             finally:
-                pr._resolve_hostname = original_resolve
+                _port_scanning_mod._resolve_hostname = original_resolve
         finally:
             for name, mod in saved.items():
                 if mod is None:
@@ -1890,7 +1896,7 @@ class TestRunHttpx(unittest.TestCase):
             import partial_recon as pr
             importlib.reload(pr)
             if resolve_fn is not None:
-                with patch.object(pr, '_resolve_hostname', resolve_fn):
+                with patch.object(_http_probing_mod, '_resolve_hostname', resolve_fn):
                     pr.run_httpx(config)
             else:
                 pr.run_httpx(config)
@@ -3771,10 +3777,14 @@ class TestRunOsintEnrichment(unittest.TestCase):
             import partial_recon as pr
             importlib.reload(pr)
 
-            # Patch _build_recon_data_from_graph after reload
-            pr._build_recon_data_from_graph = MagicMock(return_value=recon_data)
+            # Patch _build_recon_data_from_graph at the submodule level (where it's actually called)
+            _orig_build_recon = _osint_enrichment_mod._build_recon_data_from_graph
+            _osint_enrichment_mod._build_recon_data_from_graph = MagicMock(return_value=recon_data)
 
-            pr.run_osint_enrichment(config)
+            try:
+                pr.run_osint_enrichment(config)
+            finally:
+                _osint_enrichment_mod._build_recon_data_from_graph = _orig_build_recon
         finally:
             for name, mod in saved.items():
                 if mod is None:
