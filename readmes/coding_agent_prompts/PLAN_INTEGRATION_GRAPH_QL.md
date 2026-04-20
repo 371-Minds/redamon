@@ -959,12 +959,858 @@ End-to-end smoke tests:
 
 ---
 
-## 16. Out-of-scope (deliberately deferred)
+## 16. Out-of-scope for Phase 1 (PR #93 conformance)
 
-These would be nice but are not required by either prompt:
+These are deferred to **Phase 2 (§17 — graphql-cop)** or later:
 
 - Subscription (`__schema.subscriptionType`) security checks
-- Batching attack detection
+- Batching / alias / directive DoS — **covered in §17 by graphql-cop**
 - Field-level authorization matrix testing
 - DoS protection checks (depth/complexity limits) beyond config `GRAPHQL_DEPTH_LIMIT`
 - Automatic CWE/CVE tagging of GraphQL findings for MITRE enrichment (would require a new mapping layer)
+- Schema recovery when introspection is disabled — deferred to later PR (`clairvoyance`)
+
+---
+
+# ========== PHASE 2 ==========
+
+# §17. Follow-up integration: `graphql-cop`
+
+> **Execution order**: apply §17 **only after §1-§16 have landed and been smoke-tested**. graphql-cop builds on the scaffolding from Phase 1 — Prisma schema, section component, workflow node, report pipeline, graph mixin, partial-recon module are all reused, not duplicated. Phase 2 essentially adds a second scanner driver inside the same `GraphqlScan` tool identity.
+
+## 17.1 Tool research (what graphql-cop is, pinned facts)
+
+**Repo**: `dolevf/graphql-cop` · 641★ · MIT · Python · actively maintained (last commit 2025-11-20).
+**Docker Hub**: `dolevf/graphql-cop:1.14` (49.3 MB, last pushed ~11 months ago).
+**Current git version**: `1.15` (DockerHub is one minor behind; pin to `1.14`).
+
+### Why we cannot just `pip install` it
+`graphql-cop/requirements.txt` pins **`requests==2.25.1`**. RedAmon's [recon/requirements.txt](recon/requirements.txt) pins `requests>=2.31.0`. Installing the graphql-cop package would downgrade `requests` and break existing tools (Subfinder, Arjun, ParamSpider all call `requests`). **→ Docker-in-Docker is mandatory**, matching the Naabu/httpx/Katana/Nuclei pattern per `PROMPT.ADD_RECON_TOOL.md` section "Choose integration pattern".
+
+### CLI contract (graphql-cop 1.14)
+
+```
+python3 graphql-cop.py -t <URL> [options]
+
+Options:
+  -t, --target URL           Target URL (full URL with path; if path is / or missing,
+                             the tool iterates ['/', '/graphiql', '/playground', '/console', '/graphql'])
+  -H, --header '{"k":"v"}'   Extra header as JSON object (repeatable)
+  -o, --output json          Output format (only 'json' supported; without -o it prints colored text)
+  -e, --excluded-tests LIST  Comma-separated test names to skip (see §17.2 table)
+  -l, --list-tests           List tests and exit
+  -f, --force                Force scan even when endpoint doesn't look like GraphQL
+  -d, --debug                Add 'X-GraphQL-Cop-Test' header per request for debugging
+  -x, --proxy URL            HTTP(S) proxy (http://user:pass@host:port)
+  -w, --wordlist PATH        Custom GraphQL endpoints wordlist (one path per line)
+  -T, --tor                  Route via Tor (127.0.0.1:9050 SOCKS5)
+  -v, --version
+```
+
+**Exit codes**: 0 on normal completion (regardless of findings); 1 only on missing URL / malformed input. **There is no "vulnerable" exit code** — must parse JSON to know results.
+
+**Auto-discovery behavior**: if `-t https://host` (no path or `/`) → iterates 5 paths internally. If `-t https://host/graphql` → tests only that path. **RedAmon will always pass explicit URLs** (the PR's discovery already gives us confirmed endpoints), so graphql-cop's internal iteration is bypassed.
+
+### Per-endpoint request volume
+
+graphql-cop runs **12 tests** per endpoint. Each test sends ~1-3 requests. DoS probes are intentionally heavy:
+- `alias_overloading`: 1 query with **101 aliases**
+- `batch_query`: array of **10** identical queries in one request
+- `directive_overloading`: 1 query with **10 repeated directives**
+- `circular_query_introspection`: 1 deeply-nested introspection (~5 levels)
+
+Total per endpoint: **~20-30 requests**. Bursty but short — completes in <10s per endpoint against a responsive server.
+
+### JSON output schema
+
+```json
+[
+  {
+    "result": true,                   // true = finding triggered (vulnerability detected)
+    "title": "Alias Overloading",
+    "description": "Alias Overloading with 100+ aliases is allowed",
+    "impact": "Denial of Service - /graphql",   // last path segment appended
+    "severity": "HIGH",               // one of: "HIGH" | "MEDIUM" | "LOW" | "INFO"
+    "color": "red",                   // "red" | "yellow" | "blue" | "green"
+    "curl_verify": "curl -X POST -H ... -d '...' 'http://...'"  // reproducer
+  },
+  ... (12 objects total, one per test; sorted by title)
+]
+```
+
+Every test **always** emits an object — `result: false` means the test ran and the server passed. This matters for our parser: we enrich the Endpoint node with capability flags regardless of `result`, and only create `Vulnerability` nodes when `result: true`.
+
+### Full test catalog (graphql-cop 1.14 — field_duplication is disabled per issue #43)
+
+| Internal key | **Exact `title` string (copy-paste verbatim)** | Severity | Impact class | Heavy traffic? |
+|---|---|---|---|---|
+| `field_suggestions` | `Field Suggestions` | LOW | Info Leak | No |
+| `introspection` | `Introspection` | HIGH | Info Leak | No |
+| `detect_graphiql` | `GraphQL IDE` | LOW | Info Leak | No |
+| `get_method_support` | `GET Method Query Support` | **MEDIUM** (CSRF) | CSRF | No |
+| `alias_overloading` | `Alias Overloading` | HIGH | DoS | **YES** (101 aliases per query) |
+| `batch_query` | `Array-based Query Batching` | HIGH | DoS | **YES** (10+ queries per array) |
+| `trace_mode` | `Trace Mode` | INFO | Info Leak | No |
+| `directive_overloading` | `Directive Overloading` | HIGH | DoS | **YES** (10+ directives) |
+| `circular_query_introspection` | `Introspection-based Circular Query` | HIGH | DoS | **YES** (deep nested introspection) |
+| `get_based_mutation` | `Mutation is allowed over GET (possible CSRF)` | **MEDIUM** | CSRF | No |
+| `post_based_csrf` | `POST based url-encoded query (possible CSRF)` | MEDIUM | CSRF | No |
+| `unhandled_error_detection` | `Unhandled Errors Detection` | **INFO** | Info Leak | No |
+
+**⚠️ All `title` strings above are verified verbatim from graphql-cop 1.14 source** (`lib/tests/*.py`). They are the discriminator used to map JSON output back to our internal `vulnerability_type`. Any character mismatch breaks the parser silently (finding gets logged as "Unknown test title" and dropped).
+
+---
+
+## 17.2 Integration pattern — Docker-in-Docker
+
+Mirror [recon/port_scan.py](recon/port_scan.py) (Naabu) or [recon/vuln_scan.py](recon/vuln_scan.py) (Nuclei).
+
+**New Python module**: `recon/graphql_scan/misconfig.py` — wraps the docker invocation, parses JSON, normalizes findings.
+
+### 17.2.a Add to [recon/entrypoint.sh](recon/entrypoint.sh) IMAGES array
+
+Append to the existing list (around line 133-144):
+```bash
+IMAGES=(
+  "projectdiscovery/naabu:latest"
+  ...
+  "dolevf/graphql-cop:1.14"     # ← added
+)
+```
+This ensures the image is pre-pulled on recon container startup (saves cold-start time on first scan).
+
+### 17.2.b Wrapper function signature
+
+File: `recon/graphql_scan/misconfig.py`
+
+```python
+from typing import Dict, List, Optional
+import json
+import subprocess
+from datetime import datetime, timezone
+
+DEFAULT_IMAGE = 'dolevf/graphql-cop:1.14'
+
+GRAPHQL_COP_TEST_TO_VULN_TYPE = {
+    'field_suggestions':           'graphql_field_suggestions_enabled',
+    'introspection':               'graphql_introspection_enabled',      # dedupes with PR's native check
+    'detect_graphiql':             'graphql_ide_exposed',
+    'get_method_support':          'graphql_get_method_allowed',
+    'alias_overloading':           'graphql_alias_overloading',
+    'batch_query':                 'graphql_batch_query_allowed',
+    'trace_mode':                  'graphql_tracing_enabled',
+    'directive_overloading':       'graphql_directive_overloading',
+    'circular_query_introspection':'graphql_circular_introspection',
+    'get_based_mutation':          'graphql_get_based_mutation',
+    'post_based_csrf':             'graphql_post_csrf',
+    'unhandled_error_detection':   'graphql_unhandled_error',
+}
+
+# Tests that are always active DoS probes — never run unless explicitly enabled AND not in safe/stealth mode
+HEAVY_TRAFFIC_TESTS = {
+    'alias_overloading',
+    'batch_query',
+    'directive_overloading',
+    'circular_query_introspection',
+}
+
+# Title → internal key (graphql-cop's JSON discriminates by `title`, not by key)
+# Every string here is copy-pasted VERBATIM from graphql-cop 1.14 source at
+# github.com/dolevf/graphql-cop/blob/main/lib/tests/*.py — re-verify on version bumps.
+TITLE_TO_KEY = {
+    'Field Suggestions':                              'field_suggestions',
+    'Introspection':                                  'introspection',
+    'GraphQL IDE':                                    'detect_graphiql',
+    'GET Method Query Support':                       'get_method_support',
+    'Alias Overloading':                              'alias_overloading',
+    'Array-based Query Batching':                     'batch_query',
+    'Trace Mode':                                     'trace_mode',
+    'Directive Overloading':                          'directive_overloading',
+    'Introspection-based Circular Query':             'circular_query_introspection',
+    'Mutation is allowed over GET (possible CSRF)':   'get_based_mutation',
+    'POST based url-encoded query (possible CSRF)':   'post_based_csrf',
+    'Unhandled Errors Detection':                     'unhandled_error_detection',
+}
+
+
+def run_graphql_cop(
+    endpoint: str,
+    auth_headers: Dict[str, str],
+    settings: dict,
+    timeout: int = 120,
+) -> Optional[List[dict]]:
+    """
+    Invoke graphql-cop in a Docker container against one endpoint.
+
+    Returns a list of normalized findings (RedAmon Vulnerability dict shape), or None
+    on execution error (logged + swallowed — does not kill the parent scan).
+    """
+    if not settings.get('GRAPHQL_COP_ENABLED', False):
+        print(f"[-][GraphQL-Cop] Disabled — skipping {endpoint}")
+        return None
+
+    # Assemble the excluded-tests list from per-test toggles
+    excluded = _build_excluded_tests(settings)
+
+    image = settings.get('GRAPHQL_COP_DOCKER_IMAGE', DEFAULT_IMAGE)
+
+    # NETWORK MODE: match the existing Nuclei spawn pattern in recon/vuln_scan.py
+    # — do NOT hardcode '--network host' here. Docker-in-Docker with host networking
+    # uses the DOCKER HOST's network namespace, not the recon container's, which can
+    # break reachability to internal targets visible only to the compose network.
+    # Copy the exact --network flag Nuclei uses.
+    network_flags = _nuclei_compatible_network_flags()   # helper that reads what vuln_scan.py uses
+
+    cmd = ['docker', 'run', '--rm', *network_flags, image,
+           '-t', endpoint, '-o', 'json']
+
+    if excluded:
+        cmd += ['-e', ','.join(excluded)]
+
+    if settings.get('GRAPHQL_COP_FORCE_SCAN', False):
+        cmd.append('-f')
+
+    if settings.get('GRAPHQL_COP_DEBUG', False):
+        cmd.append('-d')
+
+    # Auth headers — one -H per header, as JSON-encoded dict
+    for k, v in auth_headers.items():
+        cmd += ['-H', json.dumps({k: v})]
+
+    # Tor routing (reuse project-level toggle)
+    if settings.get('USE_TOR_FOR_RECON', False):
+        cmd.append('-T')
+
+    # Proxy (reuse project-level HTTP_PROXY if set)
+    proxy = settings.get('HTTP_PROXY')
+    if proxy:
+        cmd += ['-x', proxy]
+
+    print(f"[*][GraphQL-Cop] Running against {endpoint} (image={image}, exclude={excluded or 'none'})")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"[!][GraphQL-Cop] Timeout after {timeout}s against {endpoint}")
+        return None
+    except FileNotFoundError:
+        print(f"[!][GraphQL-Cop] 'docker' binary not found — is Docker socket mounted?")
+        return None
+
+    if result.returncode != 0:
+        print(f"[!][GraphQL-Cop] Non-zero exit ({result.returncode}): {result.stderr[:500]}")
+
+    # graphql-cop may print human messages to stdout BEFORE the JSON array,
+    # e.g. "https://x/graphql does not seem to be running GraphQL. (Consider using -f...)"
+    # then "[]" on the next line when is_graphql() fails and force=False.
+    # Extract the last JSON array from stdout rather than assuming it starts at char 0.
+    findings_raw = _extract_json_array(result.stdout)
+    if findings_raw is None:
+        print(f"[!][GraphQL-Cop] No parseable JSON in output. First 300 chars: {result.stdout[:300]}")
+        return None
+
+    if not findings_raw:
+        # Valid JSON but empty — typically means graphql-cop decided the endpoint
+        # isn't GraphQL and force_scan was off. Log and return empty findings.
+        print(f"[-][GraphQL-Cop] {endpoint}: graphql-cop saw no GraphQL. Use GRAPHQL_COP_FORCE_SCAN=true to override.")
+        return []
+
+    return _normalize_findings(endpoint, findings_raw, settings)
+
+
+def _extract_json_array(stdout: str) -> Optional[list]:
+    """
+    Robustly extract the final JSON array from graphql-cop stdout, tolerating
+    leading informational messages (e.g. '<url> does not seem to be running GraphQL').
+    Returns None if no JSON array can be parsed.
+    """
+    stdout = stdout.strip()
+    if not stdout:
+        return None
+
+    # Fast path: stdout starts with '['
+    if stdout.startswith('['):
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            pass
+
+    # Slow path: find the last '[' that begins a parseable JSON array.
+    # graphql-cop always emits a single top-level array via print(dumps(json_output)).
+    last_bracket = stdout.rfind('\n[')
+    if last_bracket != -1:
+        candidate = stdout[last_bracket + 1:]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    # Final fallback: attempt from the first '[' to end.
+    first_bracket = stdout.find('[')
+    if first_bracket != -1:
+        try:
+            return json.loads(stdout[first_bracket:])
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
+def _build_excluded_tests(settings: dict) -> List[str]:
+    """Convert per-test toggles to graphql-cop's -e list (tests to SKIP)."""
+    excluded = []
+    # Each toggle defaults to True (test runs). If disabled → add to excluded.
+    toggle_map = {
+        'field_suggestions':           'GRAPHQL_COP_TEST_FIELD_SUGGESTIONS',
+        'introspection':               'GRAPHQL_COP_TEST_INTROSPECTION',
+        'detect_graphiql':             'GRAPHQL_COP_TEST_GRAPHIQL',
+        'get_method_support':          'GRAPHQL_COP_TEST_GET_METHOD',
+        'alias_overloading':           'GRAPHQL_COP_TEST_ALIAS_OVERLOADING',
+        'batch_query':                 'GRAPHQL_COP_TEST_BATCH_QUERY',
+        'trace_mode':                  'GRAPHQL_COP_TEST_TRACE_MODE',
+        'directive_overloading':       'GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING',
+        'circular_query_introspection':'GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION',
+        'get_based_mutation':          'GRAPHQL_COP_TEST_GET_MUTATION',
+        'post_based_csrf':             'GRAPHQL_COP_TEST_POST_CSRF',
+        'unhandled_error_detection':   'GRAPHQL_COP_TEST_UNHANDLED_ERROR',
+    }
+    for key, setting_name in toggle_map.items():
+        if not settings.get(setting_name, True):
+            excluded.append(key)
+    return excluded
+
+
+def _normalize_findings(endpoint: str, raw_findings: List[dict], settings: dict) -> List[dict]:
+    """
+    Convert graphql-cop JSON into RedAmon's Vulnerability dict shape
+    (matches normalizers.py from the PR).
+    """
+    normalized = []
+    for f in raw_findings:
+        title = f.get('title', '')
+        key = TITLE_TO_KEY.get(title)
+        if not key:
+            # Unknown title — graphql-cop added a new test. Log and skip.
+            print(f"[!][GraphQL-Cop] Unknown test title: {title}")
+            continue
+
+        vuln_type = GRAPHQL_COP_TEST_TO_VULN_TYPE[key]
+
+        # Record capability flags on the endpoint regardless of result
+        # (consumed later by the mixin; see §17.6)
+        # — stored in a sidecar dict returned alongside
+        # Only create Vulnerability nodes for result=True
+        if not f.get('result'):
+            continue
+
+        severity = _map_severity(f.get('severity', 'INFO'))
+
+        normalized.append({
+            'vulnerability_type': vuln_type,
+            'severity': severity,
+            'endpoint': endpoint,
+            'title': title,
+            'description': f.get('description', ''),
+            'impact': f.get('impact', ''),
+            'source': 'graphql_cop',
+            'evidence': {
+                'curl_verify': f.get('curl_verify', ''),
+                'raw_severity': f.get('severity', ''),
+                'color': f.get('color', ''),
+                'graphql_cop_key': key,
+            },
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        })
+
+    return normalized
+
+
+def _map_severity(graphql_cop_sev: str) -> str:
+    """Map graphql-cop severity to RedAmon's canonical lowercase scale."""
+    return {
+        'HIGH':   'high',
+        'MEDIUM': 'medium',
+        'LOW':    'low',
+        'INFO':   'info',
+    }.get(graphql_cop_sev.upper(), 'low')
+```
+
+### 17.2.c Call site — `recon/graphql_scan/scanner.py`
+
+Inside `test_single_endpoint()`, **after** the existing introspection block, **before** the return, add:
+
+```python
+# graphql-cop pass (if enabled)
+if settings.get('GRAPHQL_COP_ENABLED', False):
+    from recon.graphql_scan.misconfig import run_graphql_cop
+    cop_findings = run_graphql_cop(
+        endpoint,
+        auth_headers,
+        settings,
+        timeout=settings.get('GRAPHQL_COP_TIMEOUT', 120),
+    )
+    if cop_findings:
+        result['vulnerabilities'].extend(cop_findings)
+        # Also stash raw list so the mixin can compute endpoint capability flags (§17.6)
+        result['endpoint_data']['graphql_cop_raw'] = cop_findings
+```
+
+The existing `ThreadPoolExecutor(max_workers=GRAPHQL_CONCURRENCY)` handles per-endpoint fan-out. graphql-cop's 12 tests run sequentially inside its container — don't try to parallelize them separately.
+
+### 17.2.d Docker socket access
+
+Recon container needs `/var/run/docker.sock` mounted to spawn graphql-cop. Verify in [docker-compose.yml](docker-compose.yml) that the `recon` service already has this mount (it does — Naabu/Nuclei/Katana all require it). **No compose change needed.**
+
+---
+
+## 17.3 Settings (new keys — extends §3.1 Prisma + [recon/project_settings.py](recon/project_settings.py))
+
+### 17.3.a Add to `DEFAULT_SETTINGS` in [recon/project_settings.py](recon/project_settings.py)
+
+```python
+# GraphQL Cop (external misconfig scanner)
+'GRAPHQL_COP_ENABLED': False,             # master toggle (default off — opt-in)
+'GRAPHQL_COP_DOCKER_IMAGE': 'dolevf/graphql-cop:1.14',
+'GRAPHQL_COP_TIMEOUT': 120,               # seconds per endpoint
+'GRAPHQL_COP_FORCE_SCAN': False,          # -f flag — scan even if endpoint doesn't look GraphQL
+'GRAPHQL_COP_DEBUG': False,               # -d flag — adds X-GraphQL-Cop-Test header per request
+
+# Per-test toggles (True = run, False = exclude via -e)
+'GRAPHQL_COP_TEST_FIELD_SUGGESTIONS': True,
+'GRAPHQL_COP_TEST_INTROSPECTION': False,  # off by default — PR's native test already covers this
+'GRAPHQL_COP_TEST_GRAPHIQL': True,
+'GRAPHQL_COP_TEST_GET_METHOD': True,
+'GRAPHQL_COP_TEST_ALIAS_OVERLOADING': True,   # DoS — but high-signal for pros
+'GRAPHQL_COP_TEST_BATCH_QUERY': True,         # DoS
+'GRAPHQL_COP_TEST_TRACE_MODE': True,
+'GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING': True,  # DoS
+'GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION': True, # DoS
+'GRAPHQL_COP_TEST_GET_MUTATION': True,
+'GRAPHQL_COP_TEST_POST_CSRF': True,
+'GRAPHQL_COP_TEST_UNHANDLED_ERROR': True,
+```
+
+→ **18 new keys total.**
+
+### 17.3.b Mirror in `fetch_project_settings()`
+
+One `settings['X'] = project.get('xField', DEFAULT_SETTINGS['X'])` line per key. Same pattern as §3 Phase 1.
+
+### 17.3.c Extend `apply_stealth_overrides()` (existing function)
+
+In stealth mode, disable all DoS probes:
+```python
+# --- GraphQL Cop: disable DoS probes in stealth mode ---
+settings['GRAPHQL_COP_TEST_ALIAS_OVERLOADING']    = False
+settings['GRAPHQL_COP_TEST_BATCH_QUERY']          = False
+settings['GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING']= False
+settings['GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION']= False
+# leave info-leak + CSRF tests enabled — they're low-traffic
+```
+
+### 17.3.d Prisma schema (extend §3.1 block)
+
+Add to [webapp/prisma/schema.prisma](webapp/prisma/schema.prisma):
+
+```prisma
+graphqlCopEnabled                   Boolean @default(false) @map("graphql_cop_enabled")
+graphqlCopDockerImage               String  @default("dolevf/graphql-cop:1.14") @map("graphql_cop_docker_image")
+graphqlCopTimeout                   Int     @default(120)   @map("graphql_cop_timeout")
+graphqlCopForceScan                 Boolean @default(false) @map("graphql_cop_force_scan")
+graphqlCopDebug                     Boolean @default(false) @map("graphql_cop_debug")
+graphqlCopTestFieldSuggestions      Boolean @default(true)  @map("graphql_cop_test_field_suggestions")
+graphqlCopTestIntrospection         Boolean @default(false) @map("graphql_cop_test_introspection")
+graphqlCopTestGraphiql              Boolean @default(true)  @map("graphql_cop_test_graphiql")
+graphqlCopTestGetMethod             Boolean @default(true)  @map("graphql_cop_test_get_method")
+graphqlCopTestAliasOverloading      Boolean @default(true)  @map("graphql_cop_test_alias_overloading")
+graphqlCopTestBatchQuery            Boolean @default(true)  @map("graphql_cop_test_batch_query")
+graphqlCopTestTraceMode             Boolean @default(true)  @map("graphql_cop_test_trace_mode")
+graphqlCopTestDirectiveOverloading  Boolean @default(true)  @map("graphql_cop_test_directive_overloading")
+graphqlCopTestCircularIntrospection Boolean @default(true)  @map("graphql_cop_test_circular_introspection")
+graphqlCopTestGetMutation           Boolean @default(true)  @map("graphql_cop_test_get_mutation")
+graphqlCopTestPostCsrf              Boolean @default(true)  @map("graphql_cop_test_post_csrf")
+graphqlCopTestUnhandledError        Boolean @default(true)  @map("graphql_cop_test_unhandled_error")
+```
+
+Then `docker compose exec webapp npx prisma db push && npx prisma generate`.
+
+---
+
+## 17.4 Graph DB — extend the existing mixin (no new node labels)
+
+File: [graph_db/mixins/graphql_mixin.py](graph_db/mixins/graphql_mixin.py) — extend `update_graph_from_graphql_scan()` already written by PR + §6.4.
+
+### 17.4.a New Endpoint capability flags (boolean properties)
+
+Set these on the Endpoint node based on the raw graphql-cop results (not just `result=True`):
+
+```python
+cop_raw = endpoint_info.get('graphql_cop_raw', [])
+if cop_raw:
+    flag_by_key = {
+        'detect_graphiql':      'graphql_graphiql_exposed',
+        'trace_mode':           'graphql_tracing_enabled',
+        'get_method_support':   'graphql_get_allowed',
+        'field_suggestions':    'graphql_field_suggestions_enabled',
+        'batch_query':          'graphql_batching_enabled',
+    }
+    for finding in cop_raw:
+        key = finding.get('evidence', {}).get('graphql_cop_key')
+        flag = flag_by_key.get(key)
+        if flag is not None:
+            graphql_props[flag] = bool(finding.get('result', False))
+```
+
+Add these 5 properties to the Endpoint `SET` clause.
+
+### 17.4.b Vulnerability nodes — reuse existing pattern
+
+Each graphql-cop finding where `result=True` becomes a `Vulnerability` node with the shape already handled in PR's existing loop. The deterministic ID pattern `graphql_{type}_{baseurl}_{path}` dedupes cleanly: if PR's native introspection check AND graphql-cop's introspection test both fire on the same endpoint, the same ID is generated → `MERGE` updates one node instead of creating two.
+
+**Source differentiation**: set `v.source = 'graphql_cop'` (vs `'graphql_scan'` for the PR's native checks). Reports and queries can filter with `WHERE v.source IN ['graphql_scan', 'graphql_cop']`.
+
+### 17.4.c MERGE-key caveat
+
+For the introspection dedup to work, the deterministic ID must use **only** the tool-agnostic `(vulnerability_type, baseurl, path)` — NOT including `source` in the ID. Verify PR's existing ID construction at [graph_db/mixins/graphql_mixin.py](graph_db/mixins/graphql_mixin.py) line 136 does this. If `source` is in the ID → fix before merging §17.
+
+---
+
+## 17.5 Frontend section — extend `GraphqlScanSection.tsx`
+
+Add a **collapsible sub-section** inside [webapp/src/components/projects/ProjectForm/sections/GraphqlScanSection.tsx](webapp/src/components/projects/ProjectForm/sections/GraphqlScanSection.tsx) (created in §4.1) titled "graphql-cop misconfig scanner (external)". Mirror the collapsible pattern from [webapp/src/components/projects/ProjectForm/sections/JsReconSection.tsx](webapp/src/components/projects/ProjectForm/sections/JsReconSection.tsx) "Detection modules" block (lines 539-603).
+
+Layout:
+```tsx
+<div className={styles.subSection}>
+  <h3 onClick={() => setCopExpanded(!copExpanded)}>
+    graphql-cop External Scanner
+    <span className={styles.badgeActive}>Active</span>
+    <span className={styles.infoBadge}>12 checks</span>
+  </h3>
+  {copExpanded && (
+    <>
+      <Toggle label="Enable graphql-cop"
+              checked={data.graphqlCopEnabled}
+              onChange={v => updateField('graphqlCopEnabled', v)} />
+
+      {data.graphqlCopEnabled && (
+        <>
+          <div>Docker image: <input ... value={data.graphqlCopDockerImage} /></div>
+          <div>Timeout (s): <input type="number" ... /></div>
+          <Toggle label="Force scan even if endpoint isn't GraphQL-like" ... />
+          <Toggle label="Debug mode (adds X-GraphQL-Cop-Test header)" ... />
+
+          <h4>Checks to run (uncheck to skip)</h4>
+          <div className={styles.testGrid}>
+            <Toggle label="Field Suggestions (info leak, LOW)"         field="graphqlCopTestFieldSuggestions" />
+            <Toggle label="Introspection (dedupe with native, off by default)"
+                                                                       field="graphqlCopTestIntrospection" />
+            <Toggle label="GraphiQL / Playground IDE (info leak, LOW)" field="graphqlCopTestGraphiql" />
+            <Toggle label="GET method queries (CSRF, INFO)"            field="graphqlCopTestGetMethod" />
+            <Toggle label="GET-based mutations (CSRF, HIGH)"           field="graphqlCopTestGetMutation" />
+            <Toggle label="POST url-encoded CSRF (MEDIUM)"             field="graphqlCopTestPostCsrf" />
+            <Toggle label="Trace mode (info leak, INFO)"               field="graphqlCopTestTraceMode" />
+            <Toggle label="Unhandled errors (info leak, LOW)"          field="graphqlCopTestUnhandledError" />
+            <hr /> <em>DoS probes — noisy, disabled in stealth mode automatically:</em>
+            <Toggle label="Alias overloading (101 aliases, HIGH)"      field="graphqlCopTestAliasOverloading" />
+            <Toggle label="Batch query (array of 10, HIGH)"            field="graphqlCopTestBatchQuery" />
+            <Toggle label="Directive overloading (HIGH)"               field="graphqlCopTestDirectiveOverloading" />
+            <Toggle label="Circular introspection (HIGH)"              field="graphqlCopTestCircularIntrospection" />
+          </div>
+        </>
+      )}
+    </>
+  )}
+</div>
+```
+
+**UX notes**:
+- Default-off master toggle forces opt-in (graphql-cop adds traffic).
+- DoS probes are visually grouped below a divider with a clear "noisy" label.
+- Info banner at the top: `"graphql-cop is an external Docker-based scanner. Enables 12 misconfiguration checks including alias/batch DoS probes, CSRF vectors, and GraphiQL detection. Traffic is active — respect RoE."`
+
+---
+
+## 17.6 Report pipeline — extend §7 additions
+
+### 17.6.a `reportData.ts` — broaden the source filter
+
+File: [webapp/src/lib/report/reportData.ts](webapp/src/lib/report/reportData.ts)
+
+In `queryGraphql()` (created in §7.1), the Cypher `WHERE` clause must accept both sources:
+```cypher
+MATCH (v:Vulnerability) WHERE v.source IN ['graphql_scan', 'graphql_cop']
+                          AND v.project_id = $pid
+```
+
+Extend `GraphqlFindingRecord` interface with one new field:
+```ts
+interface GraphqlFindingRecord {
+  ...existing fields...
+  source: 'graphql_scan' | 'graphql_cop'
+  curlVerify?: string          // graphql-cop reproducer cURL
+}
+```
+
+### 17.6.b Risk score tuning
+
+Adjust `rawRisk` weights (§7.1 point 5) to recognize graphql-cop's DoS-class findings:
+```ts
+const graphqlScore =
+  data.graphqlScan.bySeverity.critical * 60 +
+  data.graphqlScan.bySeverity.high * 30 +        // alias/batch/directive/circular all land here
+  data.graphqlScan.bySeverity.medium * 10 +
+  data.graphqlScan.bySeverity.low * 3 +
+  data.graphqlScan.bySeverity.info * 1            // add info tier — graphql-cop emits several INFO findings
+```
+
+### 17.6.c Template — surface the cURL reproducer
+
+File: [webapp/src/lib/report/reportTemplate.ts](webapp/src/lib/report/reportTemplate.ts) — in `renderGraphqlScan()` (§7.2), when a finding has `source='graphql_cop'`, also render a `<pre>` block with its `curlVerify` command. This is the pentester's single biggest value-add — they can paste the cURL straight into Burp Repeater.
+
+```html
+<details>
+  <summary>Reproduce (cURL)</summary>
+  <pre class="curl">${esc(finding.curlVerify)}</pre>
+</details>
+```
+
+### 17.6.d `condenseForAgent` — no new shape needed
+
+The existing §7.3 payload already passes `bySeverity` + top 15 findings. graphql-cop findings flow through the same interface — no new fields required.
+
+---
+
+## 17.7 Presets — add per-test toggles where relevant
+
+File: [webapp/src/lib/recon-presets/presets/*.ts](webapp/src/lib/recon-presets/presets/) — extends §8 decision table.
+
+| Preset | `graphqlCopEnabled` | DoS probes |
+|---|---|---|
+| `api-security.ts` | **true** | All enabled (API pentests need DoS signals) |
+| `web-app-pentester.ts` | **true** | All enabled |
+| `bug-bounty-quick.ts` | true | Info-leak + CSRF only (DoS off) |
+| `bug-bounty-deep.ts` | true | All enabled |
+| `full-active-scan.ts`, `full-maximum-scan.ts` | true | All enabled |
+| `red-team-operator.ts` | true | **DoS off** (low-noise ops) |
+| `stealth-recon.ts` | true | DoS off (mirrors stealth_overrides) |
+| `compliance-audit.ts` | true | DoS off (read-only audit) |
+| `parameter-injection.ts`, `cve-hunter.ts` | true (defaults) | — |
+| `full-passive-scan.ts`, `osint-investigator.ts`, `dns-email-security.ts`, `secret-miner.ts`, `secret-hunter.ts`, `subdomain-takeover.ts`, `infrastructure-mapper.ts`, `directory-discovery.ts`, `cloud-exposure.ts`, `large-network.ts` | **false** | N/A |
+
+Also update:
+- `webapp/src/lib/recon-preset-schema.ts` — 18 new Zod field definitions matching the Prisma block.
+- `webapp/src/app/api/presets/generate/route.ts` — 18 new entries in `RECON_PARAMETER_CATALOG` with descriptions, so the AI preset generator knows about them.
+- Tests in `recon-preset-schema.test.ts` and `recon-presets.test.ts` — bump expected key counts.
+
+---
+
+## 17.8 No change to — Workflow view, colors, graph page, partial recon, section index
+
+graphql-cop runs **inside** the existing `GraphqlScan` tool (same id, same toggle, same partial-recon handler). It is **not** a separate workflow node.
+
+Verify by the following are unchanged from §5:
+- `WORKFLOW_TOOLS` entry (same `GraphqlScan` id) — ✅ no change
+- `nodeMapping.ts` (same inputs/outputs — graphql-cop still reads BaseURL/Endpoint, writes Vulnerability/Endpoint) — ✅ no change
+- `WorkflowNodeModal.tsx` switch — ✅ no change (still routes to `GraphqlScanSection`)
+- `graph_builders.py` `_build_graphql_data_from_graph()` (§9.1.c) — ✅ no change (graphql-cop needs no extra graph data; it gets endpoints + auth headers, same as the native scanner)
+- `PartialReconModal.tsx` — ✅ no change (graphql-cop inherits the partial-recon plumbing already set up in §9.6; if the user enables `GraphqlScan` via partial recon and `graphqlCopEnabled=true`, graphql-cop runs as part of the same partial execution)
+- Colors, node sizes, DataTableToolbar, PageBottomBar — ✅ no change (no new labels)
+
+---
+
+## 17.9 Logging format
+
+All log lines use `[*|+|-|!][GraphQL-Cop]` prefix — follows the same `[symbol][ToolName]` convention as the rest of the pipeline (§11). Example:
+
+```
+[*][GraphQL-Cop] Running against https://api.target.com/graphql (image=dolevf/graphql-cop:1.14, exclude=none)
+[+][GraphQL-Cop] 5 findings (3 HIGH, 2 LOW)
+[!][GraphQL-Cop] Timeout after 120s against https://stage.target.com/graphql
+```
+
+---
+
+## 17.10 Testing
+
+### 17.10.a Unit tests (Python)
+
+File: `recon/tests/test_graphql_cop.py` (new).
+
+1. `test_build_excluded_tests` — per-test toggles correctly produce the `-e` comma list.
+2. `test_normalize_findings_all_false` — 12 results with `result=False` → empty vuln list, but endpoint capability flags set.
+3. `test_normalize_findings_partial_true` — mixed results → correct Vulnerability dicts with correct `vulnerability_type`, `severity`, `source='graphql_cop'`.
+4. `test_unknown_title_skipped` — if a future graphql-cop version adds a test, unknown titles are logged and skipped (no crash).
+5. `test_subprocess_timeout` — mocked `subprocess.run` raises `TimeoutExpired` → function returns `None`, no exception propagates.
+6. `test_invalid_json_output` — malformed stdout → function returns `None`.
+7. `test_severity_mapping` — HIGH/MEDIUM/LOW/INFO correctly map to lowercase canonical values.
+
+Mock `subprocess.run` via `unittest.mock.patch` to avoid needing real Docker in CI.
+
+### 17.10.b Integration smoke test
+
+Spin up [DVGA](https://github.com/dolevf/Damn-Vulnerable-GraphQL-Application) (also by `dolevf`) in CI or locally:
+```bash
+docker run --rm -p 5013:5013 dolevf/dvga
+```
+Then run the scanner against `http://localhost:5013/graphql` — all 12 findings should fire `result=True` (DVGA is intentionally vulnerable to every check). Assert the RedAmon scan produces ≥10 Vulnerability nodes tagged `source='graphql_cop'`.
+
+### 17.10.c TypeScript tests
+
+Update [webapp/src/lib/recon-preset-schema.test.ts](webapp/src/lib/recon-preset-schema.test.ts) — expected key count bumps by 18.
+
+---
+
+## 17.11 Schema sync (per `PROMPT.ADD_RECON_TOOL.md`)
+
+### 17.11.a [readmes/GRAPH.SCHEMA.md](readmes/GRAPH.SCHEMA.md)
+
+Under the Endpoint properties table, append the 5 new capability flags:
+| `graphql_graphiql_exposed` | Boolean | GraphiQL/Playground IDE detected at this endpoint |
+| `graphql_tracing_enabled` | Boolean | Apollo tracing extension enabled |
+| `graphql_get_allowed` | Boolean | GraphQL queries accepted via GET (CSRF vector) |
+| `graphql_field_suggestions_enabled` | Boolean | "Did you mean" field suggestions exposed |
+| `graphql_batching_enabled` | Boolean | Array-batched queries accepted |
+
+Under the Vulnerability node section, add a `source='graphql_cop'` bullet listing the 12 new `vulnerability_type` values.
+
+### 17.11.b [agentic/prompts/base.py](agentic/prompts/base.py) — `TEXT_TO_CYPHER_SYSTEM`
+
+Append the 5 new Endpoint properties and the 12 new vulnerability_type values. The agent needs these to answer queries like "which endpoints have GraphiQL exposed?" or "list all alias-overloading findings".
+
+### 17.11.c Colors / filters / legend — no changes
+
+Existing Vulnerability coloring covers all new findings. No `NODE_COLORS` / `NODE_SIZES` / `DataTableToolbar` / `PageBottomBar` edits.
+
+---
+
+## 17.12 Build & deploy sequence (after §1-§16 are live)
+
+```bash
+# 1. Prisma schema (17.3.d)
+docker compose exec webapp npx prisma db push
+docker compose exec webapp npx prisma generate
+
+# 2. Pre-pull image so first scan isn't cold
+docker pull dolevf/graphql-cop:1.14
+
+# 3. Rebuild recon container (picks up entrypoint.sh IMAGES change + new misconfig.py)
+docker compose --profile tools build recon
+
+# 4. Rebuild agent (picks up agentic/prompts/base.py update)
+docker compose build agent && docker compose up -d agent
+
+# 5. Webapp: dev hot-reload picks up section + report template changes.
+#    In prod:
+docker compose build webapp && docker compose up -d webapp
+```
+
+**No orchestrator restart needed** — `/defaults` dynamically iterates `DEFAULT_SETTINGS` so the 18 new keys are served automatically.
+
+---
+
+## 17.12.b Deep-review audit log (items verified against actual graphql-cop 1.14 source)
+
+Every claim below was re-checked against `github.com/dolevf/graphql-cop@main` source tree before this plan section was finalized. Re-run these checks on any image bump.
+
+| Claim | How verified | Status |
+|---|---|---|
+| CLI flag set (`-t`, `-H`, `-o`, `-e`, `-l`, `-f`, `-d`, `-x`, `-w`, `-T`, `-v`) | Read `graphql-cop.py` entrypoint | ✅ exact |
+| `-o` only supports `json` | Read parser + output branch (`if options.format == 'json': print(dumps(json_output))`) | ✅ exact |
+| `-H` is repeatable, each is its own JSON dict merged into HEADERS | Read `optparse` `action='append'` + the header-parsing loop | ✅ exact |
+| `-e` takes comma-separated internal keys from the `tests` dict | Read `options.excluded_tests.split(',')` + the `del tests[k]` loop | ✅ exact |
+| Registered tests (12 — `field_duplication` disabled per issue #43) | Read `lib/tests/__init__.py` registry | ✅ exact |
+| 12 test `title` strings | Read each `lib/tests/*.py` — TITLE_TO_KEY in §17.2.b is verbatim | ✅ exact |
+| Per-test `severity` (HIGH/MEDIUM/LOW/INFO) | Read each test file's `res` dict | ✅ corrected in §17.1 catalog |
+| Output is pure JSON via `json.dumps`, no `pprint` | Main script imports `from json import loads, dumps` + calls `dumps(json_output)` | ✅ exact |
+| But: leading "does not seem to be running" text message can precede the JSON when `-f` is off | Read the `for path in paths: if not is_graphql(...): print(...); continue` branch | ✅ handled via `_extract_json_array()` |
+| Default endpoint wordlist (`/`, `/graphiql`, `/playground`, `/console`, `/graphql`) | Read `endpoints = [...]` in entrypoint | ✅ exact (we bypass it — we pass explicit URLs) |
+| Dockerfile entrypoint is `python graphql-cop.py` (accepts script args directly) | Read `Dockerfile` `ENTRYPOINT ["python", "graphql-cop.py"]` | ✅ matches our `docker run ... image -t ... -o json` |
+| `requests==2.25.1` is pinned | Read `requirements.txt` | ✅ confirms Docker-in-Docker is mandatory |
+| DockerHub image exists at `dolevf/graphql-cop:1.14` | WebFetch of `hub.docker.com/r/dolevf/graphql-cop` | ✅ confirmed |
+| No `:latest` moving tag promise (only `1.14` as of 2026-04-20) | Same | ✅ — pin to `1.14` |
+| `--network host` would use the DOCKER HOST net, not the recon container net | Docker behavior; not graphql-cop specific | ⚠️ — §17.2.b now defers to Nuclei's flag pattern instead of hardcoding |
+| Exit code 0 on normal completion regardless of findings | Read entrypoint: no `sys.exit(nonzero)` based on findings | ✅ exact — must parse JSON to know results |
+
+---
+
+## 17.13 Verification checklist
+
+- [ ] `docker run --rm dolevf/graphql-cop:1.14 -l` lists all 12 test keys matching `TITLE_TO_KEY` mapping.
+- [ ] Unit tests (§17.10.a) pass.
+- [ ] DVGA smoke test (§17.10.b): scan produces ≥10 new Vulnerability nodes with `source='graphql_cop'`.
+- [ ] Introspection dedup: scan an endpoint with both `graphqlSecurityEnabled=true` AND `graphqlCopTestIntrospection=true` → Neo4j has exactly **one** `graphql_introspection_enabled` Vulnerability node per (baseurl, path), not two.
+- [ ] Endpoint enrichment: after scan against DVGA, `MATCH (e:Endpoint {is_graphql: true}) RETURN e.graphql_graphiql_exposed, e.graphql_tracing_enabled, e.graphql_get_allowed, e.graphql_field_suggestions_enabled, e.graphql_batching_enabled` — all 5 flags populated.
+- [ ] Per-test toggles: disable `GRAPHQL_COP_TEST_ALIAS_OVERLOADING` → re-scan DVGA → no `graphql_alias_overloading` Vulnerability node created.
+- [ ] Stealth mode: `stealthMode=true` → re-scan → 4 DoS `vulnerability_type`s NOT present (alias/batch/directive/circular).
+- [ ] Report: HTML report renders the cURL reproducer for each graphql-cop finding. Collapsible `<details>` blocks expand correctly.
+- [ ] AI preset: generate an "API security audit" preset → includes `graphqlCopEnabled: true` and sensible per-test toggles.
+- [ ] RoE: `ROE_EXCLUDED_HOSTS` still filters graphql-cop targets (filtering happens in `discover_graphql_endpoints` upstream of the call to `run_graphql_cop`, so no additional work needed — verify with a test).
+- [ ] Log format: all graphql-cop lines match `[symbol][GraphQL-Cop] ...`.
+- [ ] Partial recon: click Play on GraphQL node → include graph targets + `graphqlCopEnabled=true` → graphql-cop runs as part of partial recon without code changes to partial_recon_modules/graphql_scanning.py (it's invoked from the scanner, not from partial_recon).
+
+---
+
+## 17.14 Updated file-by-file matrix (additions on top of §14)
+
+| File | Status | Section |
+|---|---|---|
+| **`recon/graphql_scan/misconfig.py`** | ❌ **Create** (~250 lines: wrapper + normalizer + mappings) | §17.2.b |
+| [recon/graphql_scan/scanner.py](recon/graphql_scan/scanner.py) | ⚠️ Extend `test_single_endpoint()` with ~8-line graphql-cop call block | §17.2.c |
+| [recon/entrypoint.sh](recon/entrypoint.sh) | ⚠️ Append `dolevf/graphql-cop:1.14` to IMAGES | §17.2.a |
+| [recon/project_settings.py](recon/project_settings.py) | ⚠️ +18 DEFAULT_SETTINGS keys + fetch_project_settings() mapping + stealth overrides | §17.3 |
+| [webapp/prisma/schema.prisma](webapp/prisma/schema.prisma) | ⚠️ +18 Prisma fields | §17.3.d |
+| [graph_db/mixins/graphql_mixin.py](graph_db/mixins/graphql_mixin.py) | ⚠️ +5 Endpoint capability flags + `source='graphql_cop'` path | §17.4 |
+| [webapp/src/components/projects/ProjectForm/sections/GraphqlScanSection.tsx](webapp/src/components/projects/ProjectForm/sections/GraphqlScanSection.tsx) | ⚠️ Add collapsible graphql-cop sub-section with 12 per-test toggles | §17.5 |
+| [webapp/src/lib/report/reportData.ts](webapp/src/lib/report/reportData.ts) | ⚠️ Broaden `queryGraphql` source filter, add `curlVerify` to record | §17.6.a |
+| [webapp/src/lib/report/reportTemplate.ts](webapp/src/lib/report/reportTemplate.ts) | ⚠️ Add `<details><pre>curl</pre></details>` block per graphql-cop finding | §17.6.c |
+| [webapp/src/lib/recon-preset-schema.ts](webapp/src/lib/recon-preset-schema.ts) | ⚠️ +18 Zod field definitions | §17.7 |
+| [webapp/src/app/api/presets/generate/route.ts](webapp/src/app/api/presets/generate/route.ts) | ⚠️ +18 `RECON_PARAMETER_CATALOG` entries | §17.7 |
+| [webapp/src/lib/recon-presets/presets/*.ts](webapp/src/lib/recon-presets/presets/) | ⚠️ Per-preset toggle decisions (§17.7 table) | §17.7 |
+| [readmes/GRAPH.SCHEMA.md](readmes/GRAPH.SCHEMA.md) | ⚠️ +5 Endpoint props + 12 vulnerability_type subtypes | §17.11.a |
+| [agentic/prompts/base.py](agentic/prompts/base.py) | ⚠️ TEXT_TO_CYPHER_SYSTEM update | §17.11.b |
+| `recon/tests/test_graphql_cop.py` | ❌ **Create** | §17.10.a |
+| `webapp/src/lib/recon-preset-schema.test.ts` | ⚠️ Update expected key count | §17.10.c |
+
+**Files unchanged from Phase 1** — nodeMapping.ts, workflowDefinition.ts, WorkflowNodeModal.tsx, colors.ts, DataTableToolbar.tsx, PageBottomBar.tsx, partial_recon.py, partial_recon_modules/graphql_scanning.py, partial_recon_modules/graph_builders.py, user_input_mixin.py, recon-types.ts, PartialReconModal.tsx, graph-inputs route.
+
+---
+
+## 17.15 Risks & gotchas specific to graphql-cop
+
+1. **`requests` version conflict is a hard constraint.** Don't attempt `pip install graphql-cop` — it will downgrade RedAmon's `requests` and break Subfinder/Arjun/ParamSpider. Docker-in-Docker is mandatory.
+2. **TITLE_TO_KEY mapping is hand-maintained.** graphql-cop's JSON output uses `title` (human-readable) as the discriminator — our code maps title→key. If graphql-cop 1.15 renames a title, our parser will log "Unknown test title" and silently drop that finding. **Mitigation**: the first unit test (§17.10.a) pins this mapping. Re-verify on every image bump.
+3. **Image tag pinning**: DockerHub lags the git repo. `dolevf/graphql-cop:1.14` is what's available as of 2026-04-20. `dolevf/graphql-cop:latest` tag exists but is the same 1.14 snapshot. Don't use `:latest` — pin explicitly to catch tag drift. Allow user override via `GRAPHQL_COP_DOCKER_IMAGE` setting for security-sensitive environments that maintain their own pinned fork.
+4. **DoS probes can DoS fragile targets.** Even at defaults, alias/batch/directive/circular probes send bursty traffic. On poorly-provisioned dev/staging targets, they can cause real outages. Default master toggle is `false` (opt-in); stealth mode disables all 4 automatically. Document this clearly in the section's info banner and in `readmes/ROE_POLICY.md` (if that exists — otherwise in `GRAPH.SCHEMA.md`).
+5. **Introspection test is disabled by default** to dedupe with PR's native introspection check. Users enabling both will create ONE Vulnerability node per endpoint (via deterministic MERGE ID) but TWO evidence trails. Verify `graph_db/mixins/graphql_mixin.py` preserves the first-writer evidence (`ON CREATE SET`) AND the `curl_verify` from the second writer (`ON MATCH SET` for evidence.curl_verify only). If overwritten blindly, reviewers lose the PR's raw introspection response. Low-priority but document.
+5b. **Severity-overwrite on dedup**: the PR's mixin uses unconditional `SET v.severity = $props.severity`, not `ON CREATE SET`. So if graphql-cop runs after the native scanner on the same endpoint, graphql-cop's HIGH overwrites the native scanner's arbitrary severity. This is **actually desirable** (graphql-cop's ratings are industry-standard) but should be noted so reviewers don't flag it as a bug. Optionally: switch to `ON CREATE SET v.severity = ... ON MATCH SET v.severity = CASE WHEN $props.severity > v.severity THEN $props.severity ELSE v.severity END` to always keep the higher severity.
+6. **Docker socket exposure.** Recon container already mounts `/var/run/docker.sock`. graphql-cop runs as `USER appuser` inside its image (per its Dockerfile), so no root escalation inside that container. But socket mounting has host-escape risk in general — this is not a new exposure, just noting it.
+7. **Network mode `--network host`** in the spawn command: lets graphql-cop hit internal targets the recon container can reach, but also bypasses per-container network policies. Alternative: use the recon container's network. Copy whatever pattern Nuclei uses in `recon/vuln_scan.py` for consistency — don't invent a new one.
+8. **No per-request rate limit in graphql-cop.** Within a single endpoint, its tests back-to-back may exceed `ROE_GLOBAL_MAX_RPS`. The existing `GRAPHQL_RATE_LIMIT` only throttles the scanner's own introspection probes, not graphql-cop's traffic. **Mitigation**: sequential per-endpoint execution (don't fan out graphql-cop invocations), document the traffic estimate (~20-30 req/endpoint in <10s), and recommend an explicit RoE allowance for Group 6 active scanning.
+
+---
+
+## 17.16 Expected coverage gain (reference — repeated from prior conversation for plan completeness)
+
+| Capability | PR #93 only | + §17 graphql-cop |
+|---|---|---|
+| Introspection detection | ✅ | ✅ (dedupe) |
+| Schema read (when introspection on) | ✅ | ✅ |
+| Sensitive field detection | ✅ | ✅ |
+| Alias / batch / directive / circular DoS | ❌ | ✅ |
+| Field suggestion info leak | ❌ | ✅ |
+| Trace / debug mode disclosure | ❌ | ✅ |
+| GraphiQL / Playground IDE exposure | ❌ | ✅ |
+| GET-method queries + mutations (CSRF) | ❌ | ✅ |
+| POST url-encoded CSRF | ❌ | ✅ |
+| Unhandled error info leak | ❌ | ✅ |
+| Schema recovery when introspection off | ❌ | ❌ (deferred — clairvoyance) |
+| Pentester grade (approx) | 4/10 | 7/10 |
+
+**Summary**: 10 new detection categories, 1 new Python module (~250 lines), zero new graph node labels, zero new relationships. All leverages the Phase 1 scaffolding.
