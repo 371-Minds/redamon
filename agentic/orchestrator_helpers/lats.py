@@ -1,0 +1,665 @@
+"""LATS (Language Agent Tree Search) — bounded, value-guided search over
+executed exploit probes.
+
+This module is the self-contained LATS engine. See internal/LATS_integration.md
+for the full design. The orchestrator's only contact with LATS is:
+  1. state.py declaring the LATS state fields (LangGraph strips undeclared keys).
+  2. a single `lats_hook(...)` call inside think_node (added in Step 2).
+
+Everything here is stateless: all per-session search state lives in the
+`_exploit_tree` dict on AgentState, so concurrent sessions never share LATS
+state. The tree rides inside AgentState and the Postgres checkpointer persists
+it for free.
+
+STEP 1 (this file's first cut) ships the PURE engine only:
+  value function, UCT, select, backprop, expand (structured probe generation),
+  tree bookkeeping, activation gate, and the completion/archive helpers.
+The think_node hook, streaming emission, and decision override arrive in later
+steps and build on these primitives.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import re
+from typing import Any, List, Optional
+
+from project_settings import get_setting, TOOL_MUTEX_GROUPS, DANGEROUS_TOOLS
+from orchestrator_helpers.error_class import is_diagnostic_failure
+from state import ExploitTree, ExploitTreeNode
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Small accessors — value helpers must tolerate both a pydantic
+# OutputAnalysisInline and a plain dict (tests feed dicts).
+# =============================================================================
+
+def _attr(obj: Any, key: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+# =============================================================================
+# VALUE FUNCTION (§6) — inverts compute_productivity_score's "badness" into
+# "goodness" (higher = closer to a foothold), enriched with error_class.
+# All inputs are already computed upstream; lats_value adds no I/O.
+# =============================================================================
+
+def _exploit_succeeded(step: dict, analysis: Any) -> bool:
+    """True when the just-executed probe reached a foothold. Prefers the
+    step's own flag (per-step attribution) then the aggregate analysis."""
+    if step and step.get("exploit_succeeded"):
+        return True
+    return bool(_attr(analysis, "exploit_succeeded", False))
+
+
+def _verdict_for(step: dict, analysis: Any) -> str:
+    """The ProductivityVerdict.verdict for this step. A per_step entry (keyed
+    by step_index) wins; otherwise the aggregate productivity verdict."""
+    if step is not None:
+        idx = step.get("_step_index")
+        per_step = _attr(analysis, "per_step", []) or []
+        if idx is not None:
+            for ps in per_step:
+                if _attr(ps, "step_index", -1) == idx:
+                    v = _attr(ps, "verdict", "")
+                    if v:
+                        return v
+        # A single-step turn may stamp the verdict directly on the step.
+        if step.get("verdict"):
+            return step["verdict"]
+    prod = _attr(analysis, "productivity", None)
+    return _attr(prod, "verdict", "") or ""
+
+
+def _new_finding_confidence(step: dict, analysis: Any) -> int:
+    """Confidence (0-100) of any ChainFinding attributed to this step.
+
+    For a per_step-attributed wave, the step's own finding wins; otherwise the
+    highest-confidence finding in the aggregate analysis is credited here."""
+    if step is not None:
+        idx = step.get("_step_index")
+        per_step = _attr(analysis, "per_step", []) or []
+        if idx is not None:
+            for ps in per_step:
+                if _attr(ps, "step_index", -1) == idx and _attr(ps, "finding", ""):
+                    return int(_attr(ps, "confidence", 0) or 0)
+    findings = _attr(analysis, "chain_findings", []) or []
+    best = 0
+    for f in findings:
+        c = int(_attr(f, "confidence", 0) or 0)
+        if c > best:
+            best = c
+    return best
+
+
+def _lats_value_web(step: dict, analysis: Any) -> float:
+    """Web-exploitation value: error_class carries the signal (§6)."""
+    ec = step.get("error_class", "") if step else ""
+    verdict = _verdict_for(step, analysis)
+
+    # (0) Diagnostic failure: the probe never reached the app (bad quoting, DNS,
+    #     tool crash, parse-time 5xx). NEUTRAL, so UCT retries rather than
+    #     abandoning a possibly-live vector. Small floor: not pruned, not deep.
+    if is_diagnostic_failure(ec):
+        return 0.15
+
+    v = 0.0
+    # (a) New durable evidence.
+    v += 0.5 * (_new_finding_confidence(step, analysis) / 100.0)
+    # (b) Response informativeness.
+    if verdict in ("new_info", "diagnostic_progress"):
+        v += 0.3
+    if ec == "application_5xx_normal":       # DB / business-logic path reached
+        v += 0.2
+    if verdict == "confirmation":
+        v += 0.1
+    # (c) Penalties for real dead-ends (probe reached the app, was rejected).
+    if verdict in ("blocked", "duplicate", "no_progress"):
+        v -= 0.3
+    if ec == "application_4xx":               # 403 / WAF / semantic rejection
+        v -= 0.2
+    return max(0.0, v)
+
+
+def _new_finding(step: dict, analysis: Any) -> bool:
+    return _new_finding_confidence(step, analysis) > 0
+
+
+def _privilege_increased(before: dict, after: dict) -> bool:
+    return _delta_count(before, after, "privilege_escalation") > 0
+
+
+def _new_session(before: dict, after: dict) -> bool:
+    return _len_of(after, "sessions") > _len_of(before, "sessions")
+
+
+def _new_credentials(before: dict, after: dict) -> bool:
+    return _len_of(after, "credentials") > _len_of(before, "credentials")
+
+
+def _new_host_reached(before: dict, after: dict) -> bool:
+    return _len_of(after, "hosts") > _len_of(before, "hosts")
+
+
+def _len_of(snapshot: Optional[dict], key: str) -> int:
+    if not snapshot:
+        return 0
+    val = snapshot.get(key)
+    try:
+        return len(val) if val is not None else 0
+    except TypeError:
+        return 0
+
+
+def _delta_count(before: Optional[dict], after: Optional[dict], finding_type: str) -> int:
+    def _count(snap):
+        if not snap:
+            return 0
+        return int(snap.get(f"finding_{finding_type}", 0) or 0)
+    return _count(after) - _count(before)
+
+
+def _lats_value_post_expl(step: dict, analysis: Any, before: dict, after: dict) -> float:
+    """Post-exploitation value from engagement-state deltas (§6.1). In this
+    phase error_class 4xx/5xx branches are inert, so score from privilege /
+    session / credential / host / finding growth instead."""
+    if is_diagnostic_failure(step.get("error_class", "") if step else ""):
+        return 0.15                                  # command never ran; retry
+    v = 0.0
+    if _privilege_increased(before, after):
+        v += 0.6
+    if _new_session(before, after):
+        v += 0.5
+    if _new_credentials(before, after):
+        v += 0.4
+    if _new_host_reached(before, after):
+        v += 0.4
+    if _new_finding(step, analysis):
+        v += 0.3
+    if _verdict_for(step, analysis) in ("no_progress", "duplicate"):
+        v -= 0.3
+    return max(0.0, min(1.0, v))
+
+
+def lats_value(step: dict, analysis: Any, phase: Optional[str] = None,
+               before: Optional[dict] = None, after: Optional[dict] = None) -> float:
+    """Value of a just-executed probe. Terminal success is the strong reward;
+    otherwise dispatch on phase (§6.1)."""
+    if _exploit_succeeded(step, analysis):
+        return 1.0
+    if phase == "post_exploitation":
+        return _lats_value_post_expl(step, analysis, before or {}, after or {})
+    return _lats_value_web(step, analysis)
+
+
+# =============================================================================
+# UCT / SELECT / BACKPROP (§6) — textbook and pure.
+# =============================================================================
+
+def uct(node: ExploitTreeNode, parent_visits: int, c: float) -> float:
+    if node.visits == 0:
+        return float("inf")   # always try an unvisited frontier node once
+    return node.value + c * math.sqrt(math.log(max(parent_visits, 1)) / node.visits)
+
+
+def _live_children(tree: ExploitTree, node: ExploitTreeNode) -> List[ExploitTreeNode]:
+    return [tree.nodes[cid] for cid in node.children
+            if tree.nodes[cid].status in ("proposed", "evaluated", "executing")]
+
+
+def _has_proposed_children(tree: ExploitTree, node: ExploitTreeNode) -> bool:
+    return any(tree.nodes[cid].status == "proposed" for cid in node.children)
+
+
+def lats_select(tree: ExploitTree, c: float) -> str:
+    """Descend from root by UCT to a node the hook can act on this turn: one
+    that either has unexecuted (proposed) children to fire, or can be expanded,
+    or is a dead frontier. Stops at the first such node.
+
+    NOTE: this refines the doc's textbook pseudocode (§6) to stay consistent
+    with the hook flow (§5.3), which needs SELECT to return the PARENT of the
+    next wave (a node with proposed children), not descend past it.
+    """
+    cur = tree.nodes[tree.root_id]
+    while True:
+        # A node with pending probes is where the next wave fires.
+        if _has_proposed_children(tree, cur):
+            return cur.id
+        # An evaluated leaf with room to grow is expanded next.
+        if _can_expand(cur):
+            return cur.id
+        # Otherwise descend into the best evaluated child by UCT.
+        eval_children = [tree.nodes[cid] for cid in cur.children
+                         if tree.nodes[cid].status == "evaluated"]
+        if not eval_children:
+            return cur.id   # dead frontier: nothing to do under this node
+        cur = max(eval_children, key=lambda n: uct(n, cur.visits, c))
+
+
+def lats_backprop(tree: ExploitTree, node_id: str, value: float) -> None:
+    """Push value up the ancestor chain (running max), incrementing visits."""
+    nid: Optional[str] = node_id
+    while nid is not None:
+        n = tree.nodes[nid]
+        n.visits += 1
+        n.value = max(n.value, value)   # running max keeps a branch hot if any descendant is promising
+        nid = n.parent_id
+
+
+# =============================================================================
+# EXPANDABILITY / FRONTIER / BUDGET (§8)
+# =============================================================================
+
+def _can_expand(node: ExploitTreeNode) -> bool:
+    return (node.status == "evaluated"
+            and node.depth < get_setting("LATS_MAX_DEPTH", 6)
+            and not node.children)
+
+
+def _executing_children(tree: ExploitTree) -> List[ExploitTreeNode]:
+    return [n for n in tree.nodes.values() if n.status == "executing"]
+
+
+def _proposed_children(tree: ExploitTree, node: ExploitTreeNode) -> List[ExploitTreeNode]:
+    return [tree.nodes[cid] for cid in node.children
+            if tree.nodes[cid].status == "proposed"]
+
+
+def _open_leaves(tree: ExploitTree) -> List[ExploitTreeNode]:
+    """Live (proposed/evaluated) nodes with no live children — the frontier."""
+    leaves = []
+    for n in tree.nodes.values():
+        if n.status not in ("proposed", "evaluated"):
+            continue
+        if not _live_children(tree, n):
+            leaves.append(n)
+    return leaves
+
+
+def _single_open_line(tree: ExploitTree) -> bool:
+    """True when the search has collapsed to one credible line with nothing
+    queued: no proposed/executing probes anywhere and exactly one live leaf.
+    LATS then hands that obvious line back to legacy ReAct (§5.4 EXIT collapse).
+    """
+    if tree.rollouts < 1:
+        return False
+    for n in tree.nodes.values():
+        if n.status in ("proposed", "executing"):
+            return False
+    return len(_open_leaves(tree)) == 1
+
+
+def _tree_exhausted(tree: ExploitTree) -> bool:
+    """No proposed/executing probes remain and nothing is expandable."""
+    for n in tree.nodes.values():
+        if n.status in ("proposed", "executing"):
+            return False
+    return not any(_can_expand(n) for n in tree.nodes.values())
+
+
+def _budget_hit(tree: ExploitTree) -> bool:
+    return (tree.rollouts >= get_setting("LATS_MAX_ROLLOUTS", 24)
+            or len(tree.nodes) >= get_setting("LATS_MAX_TREE_NODES", 60))
+
+
+# =============================================================================
+# TREE BOOKKEEPING (§4)
+# =============================================================================
+
+def _new_tree(state: dict, root_children: List[dict]) -> ExploitTree:
+    """Seed a fresh tree: a synthetic root plus its candidate-probe children."""
+    root = ExploitTreeNode(depth=0, status="evaluated", probe_rationale="root")
+    tree = ExploitTree(
+        root_id=root.id,
+        nodes={root.id: root},
+        active_node_id=root.id,
+        objective=_objective_of(state),
+    )
+    for cand in root_children:
+        _add_child(tree, root, cand)
+    return tree
+
+
+def _objective_of(state: dict) -> str:
+    objs = state.get("conversation_objectives") or []
+    idx = state.get("current_objective_index", 0)
+    if 0 <= idx < len(objs):
+        o = objs[idx]
+        return (o.get("objective") or o.get("description") or "") if isinstance(o, dict) else str(o)
+    return state.get("original_objective", "") or ""
+
+
+def _add_child(tree: ExploitTree, parent: ExploitTreeNode, cand: dict,
+               prior: str = "normal") -> ExploitTreeNode:
+    node = ExploitTreeNode(
+        parent_id=parent.id,
+        depth=parent.depth + 1,
+        tool_name=cand.get("tool_name"),
+        tool_args=cand.get("tool_args") or {},
+        probe_rationale=cand.get("rationale", "") or cand.get("probe_rationale", ""),
+        status="proposed",
+    )
+    # A boosted prior (operator guidance graft, §21.1) is modeled as a seed
+    # visit-0 value so UCT still tries it first but backprop can correct it.
+    if prior == "high":
+        node.local_value = 0.5
+    tree.nodes[node.id] = node
+    parent.children.append(node.id)
+    return node
+
+
+def _highest_prior(kids: List[ExploitTreeNode]) -> ExploitTreeNode:
+    return max(kids, key=lambda n: n.local_value)
+
+
+def _mutex_safe_subset(kids: List[ExploitTreeNode]) -> List[ExploitTreeNode]:
+    """Pick a wave that violates no TOOL_MUTEX_GROUP: at most one tool per
+    mutex group. Deferred kids stay `proposed` for a later turn. Dangerous
+    tools are NOT excluded — the mark is confirmation-only (§20.3).
+    """
+    group_of = {}
+    for group, tools in TOOL_MUTEX_GROUPS.items():
+        for t in tools:
+            group_of[t] = group
+    wave: List[ExploitTreeNode] = []
+    claimed: set = set()
+    for k in kids:
+        g = group_of.get(k.tool_name)
+        if g is not None:
+            if g in claimed:
+                continue          # defer: another kid already claimed this group
+            claimed.add(g)
+        wave.append(k)
+    return wave
+
+
+def _wave(wave: List[ExploitTreeNode]) -> dict:
+    """Build a ToolPlan-shaped dict from a set of child edges. Dangerous steps
+    are allowed; the existing confirmation gate handles the prompt (§20.3)."""
+    return {
+        "steps": [
+            {"tool_name": k.tool_name, "tool_args": k.tool_args or {},
+             "reasoning": k.probe_rationale, "_lats_node_id": k.id}
+            for k in wave
+        ]
+    }
+
+
+def _is_dangerous(node: ExploitTreeNode) -> bool:
+    return node.tool_name in DANGEROUS_TOOLS
+
+
+# =============================================================================
+# OBSERVATION SUMMARY / REFLECTION — DETERMINISTIC, no LLM (§20.10).
+# =============================================================================
+
+_STATUS_RE = re.compile(r"\b(HTTP/\d\.\d\s+)?([1-5]\d{2})\b")
+_TOKENISH_RE = re.compile(r"(token|secret|key|flag|error|exception|traceback|denied|unauthorized|admin)", re.I)
+
+
+def _summarize(tool_output: Optional[str], cap: int = 200) -> str:
+    """Compress tool output to ~`cap` chars, preserving the highest-signal
+    tokens (HTTP status, error/leak markers). Deterministic; never an LLM."""
+    if not tool_output:
+        return ""
+    text = str(tool_output).strip()
+    # Prefer a line carrying an HTTP status or a signal keyword.
+    for line in text.splitlines():
+        if _STATUS_RE.search(line) or _TOKENISH_RE.search(line):
+            line = line.strip()
+            return line[:cap]
+    single = " ".join(text.split())
+    return single[:cap]
+
+
+def _reflect(step: dict, analysis: Any) -> str:
+    """One-line lesson for a pruned/failed node. Deterministic."""
+    ec = step.get("error_class", "") if step else ""
+    verdict = _verdict_for(step, analysis)
+    if ec == "application_4xx":
+        return "server rejected the probe (auth / WAF / method)"
+    if verdict == "blocked":
+        return "blocked; vector rejected at the app layer"
+    if verdict == "duplicate":
+        return "duplicate of a prior probe; no new signal"
+    if verdict == "no_progress":
+        return "no progress; branch cold"
+    summ = _summarize(step.get("tool_output") if step else "", cap=80)
+    return f"low value; {summ}" if summ else "low value; branch pruned"
+
+
+# =============================================================================
+# ACTIVATION GATE (§5.1) — cheap pre-gate; the ENTER decision also requires the
+# lats_expand assessment to yield >= 2 credible probes (enforced in the hook).
+# =============================================================================
+
+def _surface_exists(state: dict) -> bool:
+    if state.get("chain_findings_memory"):
+        return True
+    ti = state.get("target_info", {}) or {}
+    return bool(ti.get("vulnerabilities") or ti.get("services") or ti.get("technologies"))
+
+
+def _already_exploited(state: dict) -> bool:
+    """A foothold is already in hand for the current objective."""
+    for f in (state.get("chain_findings_memory") or []):
+        ft = (f.get("finding_type") if isinstance(f, dict) else "") or ""
+        if ft in ("exploit_success", "access_gained", "privilege_escalation",
+                  "remote_code_execution", "session_hijacked"):
+            return True
+    return False
+
+
+def lats_active(state: dict) -> bool:
+    """Cheap pre-gate for whether to ATTEMPT activation this turn (§5.1). The
+    actual ENTER also requires the lats_expand assessment to yield >= 2 probes.
+    Keys on Deep Think's FIRING flag, NOT its output (§20.16)."""
+    if not get_setting("LATS_ENABLED", False):
+        return False
+    allowed = get_setting("LATS_ALLOWED_PHASES", ["exploitation"])
+    if state.get("current_phase") not in allowed:
+        return False
+    if not _surface_exists(state):
+        return False
+    if _already_exploited(state):
+        return False
+    return bool(state.get("deep_think_ran_this_turn"))
+
+
+def _lats_should_reset(state: dict, tree: ExploitTree) -> bool:
+    """Archive-and-restart triggers for a live tree (§20.6). ANY of: task done;
+    phase left the allowed set; objective advanced; skill switched; primary
+    target changed; objective already exploited."""
+    if state.get("task_complete"):
+        return True
+    if state.get("current_phase") not in get_setting("LATS_ALLOWED_PHASES", ["exploitation"]):
+        return True
+    if _already_exploited(state):
+        return True
+    # Objective advanced: the tree stamped which objective it serves.
+    if tree.objective and tree.objective != _objective_of(state):
+        return True
+    return False
+
+
+# =============================================================================
+# EXPAND (§20.9) — LATS's OWN structured probe generator on the single agent
+# model. NEVER reads deep_think_result (§20.16). node=None -> root assessment.
+# =============================================================================
+
+def _phase_allowed_tools(state: dict) -> set:
+    tpm = get_setting("TOOL_PHASE_MAP", {}) or {}
+    phase = state.get("current_phase", "exploitation")
+    return {name for name, phases in tpm.items() if phase in phases}
+
+
+def _parse_expand_response(text: str, allowed_tools: set, branching: int) -> List[dict]:
+    """Pure parser + validator for a structured expand response. Returns up to
+    `branching` probes, each {tool_name, tool_args, rationale}, dropping any
+    probe whose tool_name is missing or not phase-allowed (§20.9)."""
+    if not text:
+        return []
+    payload = _extract_json(text)
+    if payload is None:
+        return []
+    raw = payload.get("probes") if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        return []
+    probes: List[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        tn = item.get("tool_name")
+        if not tn or (allowed_tools and tn not in allowed_tools):
+            continue                      # off-registry / not phase-allowed -> drop
+        args = item.get("tool_args")
+        if args is not None and not isinstance(args, dict):
+            continue
+        probes.append({
+            "tool_name": tn,
+            "tool_args": args or {},
+            "rationale": str(item.get("rationale", "") or "")[:400],
+        })
+        if len(probes) >= branching:
+            break
+    return probes
+
+
+def _extract_json(text: str) -> Optional[Any]:
+    """Best-effort JSON extraction from an LLM string (handles fenced blocks)."""
+    text = text.strip()
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
+        if m:
+            text = m.group(1).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        # Fall back to the first {...} or [...] span.
+        for opener, closer in (("{", "}"), ("[", "]")):
+            i, j = text.find(opener), text.rfind(closer)
+            if 0 <= i < j:
+                try:
+                    return json.loads(text[i:j + 1])
+                except Exception:
+                    continue
+    return None
+
+
+def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
+                            allowed_tools: set, branching: int) -> list:
+    """Build the messages for a structured expand call. Kept small and
+    deterministic so the only variable is the model's response."""
+    objective = _objective_of(state)
+    phase = state.get("current_phase", "exploitation")
+    tool_list = ", ".join(sorted(allowed_tools)) if allowed_tools else "(any)"
+    if node is None or node.tool_name is None:
+        context = f"Assess the current situation and propose the {branching} most credible NEXT exploit probes."
+    else:
+        context = (
+            f"You are extending this branch:\n"
+            f"  probe: {node.tool_name} {json.dumps(node.tool_args or {})}\n"
+            f"  rationale: {node.probe_rationale}\n"
+            f"  observation: {node.observation_summary}\n"
+            f"Propose the {branching} most credible FOLLOW-UP probes that build on it."
+        )
+    system = (
+        "You are the expansion step of a value-guided exploit-path search. "
+        "Return ONLY strict JSON of the form "
+        '{\"probes\": [{\"tool_name\": <one of the allowed tools>, '
+        '\"tool_args\": {..}, \"rationale\": \"why this probe advances the exploit\"}]}. '
+        f"Each tool_name MUST be one of: {tool_list}. "
+        f"Return at most {branching} probes, ordered most-promising first. "
+        "Each must be a concrete, executable probe (never a plan or a question)."
+    )
+    user = (
+        f"Objective: {objective}\n"
+        f"Phase: {phase}\n\n"
+        f"{context}"
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
+
+async def lats_expand(llm: Any, state: dict, node: Optional[ExploitTreeNode]) -> List[dict]:
+    """Generate up to LATS_BRANCHING candidate probes via ONE structured call on
+    the single agent model. node=None -> root/situation assessment (ENTER);
+    a real node -> extend that branch. Returns validated, phase-valid probes.
+    Never touches deep_think_result (§20.16)."""
+    from orchestrator_helpers.llm_retry import retry_llm_call
+
+    branching = int(get_setting("LATS_BRANCHING", 3))
+    allowed = _phase_allowed_tools(state)
+    messages = _expand_prompt_messages(state, node, allowed, branching)
+    try:
+        resp = await retry_llm_call(llm, messages, label="lats_expand")
+    except Exception as exc:
+        logger.warning("[lats_expand] LLM call failed: %s", exc)
+        return []
+    content = getattr(resp, "content", resp)
+    if isinstance(content, list):     # some providers return content blocks
+        content = " ".join(str(b.get("text", b)) if isinstance(b, dict) else str(b)
+                           for b in content)
+    return _parse_expand_response(str(content or ""), allowed, branching)
+
+
+# =============================================================================
+# COMPLETION / ARCHIVE (§5.4)
+# =============================================================================
+
+def _best_terminal(tree: ExploitTree) -> Optional[str]:
+    terminals = [n for n in tree.nodes.values() if n.status == "terminal"]
+    if not terminals:
+        return None
+    return max(terminals, key=lambda n: (n.value, n.depth)).id
+
+
+def best_trajectory(tree: ExploitTree) -> List[str]:
+    """Root-to-hot-leaf id path: follow best terminal if any, else highest-value
+    live leaf."""
+    target = tree.best_terminal_id or _best_terminal(tree)
+    if target is None:
+        leaves = _open_leaves(tree)
+        if not leaves:
+            return [tree.root_id]
+        target = max(leaves, key=lambda n: n.value).id
+    path = []
+    nid: Optional[str] = target
+    while nid is not None:
+        path.append(nid)
+        nid = tree.nodes[nid].parent_id
+    return list(reversed(path))
+
+
+def _archive_tree(state: dict, tree: ExploitTree, reason: str) -> None:
+    """Drop the live tree (kept for the report via findings/graph) and clear
+    _exploit_tree so a fresh search can start via lats_active next turn."""
+    logger.info("[lats] archiving tree %s (%s): rollouts=%d nodes=%d",
+                tree.root_id, reason, tree.rollouts, len(tree.nodes))
+    state["_exploit_tree"] = None
+
+
+def _complete(decision: Any, tree: ExploitTree, reason: str) -> Any:
+    """Return a decision forced to action=complete with the best trajectory.
+    Duck-typed on `.model_copy` so tests can pass a lightweight stand-in."""
+    traj = best_trajectory(tree)
+    thought = f"[LATS] {reason}: {' -> '.join(traj)}"
+    if hasattr(decision, "model_copy"):
+        return decision.model_copy(update={"action": "complete", "thought": thought})
+    # dict fallback (tests)
+    if isinstance(decision, dict):
+        d = dict(decision)
+        d["action"] = "complete"
+        d["thought"] = thought
+        return d
+    return decision

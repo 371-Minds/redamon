@@ -38,6 +38,8 @@ FOCUSED_TESTS=(
     tests.test_chain_context
     tests.test_startup_guard
     tests.test_lats_models
+    tests.test_lats
+    tests.test_lats_trace
 )
 
 case "$MODE" in
