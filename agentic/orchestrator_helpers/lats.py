@@ -487,7 +487,18 @@ def _already_exploited(state: dict) -> bool:
 def lats_active(state: dict) -> bool:
     """Cheap pre-gate for whether to ATTEMPT activation this turn (§5.1). The
     actual ENTER also requires the lats_expand assessment to yield >= 2 probes.
-    Keys on Deep Think's FIRING flag, NOT its output (§20.16)."""
+
+    Trigger (Fix B2) — an escalation ladder, any of:
+      1. Deep Think fired (the original gate, §20.16 — flag not output): severe,
+         and LATS already activates off it.
+      2. Productivity score >= LATS_SCORE_THRESHOLD: the churn-aware first
+         responder, set just BELOW the Deep Think threshold so LATS engages
+         before a full strategic re-plan.
+      3. State-growth stall >= LATS_REACTIVATE_STUCK_TURNS: the non-gameable
+         floor (observed, not self-reported — no new facts for N turns).
+    So LATS re-engages WITHIN an objective, not only on a Deep Think turn. All
+    guarded by a re-activation cooldown since the last archive so a freshly
+    collapsed tree cannot immediately rebuild the same dead branches."""
     if not get_setting("LATS_ENABLED", False):
         return False
     allowed = get_setting("LATS_ALLOWED_PHASES", ["exploitation"])
@@ -497,7 +508,40 @@ def lats_active(state: dict) -> bool:
         return False
     if _already_exploited(state):
         return False
-    return bool(state.get("deep_think_ran_this_turn"))
+    # Re-activation cooldown (does not apply to the first-ever activation, where
+    # _lats_last_archive_iter is unset).
+    last_archive = state.get("_lats_last_archive_iter")
+    if last_archive is not None:
+        cooldown = int(get_setting("LATS_REACTIVATE_COOLDOWN", 4))
+        if int(state.get("current_iteration", 0) or 0) - int(last_archive) < cooldown:
+            return False
+    # 1. Deep Think fired.
+    if bool(state.get("deep_think_ran_this_turn")):
+        return True
+    # 2. Productivity score crossed the LATS threshold (churn-aware, just below
+    #    Deep Think's).
+    score_obj = state.get("_last_productivity_score") or {}
+    try:
+        score = float(score_obj.get("score", 0.0) or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        score = 0.0
+    if score >= float(get_setting("LATS_SCORE_THRESHOLD", 4.0)):
+        return True
+    # 3. Observed state-growth stall floor.
+    stuck_k = int(get_setting("LATS_REACTIVATE_STUCK_TURNS", 3))
+    return int(state.get("_iterations_since_state_grew", 0) or 0) >= stuck_k
+
+
+def lats_is_driving(state: dict) -> bool:
+    """True when a LATS tree is live AND in drive mode (non-shadow). Deep Think
+    yields to LATS on these turns (Fix C): the tree search IS the re-planning,
+    and LATS's probes must not pin productivity 'critical' and bypass the Deep
+    Think cooldown into a fire-every-turn loop. Shadow mode never drives."""
+    return (
+        bool(get_setting("LATS_ENABLED", False))
+        and not bool(get_setting("LATS_SHADOW_MODE", True))
+        and bool(state.get("_exploit_tree"))
+    )
 
 
 def _lats_should_reset(state: dict, tree: ExploitTree) -> bool:
@@ -633,23 +677,200 @@ def _extract_json(text: str) -> Optional[Any]:
     return None
 
 
+# --- Expand INPUT CONTRACT: the forward-looking situational context an exploit-
+# probe generator needs. Reused by the seed AND every node expansion so LATS
+# reasons from the same facts a normal think step does (recon surface + findings
+# + failures + prior trees + Deep Think's HYPOTHESES) — never Deep Think's single
+# recommended plan, which would linearize the tree. All compact/capped so a deep
+# tree's expand prompt stays bounded.
+
+def _tree_digest_entry(tree: "ExploitTree", outcome: str) -> str:
+    """One compact, cumulative line per finished tree: outcome, the best line,
+    and what it ruled out. Kept short so many trees can accumulate without
+    bloating the expand prompt."""
+    best = " -> ".join(_trajectory_labels(tree)) or "n/a"
+    pruned = [n.tool_name for n in tree.nodes.values()
+              if n.status == "pruned" and n.tool_name][:5]
+    succeeded = any(n.exploit_succeeded for n in tree.nodes.values())
+    tag = "FOOTHOLD" if succeeded else outcome
+    ruled = ", ".join(pruned) if pruned else "none"
+    return f"[{tag}] objective={ (tree.objective or '')[:60] } | best: {best} | ruled out: {ruled}"
+
+
+def _append_tree_digest(state: dict, tree: "ExploitTree", outcome: str) -> None:
+    """Append a compact digest of a finished tree to a DEDICATED, persistent,
+    append-only store (survives execution_trace eviction), so every subsequent
+    LATS tree sees the full accumulated history — not just the last one."""
+    entry = _tree_digest_entry(tree, outcome)
+    hist = list(state.get("_lats_tree_digest") or [])
+    hist.append(entry)
+    cap = int(get_setting("LATS_DIGEST_MAX", 8))
+    state["_lats_tree_digest"] = hist[-cap:]
+
+
+def _prior_tree_summaries(state: dict, cap: int = 6) -> str:
+    """Accumulated prior-tree knowledge for the next tree. Prefers the dedicated,
+    persistent digest (all recent trees, eviction-proof); falls back to scraping
+    execution_trace's carried-forward summaries for backward compatibility."""
+    hist = state.get("_lats_tree_digest") or []
+    if hist:
+        return "\n".join(f"- {e}" for e in hist[-cap:])
+    trace = state.get("execution_trace") or []
+    sums = [str(s.get("tool_output", ""))[:900]
+            for s in trace
+            if isinstance(s, dict) and s.get("tool_name") == "lats_search"]
+    return "\n---\n".join(sums[-2:]) if sums else ""
+
+
+def _situational_context(state: dict) -> str:
+    """Recon surface + confirmed findings + failed dead-ends + prior LATS trees,
+    rendered compactly. This is the awareness the expand step was missing."""
+    parts: List[str] = []
+    ti = state.get("target_info", {}) or {}
+    surface = []
+    for key in ("primary_target", "hosts", "services", "technologies",
+                "endpoints", "parameters", "vulnerabilities"):
+        v = ti.get(key)
+        if v:
+            surface.append(f"{key}={json.dumps(v)[:280]}")
+    if surface:
+        parts.append("Recon surface:\n  " + "\n  ".join(surface))
+
+    findings = state.get("chain_findings_memory") or []
+    flines = []
+    for f in findings[-8:]:
+        if isinstance(f, dict):
+            desc = str(f.get("description") or f.get("content") or "")[:140]
+            flines.append(f"- {f.get('finding_type', 'finding')}: {desc}")
+    if flines:
+        parts.append("Confirmed so far:\n" + "\n".join(flines))
+
+    failures = state.get("chain_failures_memory") or []
+    xlines = []
+    for f in failures[-8:]:
+        if isinstance(f, dict):
+            desc = str(f.get("description") or f.get("reason") or f.get("content") or "")[:140]
+            if desc:
+                xlines.append(f"- {desc}")
+    if xlines:
+        parts.append("Tried and FAILED (do not repeat these dead ends):\n" + "\n".join(xlines))
+
+    prior = _prior_tree_summaries(state)
+    if prior:
+        parts.append("Prior LATS searches this run (build on, do not re-explore):\n" + prior)
+
+    return "\n\n".join(parts) if parts else \
+        "(no findings yet; propose entry probes from the objective and recon surface)"
+
+
+def _skill_methodology(state: dict) -> str:
+    """The ACTIVE attack-path skill's methodology (the exploitation playbook for
+    the current vuln class), reused from the same builder the think step uses so
+    LATS proposes probes that follow proven technique, not ad-hoc guesses.
+    Guarded + empty when unavailable so a missing skill never breaks expand."""
+    apt = state.get("attack_path_type", "") or ""
+    if not apt:
+        return ""
+    try:
+        from prompts.base import build_attack_path_behavior
+        return (build_attack_path_behavior(apt) or "").strip()
+    except Exception:
+        return ""
+
+
+def _deep_think_seed_block(state: dict) -> str:
+    """Deep Think's competing hypotheses + attack vectors as ROOT branching
+    material (each hypothesis carries a probe idea). Excludes its recommended_
+    approach / priority_order on purpose — following that single line would
+    collapse the tree. Empty unless Deep Think fired this turn."""
+    hints = state.get("_lats_deep_think_hints") or {}
+    if not hints:
+        return ""
+    lines = []
+    for h in (hints.get("hypotheses") or [])[:5]:
+        if not isinstance(h, dict):
+            continue
+        hyp = str(h.get("hypothesis", ""))[:160]
+        probe = str(h.get("probe", ""))[:160]
+        lines.append(f"- Hypothesis: {hyp}" + (f"\n  Probe idea: {probe}" if probe else ""))
+    vectors = [str(v)[:80] for v in (hints.get("attack_vectors") or [])[:8]]
+    block = ""
+    if lines:
+        block = ("Deep Think just proposed these competing hypotheses — turn each "
+                 "into a CONCRETE probe as a distinct branch:\n" + "\n".join(lines))
+    if vectors:
+        block += ("\n" if block else "") + "Attack vectors identified: " + ", ".join(vectors)
+    return block
+
+
+def _render_path(tree: "ExploitTree", node: ExploitTreeNode) -> str:
+    """Root-to-node trajectory: each ancestor probe with its verdict + short
+    observation, so an extension sees the WHOLE line (not just the parent)."""
+    chain: List[str] = []
+    nid: Optional[str] = node.id
+    guard = 0
+    while nid is not None and guard < 64:
+        guard += 1
+        n = tree.nodes.get(nid)
+        if n is None:
+            break
+        if n.parent_id is not None:               # skip synthetic root
+            tag = n.verdict or n.error_class or n.status
+            obs = (" | " + n.observation_summary[:80]) if n.observation_summary else ""
+            chain.append(f"{_node_label(n)} [{tag}]{obs}")
+        nid = n.parent_id
+    chain.reverse()
+    return " -> ".join(chain) if chain else "(root)"
+
+
+def _existing_probes(tree: "ExploitTree", cap: int = 20) -> str:
+    """Compact signatures of probes already in the tree, so expand does not
+    re-propose them (cross-branch dedup)."""
+    sigs = [f"- {n.tool_name} {str(n.tool_args or {})[:60]}"
+            for n in tree.nodes.values()
+            if n.parent_id is not None and n.tool_name]
+    return "\n".join(sigs[:cap])
+
+
 def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
-                            allowed_tools: set, branching: int) -> list:
-    """Build the messages for a structured expand call. Kept small and
-    deterministic so the only variable is the model's response."""
+                            allowed_tools: set, branching: int,
+                            tree: Optional["ExploitTree"] = None) -> list:
+    """Build the messages for a structured expand call, now grounded in the full
+    situational context (recon/findings/failures/prior-trees), the Deep Think
+    hypotheses (seed), and the root-to-node path + tree dedup (extension)."""
     objective = _objective_of(state)
     phase = state.get("current_phase", "exploitation")
     tool_schema = _tool_schema_block(allowed_tools) if allowed_tools else "  (any tool)"
+    situational = _situational_context(state)
+    methodology = _skill_methodology(state)
+    method_block = (f"\n\nMETHODOLOGY (active attack-path skill — follow this playbook "
+                    f"when choosing probes):\n{methodology}" if methodology else "")
+
     if node is None or node.tool_name is None:
-        context = f"Assess the current situation and propose the {branching} most credible NEXT exploit probes."
+        seed = _deep_think_seed_block(state)
+        branch = f"\n\n{seed}" if seed else ""
+        ask = (f"Assess the situation above and propose up to {branching} DISTINCT "
+               f"entry probes, grounded in the recon surface and findings. Favor "
+               f"breadth here: the root should FAN OUT across the different credible "
+               f"vuln classes / entry points the surface offers, not commit to one.")
     else:
-        context = (
-            f"You are extending this branch:\n"
-            f"  probe: {node.tool_name} {json.dumps(node.tool_args or {})}\n"
-            f"  rationale: {node.probe_rationale}\n"
-            f"  observation: {node.observation_summary}\n"
-            f"Propose the {branching} most credible FOLLOW-UP probes that build on it."
+        path = _render_path(tree, node) if tree is not None else _node_label(node)
+        tag = node.verdict or node.error_class or node.status
+        branch = (
+            f"\n\nCurrent branch you are extending:\n"
+            f"  Path: {path}\n"
+            f"  Extending: {node.tool_name} {json.dumps(node.tool_args or {})} [{tag}]\n"
+            f"  Observation: {node.observation_summary or '(none)'}"
         )
+        ask = (f"Propose up to {branching} DISTINCT follow-up probes that build on "
+               f"this line — favor several materially-different next moves (pivot if "
+               f"blocked, deepen if it made progress). Fewer is fine only if this "
+               f"line genuinely has few credible, non-overlapping continuations.")
+
+    existing = _existing_probes(tree) if tree is not None else ""
+    dedup = (f"\n\nAlready in the tree — propose DIFFERENT probes, do not repeat:\n{existing}"
+             if existing else "")
+
     system = (
         "You are the expansion step of a value-guided exploit-path search. "
         "Return ONLY strict JSON of the form "
@@ -660,13 +881,25 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
         "tools take a single \"args\" string holding the raw CLI arguments (without "
         "the tool name). Allowed tools and their required tool_args schema:\n"
         f"{tool_schema}\n"
-        f"Return at most {branching} probes, ordered most-promising first. "
-        "Each must be a concrete, executable probe (never a plan or a question)."
+        f"Propose UP TO {branching} probes, ordered most-promising first. FAVOR "
+        f"BREADTH: when the situation genuinely offers several distinct, materially-"
+        f"different directions (different vuln classes, endpoints, parameters, "
+        f"template/DB engines, or bypass techniques), return more of them rather "
+        f"than collapsing to one or two out of caution — aim to use the width. "
+        f"Return fewer than {branching} ONLY when the step is genuinely narrow and "
+        "there are not that many credible, non-overlapping directions. NEVER pad "
+        "with near-duplicate variations of the same idea. "
+        "Each must be a concrete, executable probe (never a plan or a question). "
+        "Ground every probe in the situation below; do not repeat failed dead ends."
     )
     user = (
         f"Objective: {objective}\n"
         f"Phase: {phase}\n\n"
-        f"{context}"
+        f"SITUATION:\n{situational}"
+        f"{method_block}"
+        f"{branch}\n\n"
+        f"{ask}"
+        f"{dedup}"
     )
     return [
         {"role": "system", "content": system},
@@ -674,21 +907,35 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
     ]
 
 
-async def lats_expand(llm: Any, state: dict, node: Optional[ExploitTreeNode]) -> List[dict]:
+async def lats_expand(llm: Any, state: dict, node: Optional[ExploitTreeNode],
+                      tree: Optional["ExploitTree"] = None) -> List[dict]:
     """Generate up to LATS_BRANCHING candidate probes via ONE structured call on
     the single agent model. node=None -> root/situation assessment (ENTER);
     a real node -> extend that branch. Returns validated, phase-valid probes.
-    Never touches deep_think_result (§20.16)."""
+
+    Grounded in the full situational context (recon surface + findings + failures
+    + prior LATS trees) and, on the seed, Deep Think's competing hypotheses +
+    attack vectors. It deliberately does NOT consume Deep Think's recommended_
+    approach / priority_order — using those as a plan would linearize the tree
+    (the correctly-scoped §20.16)."""
     from orchestrator_helpers.llm_retry import retry_llm_call
 
     branching = int(get_setting("LATS_BRANCHING", 3))
     allowed = _phase_allowed_tools(state)
-    messages = _expand_prompt_messages(state, node, allowed, branching)
+    messages = _expand_prompt_messages(state, node, allowed, branching, tree=tree)
     try:
         resp = await retry_llm_call(llm, messages, label="lats_expand")
     except Exception as exc:
         logger.warning("[lats_expand] LLM call failed: %s", exc)
         return []
+    # Account for LATS's own LLM spend so the per-turn/cumulative token counters
+    # (and the UI) reflect it — otherwise a LATS-active turn silently undercounts.
+    _usage = getattr(resp, "usage_metadata", None) or {}
+    if _usage:
+        _acc = state.get("_lats_expand_tokens") or {"in": 0, "out": 0}
+        _acc["in"] += int(_usage.get("input_tokens", 0) or 0)
+        _acc["out"] += int(_usage.get("output_tokens", 0) or 0)
+        state["_lats_expand_tokens"] = _acc
     content = getattr(resp, "content", resp)
     if isinstance(content, list):     # some providers return content blocks
         content = " ".join(str(b.get("text", b)) if isinstance(b, dict) else str(b)
@@ -726,10 +973,151 @@ def best_trajectory(tree: ExploitTree) -> List[str]:
 
 def _archive_tree(state: dict, tree: ExploitTree, reason: str) -> None:
     """Drop the live tree (kept for the report via findings/graph) and clear
-    _exploit_tree so a fresh search can start via lats_active next turn."""
+    _exploit_tree so a fresh search can start via lats_active next turn. Stamps
+    the archive iteration so lats_active can enforce a re-activation cooldown
+    (Fix B2) — a freshly collapsed tree must not immediately rebuild itself."""
     logger.info("[lats] archiving tree %s (%s): rollouts=%d nodes=%d",
                 tree.root_id, reason, tree.rollouts, len(tree.nodes))
     state["_exploit_tree"] = None
+    state["_lats_last_archive_iter"] = int(state.get("current_iteration", 0) or 0)
+
+
+# =============================================================================
+# CARRY-FORWARD (Fix A) — render the finished tree into execution_trace, the
+# ONLY channel the next think node reads, so the agent inherits WHAT THE SEARCH
+# LEARNED (structure + scores + best line + pruning reflections) instead of
+# re-deriving it from raw probe logs. See internal/LATS_integration.md §handoff.
+# =============================================================================
+
+def _node_label(n: ExploitTreeNode) -> str:
+    """Compact 'tool {args}' label for a probe node."""
+    base = n.tool_name or (n.probe_rationale[:40] if n.probe_rationale else n.id)
+    if n.tool_args:
+        return f"{base} {str(n.tool_args)[:80]}"
+    return base
+
+
+def _trajectory_labels(tree: ExploitTree) -> List[str]:
+    """best_trajectory() as readable probe labels (root excluded)."""
+    labels: List[str] = []
+    for nid in best_trajectory(tree):
+        n = tree.nodes.get(nid)
+        if n is None or n.parent_id is None:
+            continue
+        labels.append(n.tool_name or (n.probe_rationale[:30] if n.probe_rationale else nid))
+    return labels
+
+
+def _render_tree_summary(tree: ExploitTree, outcome: str) -> str:
+    """Human/LLM-readable indented tree: every probe with its status, value,
+    visit count, success star, danger flag, and pruning reflection. Capped at
+    LATS_SUMMARY_MAX_NODES highest-value nodes so the block stays bounded."""
+    depth_max = max((n.depth for n in tree.nodes.values()), default=0)
+    lines = [
+        f"LATS exploit-path search: {outcome} | rollouts={tree.rollouts} "
+        f"nodes={len(tree.nodes)} maxdepth={depth_max}",
+        f"Objective: {(tree.objective or 'n/a')[:200]}",
+    ]
+    traj = _trajectory_labels(tree)
+    if traj:
+        lines.append(f"Best line: {' -> '.join(traj)}")
+    lines.append("Tree (probe [status] value=v visits=n | note):")
+    cap = int(get_setting("LATS_SUMMARY_MAX_NODES", 40))
+    count = [0]
+    seen: set = set()
+
+    def emit(nid: str, depth: int) -> None:
+        if count[0] >= cap or nid in seen:   # cap + cycle/shared-child guard
+            return
+        n = tree.nodes.get(nid)
+        if n is None:
+            return
+        seen.add(nid)
+        count[0] += 1
+        indent = "  " + "  " * depth
+        if n.parent_id is None:
+            lines.append(f"{indent}root [{(tree.objective or 'root')[:40]}]")
+        else:
+            note = (n.reflection or n.observation_summary or "").strip().replace("\n", " ")
+            note = (" — " + note[:120]) if note else ""
+            star = " *SUCCESS*" if n.exploit_succeeded else ""
+            dang = " (dangerous)" if _is_dangerous(n) else ""
+            lines.append(
+                f"{indent}{_node_label(n)} [{n.status}] v={n.value:.2f} "
+                f"n={n.visits}{star}{dang}{note}"
+            )
+        for c in sorted(
+            (tree.nodes[c] for c in n.children if c in tree.nodes),
+            key=lambda k: (-k.value, -k.visits),
+        ):
+            emit(c.id, depth + 1)
+
+    emit(tree.root_id, 0)
+    if len(tree.nodes) > count[0]:
+        lines.append(f"  ... ({len(tree.nodes) - count[0]} more nodes truncated)")
+    return "\n".join(lines)
+
+
+def _carry_directive(tree: ExploitTree, outcome: str) -> str:
+    """The un-wrapped 'Analysis:' line telling the agent how to ACT on the tree
+    (the tree text itself is data, wrapped as untrusted output)."""
+    if outcome == "terminal_success":
+        return (
+            "LATS confirmed an exploit path (see best line above). Continue along "
+            "that line and convert it into the objective (submit/confirm). Do NOT "
+            "restart discovery from scratch."
+        )
+    best = " -> ".join(_trajectory_labels(tree)) or "n/a"
+    return (
+        f"LATS explored the branches below and could not confirm the objective "
+        f"this search. Highest-value line: {best}. Build on that line or the "
+        f"highest-value open leaf. Do NOT re-run probes marked [pruned]/[failed] "
+        f"with the same arguments — their notes say why they failed. If every "
+        f"branch is pruned, pivot to an attack axis not present in the tree."
+    )
+
+
+def _carry_tree_forward(state: dict, tree: ExploitTree, outcome: str) -> None:
+    """Fix A: append a rendered tree-summary step to execution_trace so the next
+    think node inherits the search's structure, scores, and lessons. No-op for a
+    tree that never branched (nothing worth carrying)."""
+    if len(tree.nodes) <= 1:
+        return
+    step = {
+        "iteration": int(state.get("current_iteration", 0) or 0),
+        "phase": state.get("current_phase", "exploitation") or "exploitation",
+        "thought": f"[LATS] exploit-path tree search ended ({outcome}).",
+        "reasoning": "LATS search summary carried into agent context (Fix A).",
+        "tool_name": "lats_search",
+        "tool_args": {"objective": (tree.objective or "")[:200]},
+        "tool_output": _render_tree_summary(tree, outcome),
+        "success": any(n.exploit_succeeded for n in tree.nodes.values()),
+        "output_analysis": _carry_directive(tree, outcome),
+        "step_id": f"lats-summary-{tree.root_id}",
+    }
+    base = state.get("execution_trace", []) or []
+    state["execution_trace"] = base + [step]
+    # Also record a compact, persistent digest so ALL prior trees accumulate for
+    # the next tree independently of execution_trace's eviction window.
+    _append_tree_digest(state, tree, outcome)
+
+
+async def _finish_search(state: dict, tree: ExploitTree, outcome: str, *,
+                         shadow: bool, streaming_callbacks: Any,
+                         session_id: Optional[str], archive: bool) -> None:
+    """Single closing path for a search: persist the final scored snapshot,
+    stream the closing tree_update + complete, carry the tree forward into agent
+    context (drive mode only), and archive when handing back to legacy."""
+    state["_exploit_tree"] = tree.model_dump()
+    await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
+                _search_id(session_id, tree), _tree_view(state, tree, shadow))
+    await _emit(streaming_callbacks, session_id, "on_lats_complete",
+                _search_id(session_id, tree), best_trajectory(tree),
+                outcome, _complete_metrics(tree))
+    if not shadow:
+        _carry_tree_forward(state, tree, outcome)
+    if archive:
+        _archive_tree(state, tree, outcome)
 
 
 def _complete(decision: Any, tree: ExploitTree, reason: str) -> Any:
@@ -1029,12 +1417,9 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
     else:
         tree = ExploitTree(**tree_dict)
         if _lats_should_reset(state, tree):
-            await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
-                        _search_id(session_id, tree), _tree_view(state, tree, shadow))
-            await _emit(streaming_callbacks, session_id, "on_lats_complete",
-                        _search_id(session_id, tree), best_trajectory(tree),
-                        "reset", _complete_metrics(tree))
-            _archive_tree(state, tree, "stale")
+            await _finish_search(state, tree, "reset", shadow=shadow,
+                                 streaming_callbacks=streaming_callbacks,
+                                 session_id=session_id, archive=True)
             return decision                              # archived; fresh tree may start next turn
 
     if newly_created:
@@ -1051,24 +1436,30 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
     if _evaluate_wave(tree, state, analysis):
         tree.rollouts += 1
 
-    # ---- 2. EXITS (order matters: collapse hands off to legacy, budget completes) ----
+    # ---- 2. EXITS (order: success -> collapse[hand back] -> exhausted[hand back]
+    #      -> budget[complete]). Only a claimed foothold or a spent budget END
+    #      the run; running out of tree to search hands the objective back to
+    #      legacy ReAct with the carried-forward summary, so the agent keeps
+    #      working instead of the whole run completing on an empty search. ----
     override = None
     outcome = None
     if any(n.status == "terminal" for n in tree.nodes.values()):
         tree.best_terminal_id = _best_terminal(tree)
         override, outcome = "lats_terminal_success", "terminal_success"
     elif _single_open_line(tree):
-        # Stream the FINAL scored/pruned tree before completing, so the card
-        # shows the evaluated result (values, pruned nodes) instead of freezing
-        # at the rollout-0 "all executing / 0.00" snapshot.
-        await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
-                    _search_id(session_id, tree), _tree_view(state, tree, shadow))
-        await _emit(streaming_callbacks, session_id, "on_lats_complete",
-                    _search_id(session_id, tree), best_trajectory(tree),
-                    "branch_collapsed", _complete_metrics(tree))
-        _archive_tree(state, tree, "branch_collapsed")
+        # One credible line left, nothing to branch on: stream the FINAL scored
+        # tree, carry it forward, and hand the obvious line back to legacy.
+        await _finish_search(state, tree, "branch_collapsed", shadow=shadow,
+                             streaming_callbacks=streaming_callbacks,
+                             session_id=session_id, archive=True)
         return decision                                  # legacy drives the one obvious line
-    elif _budget_hit(tree) or _tree_exhausted(tree):
+    elif _tree_exhausted(tree):
+        # Every branch explored, no foothold: hand back to legacy (Fix B1).
+        await _finish_search(state, tree, "exhausted", shadow=shadow,
+                             streaming_callbacks=streaming_callbacks,
+                             session_id=session_id, archive=True)
+        return decision
+    elif _budget_hit(tree):
         override, outcome = "lats_budget_exhausted", "budget_exhausted"
 
     # ---- 3. SELECT + 4. EXPAND (skip when exiting via complete) ----
@@ -1078,7 +1469,7 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
         tree.active_node_id = node.id
         if _can_expand(node) and not _has_proposed_children(tree, node):
             max_nodes = int(get_setting("LATS_MAX_TREE_NODES", 60))
-            for cand in await lats_expand(llm, state, node):
+            for cand in await lats_expand(llm, state, node, tree=tree):
                 if len(tree.nodes) >= max_nodes:
                     break
                 _add_child(tree, node, cand)
@@ -1087,20 +1478,47 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
         for k in wave:
             k.status = "executing"
 
-    # ---- persist the tree + stream the snapshot (once per invocation = per wave) ----
+        # ---- STALL GUARD (Fix B1). lats_select descends greedily by UCT down a
+        # SINGLE path, so it can land on a dead frontier (a depth-capped leaf, or
+        # one whose expand produced nothing) while expandable/queued branches
+        # remain on OTHER paths. Archiving here would abandon those branches
+        # prematurely; instead PRUNE the dead frontier so the descent reaches the
+        # other branches next turn. This guarantees forward progress — one node
+        # pruned per otherwise-stuck turn — so the tree always converges to a real
+        # top-level exit (collapse / exhausted) rather than becoming a "zombie"
+        # that stays live forever driving nothing. Only close out here as a
+        # safety net when we cannot even prune and nothing is pending.
+        if not wave:
+            pruned = False
+            if (node.parent_id is not None and node.status != "pruned"
+                    and not _live_children(tree, node)):
+                node.status = "pruned"
+                if not node.reflection:
+                    node.reflection = "pruned: no issuable move (depth cap or expand produced nothing)"
+                pruned = True
+            if not pruned and not _executing_children(tree):
+                await _finish_search(state, tree, "exhausted", shadow=shadow,
+                                     streaming_callbacks=streaming_callbacks,
+                                     session_id=session_id, archive=True)
+                return decision
+
+    # ---- budget: run-ending exit (carry forward, keep tree, complete) ----
+    if override is not None:
+        await _finish_search(state, tree, outcome, shadow=shadow,
+                             streaming_callbacks=streaming_callbacks,
+                             session_id=session_id, archive=False)
+        if shadow:
+            return decision
+        return _complete(decision, tree, override)
+
+    # ---- normal turn: persist + stream the snapshot (once per wave) ----
     state["_exploit_tree"] = tree.model_dump()
     await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
                 _search_id(session_id, tree), _tree_view(state, tree, shadow))
-    if outcome is not None:
-        await _emit(streaming_callbacks, session_id, "on_lats_complete",
-                    _search_id(session_id, tree), best_trajectory(tree),
-                    outcome, _complete_metrics(tree))
 
     # ---- SHADOW: build/stream the tree but never drive ----
     if shadow:
         return decision
 
-    # ---- DRIVE (Step 6): apply the override / next move ----
-    if override is not None:
-        return _complete(decision, tree, override)
+    # ---- DRIVE (Step 6): issue the next wave ----
     return _as_wave_or_use_tool(decision, wave)

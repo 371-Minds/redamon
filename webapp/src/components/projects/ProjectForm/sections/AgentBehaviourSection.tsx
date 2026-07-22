@@ -388,11 +388,11 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             const shadowMode = (data as any).agentLatsShadowMode ?? true
             const phaseExpl = (data as any).agentLatsPhaseExploitation ?? true
             const phasePostExpl = (data as any).agentLatsPhasePostExpl ?? false
-            const maxRollouts = (data as any).agentLatsMaxRollouts ?? 24
+            const maxRollouts = (data as any).agentLatsMaxRollouts ?? 50
             const maxDepth = (data as any).agentLatsMaxDepth ?? 6
-            const branching = (data as any).agentLatsBranching ?? 3
+            const branching = (data as any).agentLatsBranching ?? 6
             const minHypotheses = (data as any).agentLatsMinHypotheses ?? 2
-            const maxTreeNodes = (data as any).agentLatsMaxTreeNodes ?? 60
+            const maxTreeNodes = (data as any).agentLatsMaxTreeNodes ?? 120
             const uctC = (data as any).agentLatsUctC ?? 1.4
             const pruneFloor = (data as any).agentLatsPruneFloor ?? 0.15
             const noPhase = latsEnabled && !phaseExpl && !phasePostExpl
@@ -460,19 +460,19 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           className="textInput"
                           value={maxRollouts}
                           min={4}
-                          max={100}
+                          max={300}
                           onChange={(e) => {
                             const raw = e.target.value
                             updateField('agentLatsMaxRollouts' as any, (raw === '' ? '' : parseInt(raw)) as any)
                           }}
                           onBlur={(e) => {
                             const n = parseInt(e.target.value)
-                            const v = Number.isFinite(n) ? Math.max(4, Math.min(100, n)) : 24
+                            const v = Number.isFinite(n) ? Math.max(4, Math.min(300, n)) : 50
                             updateField('agentLatsMaxRollouts' as any, v as any)
                           }}
                         />
                         <span className={styles.fieldHint}>
-                          4-100. Hard cap on real requests one search fires. Worst case: up to {maxRollouts} live probes, chains up to {maxDepth} deep.
+                          4-300. Hard cap on real requests one search fires. Worst case: up to {maxRollouts} live probes, chains up to {maxDepth} deep.
                         </span>
                       </div>
                       <div className={styles.fieldGroup}>
@@ -504,18 +504,18 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           className="textInput"
                           value={branching}
                           min={2}
-                          max={4}
+                          max={10}
                           onChange={(e) => {
                             const raw = e.target.value
                             updateField('agentLatsBranching' as any, (raw === '' ? '' : parseInt(raw)) as any)
                           }}
                           onBlur={(e) => {
                             const n = parseInt(e.target.value)
-                            const v = Number.isFinite(n) ? Math.max(2, Math.min(4, n)) : 3
+                            const v = Number.isFinite(n) ? Math.max(2, Math.min(10, n)) : 6
                             updateField('agentLatsBranching' as any, v as any)
                           }}
                         />
-                        <span className={styles.fieldHint}>2-4. Candidate probes weighed at each node.</span>
+                        <span className={styles.fieldHint}>2-10. Candidate probes weighed at each node.</span>
                       </div>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>Activation sensitivity</label>
@@ -573,18 +573,18 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           className="textInput"
                           value={maxTreeNodes}
                           min={10}
-                          max={200}
+                          max={1000}
                           onChange={(e) => {
                             const raw = e.target.value
                             updateField('agentLatsMaxTreeNodes' as any, (raw === '' ? '' : parseInt(raw)) as any)
                           }}
                           onBlur={(e) => {
                             const n = parseInt(e.target.value)
-                            const v = Number.isFinite(n) ? Math.max(10, Math.min(200, n)) : 60
+                            const v = Number.isFinite(n) ? Math.max(10, Math.min(1000, n)) : 120
                             updateField('agentLatsMaxTreeNodes' as any, v as any)
                           }}
                         />
-                        <span className={styles.fieldHint}>10-200. Hard tree-size cap.</span>
+                        <span className={styles.fieldHint}>10-1000. Hard tree-size cap.</span>
                       </div>
                     </details>
                     {noPhase && (

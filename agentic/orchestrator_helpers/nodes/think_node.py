@@ -219,6 +219,9 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # Think branch ran or which sub-path it took.
     _score_obj = None
     dt_parsed = None
+    # Deep Think's hypotheses + attack vectors, exposed to the LATS seed as
+    # branching material (NOT its recommended plan). None unless Deep Think fires.
+    _lats_dt_hints = None
 
     trigger_reason = None
 
@@ -309,6 +312,23 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # — ALWAYS bypasses cooldown (agent should be able to ask for help)
     if not trigger_reason and state.get("_need_deep_think", False):
         trigger_reason = "Agent self-assessed stagnation — strategic re-evaluation requested"
+
+    # Fix C: while a LATS tree is live AND driving (non-shadow), LATS owns
+    # strategy for these turns — its own tree search IS the re-planning Deep
+    # Think would do. Suppress Deep Think so the failing probes it issues cannot
+    # pin productivity 'critical' and bypass the cooldown into a Deep-Think-
+    # every-turn loop (double meta-reasoning whose output LATS overrides anyway).
+    # Deep Think resumes once LATS archives — now informed by the tree summary
+    # LATS carries into execution_trace. Shadow mode never drives, so it is
+    # unaffected here.
+    from orchestrator_helpers.lats import lats_is_driving
+    _lats_driving = lats_is_driving(state)
+    if _lats_driving and trigger_reason:
+        logger.info(
+            f"[{user_id}/{project_id}/{session_id}] Deep Think suppressed "
+            f"(LATS driving a live tree): '{trigger_reason}'"
+        )
+        trigger_reason = None
 
     if trigger_reason:
         try:
@@ -428,6 +448,19 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 f"{_novelty_warning}"
             )
             deep_think_triggered = True
+            # Expose the hypotheses + attack vectors (NOT the recommended plan) so
+            # the LATS seed can turn them into concrete probe branches this turn.
+            try:
+                _lats_dt_hints = {
+                    "hypotheses": [
+                        {"hypothesis": getattr(h, "hypothesis", ""),
+                         "probe": getattr(h, "disambiguating_probe", "")}
+                        for h in (dt_parsed.competing_hypotheses or [])
+                    ],
+                    "attack_vectors": list(dt_parsed.attack_vectors_identified or []),
+                }
+            except Exception:
+                _lats_dt_hints = None
             logger.info(f"[{user_id}/{project_id}/{session_id}] Deep Think triggered: {trigger_reason}")
 
             # Stream to frontend
@@ -1001,14 +1034,26 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # returns the decision unchanged. See internal/LATS_integration.md §5.3/§19.
     if get_setting("LATS_ENABLED", False):
         from orchestrator_helpers.lats import lats_hook
-        # Expose Deep Think's FIRING (not its output, §20.16) and guidance-drain
-        # as intra-turn signals the hook reads via state.
+        # Expose Deep Think's FIRING (not its output, §20.16), guidance-drain,
+        # and this turn's productivity score as intra-turn signals the hook reads
+        # via state. The score lets lats_active re-engage as the cheaper first
+        # responder just BELOW the Deep Think threshold (Fix B2 score trigger).
         state["deep_think_ran_this_turn"] = deep_think_triggered
         state["guidance_drained_this_turn"] = bool(guidance_messages)
+        state["_last_productivity_score"] = _score_obj
+        # Deep Think's hypotheses/vectors for the LATS seed (turn-local; the seed
+        # runs the same turn Deep Think fires, so no cross-turn persistence needed).
+        state["_lats_deep_think_hints"] = _lats_dt_hints
         decision = await lats_hook(
             state, decision, llm=llm,
             streaming_callbacks=streaming_callbacks, session_id=session_id,
         )
+        # Fold LATS's own expand-call tokens into this turn's counters (and thus
+        # the cumulative total + the streamed KPI), so a LATS-active turn is not
+        # undercounted. Turn-local: cleared after reading, never persisted.
+        _lats_tok = state.pop("_lats_expand_tokens", None) or {}
+        input_tokens_this_turn += int(_lats_tok.get("in", 0) or 0)
+        output_tokens_this_turn += int(_lats_tok.get("out", 0) or 0)
 
     # Create execution step
     step = ExecutionStep(
@@ -1051,6 +1096,12 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         updates["deep_think_ran_this_turn"] = deep_think_triggered
         updates["guidance_drained_this_turn"] = bool(guidance_messages)
         updates["_exploit_tree"] = state.get("_exploit_tree")
+        # Persist the archive stamp so the re-activation cooldown (Fix B2)
+        # survives across turns (else it resets to None and never applies).
+        updates["_lats_last_archive_iter"] = state.get("_lats_last_archive_iter")
+        # Persist the accumulated tree digest so prior-tree knowledge survives
+        # across turns and feeds every subsequent LATS tree.
+        updates["_lats_tree_digest"] = state.get("_lats_tree_digest")
 
     logger.info(
         f"[{user_id}/{project_id}/{session_id}] Tokens this turn: "

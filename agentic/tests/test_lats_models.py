@@ -138,10 +138,10 @@ class TestLatsSettingsDefaults(unittest.TestCase):
 
     def test_lats_numeric_defaults(self):
         self.assertEqual(project_settings.get_setting("LATS_MAX_DEPTH"), 6)
-        self.assertEqual(project_settings.get_setting("LATS_MAX_ROLLOUTS"), 24)
-        self.assertEqual(project_settings.get_setting("LATS_BRANCHING"), 3)
+        self.assertEqual(project_settings.get_setting("LATS_MAX_ROLLOUTS"), 50)
+        self.assertEqual(project_settings.get_setting("LATS_BRANCHING"), 6)
         self.assertEqual(project_settings.get_setting("LATS_MIN_HYPOTHESES"), 2)
-        self.assertEqual(project_settings.get_setting("LATS_MAX_TREE_NODES"), 60)
+        self.assertEqual(project_settings.get_setting("LATS_MAX_TREE_NODES"), 120)
         self.assertAlmostEqual(project_settings.get_setting("LATS_UCT_C"), 1.4)
         self.assertAlmostEqual(project_settings.get_setting("LATS_PRUNE_FLOOR"), 0.15)
 

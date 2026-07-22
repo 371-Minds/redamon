@@ -1,9 +1,15 @@
 /* ── Panel layout ───────────────────────────────────────────────────────── */
+/* Widen the shared Modal well beyond its default `large` (768px) so the tree
+   has room to breathe both horizontally and vertically. */
+.treeModal {
+  max-width: min(1400px, calc(100vw - var(--space-8))) !important;
+}
+
 .panel {
   position: relative;
   display: flex;
   gap: 0;
-  height: min(70vh, 640px);
+  height: min(85vh, 900px);
 }
 
 .panelCanvas {

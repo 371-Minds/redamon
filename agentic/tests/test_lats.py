@@ -197,14 +197,16 @@ class TestExpandabilityBudget(unittest.TestCase):
         self.assertFalse(lats._can_expand(parent))
 
     def test_budget_hit_on_rollouts(self):
+        cap = project_settings.DEFAULT_AGENT_SETTINGS['LATS_MAX_ROLLOUTS']
         tree = ExploitTree(root_id="root", nodes={"root": ExploitTreeNode(id="root")})
-        tree.rollouts = 24
+        tree.rollouts = cap
         self.assertTrue(lats._budget_hit(tree))
-        tree.rollouts = 5
+        tree.rollouts = cap - 1
         self.assertFalse(lats._budget_hit(tree))
 
     def test_budget_hit_on_node_cap(self):
-        nodes = {f"n{i}": ExploitTreeNode(id=f"n{i}") for i in range(60)}
+        cap = project_settings.DEFAULT_AGENT_SETTINGS['LATS_MAX_TREE_NODES']
+        nodes = {f"n{i}": ExploitTreeNode(id=f"n{i}") for i in range(cap)}
         tree = ExploitTree(root_id="n0", nodes=nodes)
         self.assertTrue(lats._budget_hit(tree))
 

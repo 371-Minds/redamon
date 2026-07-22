@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useRef, useEffect, useState, useCallback } from 'react'
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { Bot, User, AlertCircle, Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -9,6 +9,8 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { AgentTimeline } from './AgentTimeline'
 import { FileDownloadCard } from './FileDownloadCard'
 import { TodoListWidget } from './TodoListWidget'
+import { AgentStatusChips } from './AgentStatusChips'
+import { deriveAgentStatus, hasAgentStatus } from './agentStatus'
 import { SuggestionPanels } from './SuggestionPanels'
 import { extractTextFromChildren } from './phaseConfig'
 import type { ChatItem, Message, FileDownloadItem, FireteamItem, LatsSearchItem } from './types'
@@ -60,6 +62,11 @@ export function ChatArea({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [copiedFieldKey, setCopiedFieldKey] = useState<string | null>(null)
   const eyeRef = useRef<HTMLImageElement>(null)
+
+  // Live KPI chips for the Todos bar, derived from data already in chatItems
+  // (see agentStatus.ts). Single reverse scan, no extra state.
+  const agentStatus = useMemo(() => deriveAgentStatus(chatItems), [chatItems])
+  const showAgentStatus = hasAgentStatus(agentStatus)
 
   // Random heartbeat animation for the loading eye
   useEffect(() => {
@@ -219,9 +226,12 @@ export function ChatArea({
 
   return (
     <>
-      {todoList.length > 0 && (
+      {(todoList.length > 0 || showAgentStatus) && (
         <div className={styles.todoWidgetContainer}>
-          <TodoListWidget items={todoList} />
+          <TodoListWidget
+            items={todoList}
+            headerRight={showAgentStatus ? <AgentStatusChips {...agentStatus} /> : undefined}
+          />
         </div>
       )}
 

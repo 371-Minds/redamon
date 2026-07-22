@@ -139,7 +139,7 @@ class TestDriveExits(unittest.IsolatedAsyncioTestCase):
         c1 = ExploitTreeNode(id="c1", parent_id="root", depth=1, status="evaluated", value=0.5)
         root.children = ["c1"]
         tree = ExploitTree(root_id="root", nodes={"root": root, "c1": c1},
-                           rollouts=24, objective="admin takeover")
+                           rollouts=50, objective="admin takeover")
         state["_exploit_tree"] = tree.model_dump()
         with patch("orchestrator_helpers.lats.lats_expand", AsyncMock(return_value=[])):
             out = await lats.lats_hook(state, _decision(), llm=object())

@@ -199,4 +199,52 @@ describe('foldLatsRestoreMarkers (restore post-pass)', () => {
     const items = [{ type: 'message', id: 'm', role: 'user', content: 'hi', timestamp: new Date() } as any]
     expect(foldLatsRestoreMarkers(items)).toBe(items)
   })
+
+  // Regression: the restore post-pass rewrote `restored` in place via
+  //   const folded = foldLatsRestoreMarkers(restored)
+  //   restored.length = 0; restored.push(...folded)
+  // For a non-LATS conversation `folded` IS `restored` (same reference, see the
+  // pass-through test above), so `restored.length = 0` also emptied `folded` and
+  // the whole chat came back blank when reopening any session from history.
+  describe('restore post-pass rewrite must not self-wipe (aliasing guard)', () => {
+    const foldedRewrite = (restored: any[]) => {
+      // Mirrors the guarded logic in useConversationRestoration.
+      const folded = foldLatsRestoreMarkers(restored)
+      if (folded !== restored) {
+        restored.length = 0
+        restored.push(...folded)
+      }
+      return restored
+    }
+
+    test('non-LATS timeline survives the rewrite', () => {
+      const restored = [
+        { type: 'message', id: 'm0', role: 'user', content: 'objective', timestamp: new Date() } as any,
+        { type: 'thinking', id: 't0', thought: 'step', reasoning: '', action: 'thinking', updated_todo_list: [], timestamp: new Date() } as any,
+        { type: 'tool_execution', id: 'x0', tool_name: 'nmap', tool_args: {}, status: 'success', output_chunks: [], timestamp: new Date() } as any,
+      ]
+      const out = foldedRewrite(restored)
+      expect(out).toHaveLength(3)
+      expect(out.map((i: any) => i.type)).toEqual(['message', 'thinking', 'tool_execution'])
+    })
+
+    test('the UNGUARDED rewrite would have emptied it (documents the bug)', () => {
+      const restored = [{ type: 'message', id: 'm', role: 'user', content: 'hi', timestamp: new Date() } as any]
+      const folded = foldLatsRestoreMarkers(restored)   // === restored
+      restored.length = 0
+      restored.push(...folded)                          // pushes nothing
+      expect(restored).toHaveLength(0)                  // the blank-chat bug
+    })
+
+    test('LATS timeline still folds normally through the rewrite', () => {
+      const restored = [
+        { type: 'message', id: 'm0', role: 'user', content: 'go', timestamp: new Date() } as any,
+        marker('lats_start', START, new Date('2020-01-01')),
+        marker('lats_tree_update', { search_id: 's1:root', snapshot: snapshot() }, new Date('2020-01-01T00:00:05Z')),
+      ]
+      const out = foldedRewrite(restored)
+      expect(out).toHaveLength(2) // message + one folded card
+      expect(out.filter((i: any) => i.type === 'lats_search')).toHaveLength(1)
+    })
+  })
 })

@@ -229,6 +229,9 @@ async def emit_streaming_events(state: dict, callback) -> None:
             think_id = _make_event_id("th", decision, "thought")
             if decision.get("thought") and think_id not in callback._emitted_thinking_ids:
                 try:
+                    _score_obj = state.get("_last_productivity_score") or {}
+                    _score = _score_obj.get("score") if isinstance(_score_obj, dict) else None
+                    _tier = _score_obj.get("tier") if isinstance(_score_obj, dict) else None
                     await callback.on_thinking(
                         state.get("current_iteration", 0),
                         state.get("current_phase", "informational"),
@@ -237,6 +240,9 @@ async def emit_streaming_events(state: dict, callback) -> None:
                         action=decision.get("action"),
                         input_tokens=int(state.get("_input_tokens_this_turn", 0) or 0),
                         output_tokens=int(state.get("_output_tokens_this_turn", 0) or 0),
+                        productivity_score=_score,
+                        productivity_tier=_tier,
+                        stall=int(state.get("_iterations_since_state_grew", 0) or 0),
                     )
                     callback._emitted_thinking_ids.add(think_id)
                 except Exception as e:

@@ -26,6 +26,8 @@ interface ModalProps {
   showCloseButton?: boolean
   /** Optional actions rendered in the header (between title and close button) */
   headerActions?: ReactNode
+  /** Optional extra class applied to the modal container (e.g. for custom sizing) */
+  className?: string
 }
 
 export function Modal({
@@ -39,6 +41,7 @@ export function Modal({
   closeOnEscape = true,
   showCloseButton = true,
   headerActions,
+  className,
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const previousActiveElement = useRef<HTMLElement | null>(null)
@@ -104,7 +107,7 @@ export function Modal({
     >
       <div
         ref={modalRef}
-        className={`${styles.modal} ${sizeClass}`}
+        className={`${styles.modal} ${sizeClass}${className ? ` ${className}` : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'modal-title' : undefined}

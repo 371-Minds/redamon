@@ -37,7 +37,7 @@ export function LatsTreePanel({ item, isOpen, onClose }: LatsTreePanelProps) {
   const title = `Exploit-Path Search · ${item.phase}${item.shadow_mode ? ' · observe-only' : ''}`
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="large">
+    <Modal isOpen={isOpen} onClose={onClose} title={title} size="large" className={styles.treeModal}>
       <div className={styles.panel}>
         <div className={styles.panelCanvas}>
           <LatsTreeCanvas

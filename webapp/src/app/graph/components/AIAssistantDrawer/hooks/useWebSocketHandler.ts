@@ -134,6 +134,9 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
           updated_todo_list: todoListRef.current,
           input_tokens: Math.max(0, Number(message.payload.input_tokens || 0)),
           output_tokens: Math.max(0, Number(message.payload.output_tokens || 0)),
+          productivity_score: message.payload.productivity_score ?? null,
+          productivity_tier: (message.payload.productivity_tier as string) ?? null,
+          stall: message.payload.stall ?? null,
         }
         setChatItems(prev => [...prev, thinkingItem])
         if (!awaitingToolConfirmationRef.current && !awaitingApprovalRef.current && !awaitingQuestionRef.current) {

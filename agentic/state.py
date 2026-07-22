@@ -1099,6 +1099,14 @@ class AgentState(TypedDict):
     guidance_drained_this_turn: bool
     _lats_operator_stop: bool
     _lats_refocus_target: Optional[str]
+    # Iteration at which the last LATS search archived — persisted so the Fix B2
+    # re-activation cooldown survives across turns (else lats_active reads it as
+    # None every turn and the cooldown never applies).
+    _lats_last_archive_iter: Optional[int]
+    # Append-only, capped digest of every finished LATS tree (outcome + best line
+    # + ruled-out probes). Persisted so prior-tree knowledge ACCUMULATES for each
+    # subsequent tree, surviving execution_trace's eviction window.
+    _lats_tree_digest: Optional[list]
 
 
 # =============================================================================

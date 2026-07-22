@@ -843,10 +843,10 @@ model Project {
   agentLatsPhaseExploitation            Boolean  @default(true)            @map("agent_lats_phase_exploitation")
   agentLatsPhasePostExpl                Boolean  @default(false)           @map("agent_lats_phase_post_expl")
   agentLatsMinHypotheses                Int      @default(2)               @map("agent_lats_min_hypotheses")
-  agentLatsBranching                    Int      @default(3)               @map("agent_lats_branching")
+  agentLatsBranching                    Int      @default(6)               @map("agent_lats_branching")
   agentLatsMaxDepth                     Int      @default(6)               @map("agent_lats_max_depth")
-  agentLatsMaxRollouts                  Int      @default(24)              @map("agent_lats_max_rollouts")
-  agentLatsMaxTreeNodes                 Int      @default(60)              @map("agent_lats_max_tree_nodes")
+  agentLatsMaxRollouts                  Int      @default(50)              @map("agent_lats_max_rollouts")
+  agentLatsMaxTreeNodes                 Int      @default(120)             @map("agent_lats_max_tree_nodes")
   agentLatsUctC                         Float    @default(1.4)             @map("agent_lats_uct_c")
   agentLatsPruneFloor                   Float    @default(0.15)            @map("agent_lats_prune_floor")
 

@@ -32,6 +32,10 @@ export interface ThinkingItem {
   updated_todo_list: TodoItem[]
   input_tokens?: number
   output_tokens?: number
+  // Live agent-status KPIs carried on each think turn (Todos-bar chips).
+  productivity_score?: number | null
+  productivity_tier?: string | null
+  stall?: number | null
 }
 
 export interface ToolExecutionItem {

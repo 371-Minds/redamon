@@ -90,7 +90,7 @@ class TestEmission(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(cb.starts), 1)
         self.assertEqual(cb.starts[0]["phase"], "exploitation")
         self.assertTrue(cb.starts[0]["shadow_mode"])
-        self.assertEqual(cb.starts[0]["budget"]["max_rollouts"], 24)
+        self.assertEqual(cb.starts[0]["budget"]["max_rollouts"], 50)
         # on_lats_tree_update fired with a schema-valid snapshot
         self.assertEqual(len(cb.updates), 1)
         snap = cb.updates[0]["snapshot"]

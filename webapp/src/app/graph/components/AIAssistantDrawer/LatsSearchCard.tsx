@@ -99,6 +99,11 @@ export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
       <div className={styles.header} onClick={() => setCollapsed(c => !c)}>
         <GitBranch size={14} className={styles.headerIcon} />
         <span className={styles.title}>Exploit-Path Search</span>
+        {item.status === 'running' && (
+          <span className={styles.statusBadge}>
+            <span className={styles.statusDot} />running
+          </span>
+        )}
         <span className={styles.phaseBadge}>{snap.phase}</span>
         <span className={styles.rolloutBadge}>rollout {snap.rollouts}/{snap.budget.max_rollouts}</span>
         {item.shadow_mode && <span className={styles.shadowBadge}>observe-only</span>}
@@ -134,7 +139,7 @@ export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
           onClick={() => (onExpand ? onExpand() : setPanelOpen(true))}
           data-testid="lats-expand-btn"
         >
-          <Maximize2 size={12} /> Expand tree
+          <Maximize2 size={14} /> Expand tree
         </button>
       </div>
 

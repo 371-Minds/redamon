@@ -99,6 +99,7 @@ export const SECTION_WIKI: Record<string, { page: string; anchor?: string }> = {
   Trufflehog:       { page: 'TruffleHog-Secret-Scanning' },
   GvmScan:          { page: 'GVM-Vulnerability-Scanning' },
   Fireteam:         { page: 'Fireteam-Parallel-Specialists' },
+  Lats:             { page: 'Exploit-Path-Search-LATS' },
   // Tool sections that have a TOOL_WIKI entry are also exposed here for convenience.
   ...({} as Record<string, { page: string; anchor?: string }>),
 }

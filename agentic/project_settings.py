@@ -81,15 +81,20 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'LATS_SHADOW_MODE': True,                     # observe-only: build the tree, do NOT drive decisions
     'LATS_ALLOWED_PHASES': ['exploitation'],     # phases where the tree search runs (post_exploitation experimental, §6.1)
     'LATS_MIN_HYPOTHESES': 2,                     # min credible probes lats_expand must yield to activate
-    'LATS_BRANCHING': 3,                          # max candidate probes per Expand (tree width)
+    'LATS_BRANCHING': 6,                          # max candidate probes per Expand (tree width)
     'LATS_MAX_DEPTH': 6,                          # max chain length from root; node at this depth cannot expand further
-    'LATS_MAX_ROLLOUTS': 24,                      # max Select->Backprop cycles = max live probes per objective
-    'LATS_MAX_TREE_NODES': 60,                    # hard tree-size (total node) cap
+    'LATS_MAX_ROLLOUTS': 50,                      # max Select->Backprop cycles = max live probes per objective
+    'LATS_MAX_TREE_NODES': 120,                   # hard tree-size (total node) cap
     'LATS_UCT_C': 1.4,                            # exploration constant (focus vs breadth)
     'LATS_PRUNE_FLOOR': 0.15,                     # value below which a cold branch is pruned
     'LATS_RESPECT_GUIDANCE': True,                # graft operator guidance as a high-prior probe (§21.1)
     'LATS_VERIFY_TERMINAL': False,               # verify a claimed foothold before declaring success (§20.15)
     'LATS_REACTIVE_TRIGGERS': False,             # also activate on axis lock-in (deferred, §14)
+    'LATS_SUMMARY_MAX_NODES': 40,                 # Fix A: max nodes rendered in the carried-forward tree summary
+    'LATS_REACTIVATE_COOLDOWN': 4,                # Fix B2: min iterations between an archive and the next activation
+    'LATS_REACTIVATE_STUCK_TURNS': 5,             # Fix B2: no-state-growth turns that re-trigger LATS without Deep Think (halfway to Deep Think's hard stall override of 10; above the reactivate cooldown)
+    'LATS_SCORE_THRESHOLD': 4.0,                  # Fix B2: productivity score that re-triggers LATS (set just below DEEPTHINK 5.0 so LATS is the cheaper first responder)
+    'LATS_DIGEST_MAX': 8,                         # max prior-tree digests accumulated + fed to each new tree's seed
 
     # Phase Configuration
     'ACTIVATE_POST_EXPL_PHASE': True,
