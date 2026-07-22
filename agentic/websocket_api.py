@@ -113,6 +113,11 @@ class MessageType(str, Enum):
     FIRETEAM_MEMBER_COMPLETED = "fireteam_member_completed"
     FIRETEAM_COMPLETED = "fireteam_completed"
     FIRETEAM_MEMBER_AWAITING_CONFIRMATION = "fireteam_member_awaiting_confirmation"
+    # LATS (exploit-path tree search) lifecycle events. String values MUST stay
+    # byte-identical to the TS MessageType enum in webapp/src/lib/websocket-types.ts.
+    LATS_START = "lats_start"
+    LATS_TREE_UPDATE = "lats_tree_update"
+    LATS_COMPLETE = "lats_complete"
     # Background-job lifecycle events emitted by JobRegistry
     JOB_UPDATE = "job_update"
 
@@ -923,6 +928,41 @@ class StreamingCallback:
         await self.connection.send_message(MessageType.DEEP_THINK, payload)
         self._persist("deep_think", payload)
         logger.info(f"Deep Think analysis sent to session {self.connection.session_id}")
+
+    async def on_lats_start(self, search_id: str, objective: str, phase: str,
+                            budget: dict, shadow_mode: bool):
+        """Called when a LATS exploit-path search activates (a new tree seeded)."""
+        payload = {
+            "search_id": search_id,
+            "objective": objective,
+            "phase": phase,
+            "budget": budget,
+            "shadow_mode": shadow_mode,
+        }
+        await self.connection.send_message(MessageType.LATS_START, payload)
+        self._persist("lats_start", payload)
+        logger.info(f"LATS search {search_id} started for session {self.connection.session_id}")
+
+    async def on_lats_tree_update(self, search_id: str, snapshot: dict):
+        """Called once per hook invocation (= once per wave) with the full tree
+        snapshot. The tree is <= LATS_MAX_TREE_NODES nodes, so no diffing."""
+        payload = {"search_id": search_id, "snapshot": snapshot}
+        await self.connection.send_message(MessageType.LATS_TREE_UPDATE, payload)
+        self._persist("lats_tree_update", payload)
+
+    async def on_lats_complete(self, search_id: str, best_trajectory: list,
+                               outcome: str, metrics: Optional[dict] = None):
+        """Called when a LATS search ends (terminal_success | budget_exhausted |
+        branch_collapsed). metrics carries the A/B telemetry (§20.13)."""
+        payload = {
+            "search_id": search_id,
+            "best_trajectory": best_trajectory,
+            "outcome": outcome,
+            "metrics": metrics or {},
+        }
+        await self.connection.send_message(MessageType.LATS_COMPLETE, payload)
+        self._persist("lats_complete", payload)
+        logger.info(f"LATS search {search_id} complete ({outcome}) for session {self.connection.session_id}")
 
     async def on_phase_update(self, current_phase: str, iteration_count: int, attack_path_type: str = ""):
         """Called when phase changes"""

@@ -798,6 +798,57 @@ def _as_wave_or_use_tool(decision: Any, wave: List[ExploitTreeNode]) -> Any:
 
 
 # =============================================================================
+# STREAMING (§17.4) — emit on_lats_* to the per-session StreamingCallback so the
+# UI card mutates in place. Resilient: no-op when there is no callback (tests).
+# =============================================================================
+
+def _search_id(session_id: Optional[str], tree: ExploitTree) -> str:
+    """Unique per session per search (§20.12). A tree created after a reset gets
+    a new root_id, so a second search renders as a distinct card."""
+    return f"{session_id or 'sess'}:{tree.root_id}"
+
+
+def _tree_view(state: dict, tree: ExploitTree, shadow: bool) -> dict:
+    return tree.to_view(
+        search_id=_search_id(state.get("session_id"), tree),
+        phase=state.get("current_phase", "") or "",
+        shadow_mode=shadow,
+        max_rollouts=int(get_setting("LATS_MAX_ROLLOUTS", 24)),
+        max_depth=int(get_setting("LATS_MAX_DEPTH", 6)),
+        best_trajectory=best_trajectory(tree),
+    )
+
+
+def _complete_metrics(tree: ExploitTree) -> dict:
+    """A/B telemetry for on_lats_complete (§20.13)."""
+    pruned = sum(1 for n in tree.nodes.values() if n.status == "pruned")
+    max_depth = max((n.depth for n in tree.nodes.values()), default=0)
+    return {
+        "rollouts": tree.rollouts,
+        "max_depth_reached": max_depth,
+        "nodes_total": len(tree.nodes),
+        "pruned_count": pruned,
+        "outcome_terminal": tree.best_terminal_id is not None,
+    }
+
+
+async def _emit(streaming_callbacks: Any, session_id: Optional[str], method: str, *args) -> None:
+    if not streaming_callbacks:
+        return
+    getter = getattr(streaming_callbacks, "get", None)
+    cb = getter(session_id) if getter else None
+    if cb is None:
+        return
+    fn = getattr(cb, method, None)
+    if fn is None:
+        return
+    try:
+        await fn(*args)
+    except Exception as exc:   # streaming must never break the search
+        logger.warning("[lats] stream %s failed: %s", method, exc)
+
+
+# =============================================================================
 # THE HOOK (§5.3) — runs inside think_node AFTER the think LLM call. Uses
 # decision.output_analysis as the evaluation signal and (in DRIVE mode) overrides
 # the action with the next LATS move. Strict no-op when LATS_ENABLED=false or
@@ -812,6 +863,7 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
 
     # ---- ENTER (no tree) or STAY (tree live) ----
     tree_dict = state.get("_exploit_tree")
+    newly_created = False
     if not tree_dict:
         if not lats_active(state):
             return decision                              # legacy path, untouched
@@ -819,11 +871,23 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
         if len(probes) < int(get_setting("LATS_MIN_HYPOTHESES", 2)):
             return decision                              # < 2 credible probes: no real branch
         tree = _new_tree(state, probes)
+        newly_created = True
     else:
         tree = ExploitTree(**tree_dict)
         if _lats_should_reset(state, tree):
+            await _emit(streaming_callbacks, session_id, "on_lats_complete",
+                        _search_id(session_id, tree), best_trajectory(tree),
+                        "reset", _complete_metrics(tree))
             _archive_tree(state, tree, "stale")
             return decision                              # archived; fresh tree may start next turn
+
+    if newly_created:
+        await _emit(streaming_callbacks, session_id, "on_lats_start",
+                    _search_id(session_id, tree), tree.objective,
+                    state.get("current_phase", "") or "",
+                    {"max_rollouts": int(get_setting("LATS_MAX_ROLLOUTS", 24)),
+                     "max_depth": int(get_setting("LATS_MAX_DEPTH", 6))},
+                    shadow)
 
     analysis = _attr(decision, "output_analysis")
 
@@ -833,14 +897,18 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
 
     # ---- 2. EXITS (order matters: collapse hands off to legacy, budget completes) ----
     override = None
+    outcome = None
     if any(n.status == "terminal" for n in tree.nodes.values()):
         tree.best_terminal_id = _best_terminal(tree)
-        override = "lats_terminal_success"
+        override, outcome = "lats_terminal_success", "terminal_success"
     elif _single_open_line(tree):
+        await _emit(streaming_callbacks, session_id, "on_lats_complete",
+                    _search_id(session_id, tree), best_trajectory(tree),
+                    "branch_collapsed", _complete_metrics(tree))
         _archive_tree(state, tree, "branch_collapsed")
         return decision                                  # legacy drives the one obvious line
     elif _budget_hit(tree) or _tree_exhausted(tree):
-        override = "lats_budget_exhausted"
+        override, outcome = "lats_budget_exhausted", "budget_exhausted"
 
     # ---- 3. SELECT + 4. EXPAND (skip when exiting via complete) ----
     wave: List[ExploitTreeNode] = []
@@ -858,8 +926,14 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
         for k in wave:
             k.status = "executing"
 
-    # ---- persist the tree ----
+    # ---- persist the tree + stream the snapshot (once per invocation = per wave) ----
     state["_exploit_tree"] = tree.model_dump()
+    await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
+                _search_id(session_id, tree), _tree_view(state, tree, shadow))
+    if outcome is not None:
+        await _emit(streaming_callbacks, session_id, "on_lats_complete",
+                    _search_id(session_id, tree), best_trajectory(tree),
+                    outcome, _complete_metrics(tree))
 
     # ---- SHADOW: build/stream the tree but never drive ----
     if shadow:

@@ -877,6 +877,54 @@ class ExploitTree(BaseModel):
     best_terminal_id: Optional[str] = None
     objective: str = ""                    # the exploitation objective this tree serves
 
+    def to_view(self, *, search_id: str, phase: str, shadow_mode: bool,
+                max_rollouts: int, max_depth: int,
+                best_trajectory: Optional[List[str]] = None) -> dict:
+        """UI-facing projection (LatsTreeSnapshot, LATS_integration.md §17.4).
+        Raw tool_output is intentionally excluded (size); the inspector fetches
+        it from execution_trace via step_id. Runtime context not stored on the
+        model (search_id, phase, shadow_mode, budgets, trajectory) is passed in.
+        """
+        try:
+            from project_settings import DANGEROUS_TOOLS
+        except Exception:
+            DANGEROUS_TOOLS = frozenset()
+
+        def _node_view(n: "ExploitTreeNode") -> dict:
+            return {
+                "id": n.id,
+                "parent_id": n.parent_id,
+                "depth": n.depth,
+                "label": (n.probe_rationale or n.tool_name or n.id)[:80],
+                "tool_name": n.tool_name,
+                "tool_args": n.tool_args,
+                "status": n.status,
+                "value": n.value,
+                "local_value": n.local_value,
+                "visits": n.visits,
+                "verdict": n.verdict,
+                "error_class": n.error_class,
+                "finding_confidence": n.finding_confidence_delta,
+                "exploit_succeeded": n.exploit_succeeded,
+                "duration_ms": n.duration_ms,
+                "observation": n.observation_summary,
+                "reflection": n.reflection,
+                "is_dangerous": n.tool_name in DANGEROUS_TOOLS if n.tool_name else False,
+                "step_id": n.step_id,
+            }
+
+        return {
+            "search_id": search_id,
+            "objective": self.objective,
+            "phase": phase,
+            "shadow_mode": shadow_mode,
+            "rollouts": self.rollouts,
+            "budget": {"max_rollouts": max_rollouts, "max_depth": max_depth},
+            "active_id": self.active_node_id,
+            "best_trajectory": best_trajectory or [],
+            "nodes": [_node_view(n) for n in self.nodes.values()],
+        }
+
 
 class AgentState(TypedDict):
     """
