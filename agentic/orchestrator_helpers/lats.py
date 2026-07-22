@@ -348,6 +348,8 @@ def _new_tree(state: dict, root_children: List[dict]) -> ExploitTree:
         nodes={root.id: root},
         active_node_id=root.id,
         objective=_objective_of(state),
+        attack_path_type=state.get("attack_path_type", "") or "",
+        primary_target=(state.get("target_info", {}) or {}).get("primary_target", "") or "",
     )
     for cand in root_children:
         _add_child(tree, root, cand)
@@ -512,6 +514,14 @@ def _lats_should_reset(state: dict, tree: ExploitTree) -> bool:
         return True
     # Objective advanced: the tree stamped which objective it serves.
     if tree.objective and tree.objective != _objective_of(state):
+        return True
+    # Skill switched (switch_skill rebinds attack_path_type without necessarily
+    # changing the objective text) — the old tree's probes are for the wrong skill.
+    if tree.attack_path_type and tree.attack_path_type != (state.get("attack_path_type", "") or ""):
+        return True
+    # Primary target changed.
+    cur_target = (state.get("target_info", {}) or {}).get("primary_target", "") or ""
+    if tree.primary_target and cur_target and tree.primary_target != cur_target:
         return True
     return False
 

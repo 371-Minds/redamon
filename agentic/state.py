@@ -877,6 +877,8 @@ class ExploitTree(BaseModel):
     rollouts: int = 0                      # completed Select->...->Backprop cycles
     best_terminal_id: Optional[str] = None
     objective: str = ""                    # the exploitation objective this tree serves
+    attack_path_type: str = ""             # skill/path at seed time; a switch invalidates the tree (§20.6)
+    primary_target: str = ""               # target at seed time; a target change invalidates the tree
 
     def to_view(self, *, search_id: str, phase: str, shadow_mode: bool,
                 max_rollouts: int, max_depth: int,
