@@ -44,6 +44,9 @@ FOCUSED_TESTS=(
     tests.test_lats_emission
     tests.test_lats_settings
     tests.test_lats_drive
+    tests.test_lats_integration
+    tests.test_lats_attribution
+    tests.test_lats_smoke
 )
 
 case "$MODE" in

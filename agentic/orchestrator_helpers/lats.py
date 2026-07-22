@@ -52,12 +52,24 @@ def _attr(obj: Any, key: str, default: Any = None) -> Any:
 # All inputs are already computed upstream; lats_value adds no I/O.
 # =============================================================================
 
-def _exploit_succeeded(step: dict, analysis: Any) -> bool:
-    """True when the just-executed probe reached a foothold. Prefers the
-    step's own flag (per-step attribution) then the aggregate analysis."""
+def _exploit_succeeded(step: dict, analysis: Any, credited: bool = True) -> bool:
+    """True when the just-executed probe reached a foothold.
+
+    Attribution order (§6, §20.2): the step's own flag, then a per_step entry
+    keyed by step_index (authoritative localization for a wave), then the
+    aggregate analysis flag — but the aggregate is only credited to the ONE
+    designated child (`credited=True`). Without this, a wave-level
+    exploit_succeeded=True would mark EVERY sibling terminal (Bug: over-credit)."""
     if step and step.get("exploit_succeeded"):
         return True
-    return bool(_attr(analysis, "exploit_succeeded", False))
+    if step is not None:
+        idx = step.get("_step_index")
+        for ps in (_attr(analysis, "per_step", []) or []):
+            if _attr(ps, "step_index", -1) == idx and _attr(ps, "exploit_succeeded", False):
+                return True
+    if credited:
+        return bool(_attr(analysis, "exploit_succeeded", False))
+    return False
 
 
 def _verdict_for(step: dict, analysis: Any) -> str:
@@ -79,11 +91,13 @@ def _verdict_for(step: dict, analysis: Any) -> str:
     return _attr(prod, "verdict", "") or ""
 
 
-def _new_finding_confidence(step: dict, analysis: Any) -> int:
+def _new_finding_confidence(step: dict, analysis: Any, credited: bool = True) -> int:
     """Confidence (0-100) of any ChainFinding attributed to this step.
 
-    For a per_step-attributed wave, the step's own finding wins; otherwise the
-    highest-confidence finding in the aggregate analysis is credited here."""
+    A per_step entry keyed by step_index wins (authoritative per-child); the
+    aggregate finding is credited only to the ONE designated child
+    (`credited=True`), else 0 — otherwise every wave sibling inherits the
+    aggregate confidence and its value is inflated (Bug: over-credit)."""
     if step is not None:
         idx = step.get("_step_index")
         per_step = _attr(analysis, "per_step", []) or []
@@ -91,6 +105,8 @@ def _new_finding_confidence(step: dict, analysis: Any) -> int:
             for ps in per_step:
                 if _attr(ps, "step_index", -1) == idx and _attr(ps, "finding", ""):
                     return int(_attr(ps, "confidence", 0) or 0)
+    if not credited:
+        return 0
     findings = _attr(analysis, "chain_findings", []) or []
     best = 0
     for f in findings:
@@ -100,7 +116,7 @@ def _new_finding_confidence(step: dict, analysis: Any) -> int:
     return best
 
 
-def _lats_value_web(step: dict, analysis: Any) -> float:
+def _lats_value_web(step: dict, analysis: Any, credited: bool = True) -> float:
     """Web-exploitation value: error_class carries the signal (§6)."""
     ec = step.get("error_class", "") if step else ""
     verdict = _verdict_for(step, analysis)
@@ -113,7 +129,7 @@ def _lats_value_web(step: dict, analysis: Any) -> float:
 
     v = 0.0
     # (a) New durable evidence.
-    v += 0.5 * (_new_finding_confidence(step, analysis) / 100.0)
+    v += 0.5 * (_new_finding_confidence(step, analysis, credited) / 100.0)
     # (b) Response informativeness.
     if verdict in ("new_info", "diagnostic_progress"):
         v += 0.3
@@ -167,7 +183,8 @@ def _delta_count(before: Optional[dict], after: Optional[dict], finding_type: st
     return _count(after) - _count(before)
 
 
-def _lats_value_post_expl(step: dict, analysis: Any, before: dict, after: dict) -> float:
+def _lats_value_post_expl(step: dict, analysis: Any, before: dict, after: dict,
+                          credited: bool = True) -> float:
     """Post-exploitation value from engagement-state deltas (§6.1). In this
     phase error_class 4xx/5xx branches are inert, so score from privilege /
     session / credential / host / finding growth instead."""
@@ -182,7 +199,7 @@ def _lats_value_post_expl(step: dict, analysis: Any, before: dict, after: dict) 
         v += 0.4
     if _new_host_reached(before, after):
         v += 0.4
-    if _new_finding(step, analysis):
+    if _new_finding_confidence(step, analysis, credited) > 0:
         v += 0.3
     if _verdict_for(step, analysis) in ("no_progress", "duplicate"):
         v -= 0.3
@@ -190,14 +207,16 @@ def _lats_value_post_expl(step: dict, analysis: Any, before: dict, after: dict) 
 
 
 def lats_value(step: dict, analysis: Any, phase: Optional[str] = None,
-               before: Optional[dict] = None, after: Optional[dict] = None) -> float:
+               before: Optional[dict] = None, after: Optional[dict] = None,
+               credited: bool = True) -> float:
     """Value of a just-executed probe. Terminal success is the strong reward;
-    otherwise dispatch on phase (§6.1)."""
-    if _exploit_succeeded(step, analysis):
+    otherwise dispatch on phase (§6.1). `credited` gates whether the aggregate
+    wave-level exploit/finding signal is attributed to THIS child (§20.2)."""
+    if _exploit_succeeded(step, analysis, credited):
         return 1.0
     if phase == "post_exploitation":
-        return _lats_value_post_expl(step, analysis, before or {}, after or {})
-    return _lats_value_web(step, analysis)
+        return _lats_value_post_expl(step, analysis, before or {}, after or {}, credited)
+    return _lats_value_web(step, analysis, credited)
 
 
 # =============================================================================
@@ -661,13 +680,16 @@ def _complete(decision: Any, tree: ExploitTree, reason: str) -> Any:
     Duck-typed on `.model_copy` so tests can pass a lightweight stand-in."""
     traj = best_trajectory(tree)
     thought = f"[LATS] {reason}: {' -> '.join(traj)}"
+    completion_reason = f"LATS {reason}"
     if hasattr(decision, "model_copy"):
-        return decision.model_copy(update={"action": "complete", "thought": thought})
+        return decision.model_copy(update={"action": "complete", "thought": thought,
+                                           "completion_reason": completion_reason})
     # dict fallback (tests)
     if isinstance(decision, dict):
         d = dict(decision)
         d["action"] = "complete"
         d["thought"] = thought
+        d["completion_reason"] = completion_reason
         return d
     return decision
 
@@ -708,13 +730,42 @@ def _ordered_executing_children(tree: ExploitTree) -> List[ExploitTreeNode]:
     return out
 
 
+def _step_ran(step: dict) -> bool:
+    """A step produced a real result (ran), vs never left the harness."""
+    return (step.get("tool_output") is not None
+            or step.get("success") is not None
+            or bool(step.get("error_message")))
+
+
+def _match_children_to_steps(children, steps):
+    """Pair each executing child with an executed step by tool_name (consuming
+    each step once, in order). Returns [(child, step_or_None)]. Matching by
+    tool_name (not blind position) is robust to a child stranded from a prior
+    wave and to shadow mode, where the legacy step's tool_name differs (§20.2).
+    """
+    ran = [s for s in steps if _step_ran(s)]
+    used = [False] * len(ran)
+    pairs = []
+    for child in children:
+        match = None
+        for j, s in enumerate(ran):
+            if not used[j] and s.get("tool_name") == child.tool_name:
+                used[j] = True
+                match = s
+                break
+        pairs.append((child, match))
+    return pairs
+
+
 def _evaluate_wave(tree: ExploitTree, state: dict, analysis: Any) -> bool:
     """Evaluate + backprop the children we issued last turn, but ONLY those that
     ACTUALLY EXECUTED (§20.2). Returns True if at least one child produced a
     result (so the caller counts a rollout). Mutates the tree in place.
 
-    Attribution is positional: the wave was built in child order and
-    execute_plan preserves step order, so executing-child[i] <-> step[i].
+    Children that never ran this turn (no matching executed step) are reset to
+    'proposed' so the search re-selects them (e.g. a metasploit probe re-routed
+    to ask_user, §20.4) — leaving them 'executing' would strand them forever and
+    skew later attribution.
     """
     children = _ordered_executing_children(tree)
     if not children:
@@ -729,29 +780,61 @@ def _evaluate_wave(tree: ExploitTree, state: dict, analysis: Any) -> bool:
         return False
 
     steps = _executed_steps(state)
+    pairs = _match_children_to_steps(children, steps)
+    executed = [(c, s) for c, s in pairs if s is not None]
+
+    # Reset the never-ran children so they are re-selectable next turn.
+    for child, step in pairs:
+        if step is None:
+            child.status = "proposed"
+
+    if not executed:
+        return False
+
     phase = state.get("current_phase")
     before, after = _post_expl_snapshots(state)
     prune_floor = get_setting("LATS_PRUNE_FLOOR", 0.15)
-    evaluated_any = False
-    for i, child in enumerate(children):
-        step = steps[i] if i < len(steps) else None
-        if not step or step.get("tool_output") is None:
-            continue                                  # never ran; leave as-is
-        evaluated_any = True
-        child.local_value = lats_value(step, analysis, phase=phase, before=before, after=after)
+
+    # Which child, if any, is credited with the AGGREGATE wave-level signal
+    # (exploit_succeeded / finding confidence). per_step localizes it; otherwise
+    # credit the single strongest-signal child so we never mark every sibling
+    # terminal (Bug: over-credit). A single executed step is always credited.
+    credited_child = _credited_child(executed, analysis)
+
+    for child, step in executed:
+        credited = child is credited_child
+        child.local_value = lats_value(step, analysis, phase=phase, before=before,
+                                       after=after, credited=credited)
         child.observation_summary = _summarize(step.get("tool_output"))
         child.verdict = _verdict_for(step, analysis)
         child.error_class = step.get("error_class", "") or ""
         child.duration_ms = int(step.get("duration_ms", 0) or 0)
         child.step_id = step.get("step_id")
-        child.finding_confidence_delta = _new_finding_confidence(step, analysis)
-        child.exploit_succeeded = _exploit_succeeded(step, analysis)
+        child.finding_confidence_delta = _new_finding_confidence(step, analysis, credited)
+        child.exploit_succeeded = _exploit_succeeded(step, analysis, credited)
         child.status = "terminal" if child.exploit_succeeded else "evaluated"
         lats_backprop(tree, child.id, child.local_value)
         if not child.exploit_succeeded and child.local_value < prune_floor:
             child.status = "pruned"
             child.reflection = _reflect(step, analysis)
-    return evaluated_any
+    return True
+
+
+def _credited_child(executed, analysis):
+    """The single child credited with the aggregate wave signal. If any child
+    already localizes the signal via per_step, no aggregate credit is given
+    (return None). A single executed step is credited. Otherwise pick the
+    strongest-signal child by its non-credited base value."""
+    if len(executed) == 1:
+        return executed[0][0]
+    per_step = _attr(analysis, "per_step", []) or []
+    if per_step:
+        return None                     # per_step localizes; no blanket credit
+    # No per-step attribution: credit the strongest child so exactly one can win.
+    def _base(cs):
+        c, s = cs
+        return _lats_value_web(s, analysis, credited=False)
+    return max(executed, key=_base)[0]
 
 
 def _post_expl_snapshots(state: dict):
@@ -773,28 +856,42 @@ def _post_expl_snapshots(state: dict):
 def _as_wave_or_use_tool(decision: Any, wave: List[ExploitTreeNode]) -> Any:
     """Override the decision's action with the next LATS move: a plan_tools wave
     when >= 2 probes, else a single use_tool. Dangerous steps are allowed; the
-    existing confirmation gate handles the prompt (§20.3)."""
-    if len(wave) >= 2:
-        update = {
-            "action": "plan_tools",
-            "tool_plan": _wave(wave),
-        }
-    elif len(wave) == 1:
-        best = wave[0]
-        update = {
-            "action": "use_tool",
-            "tool_name": best.tool_name,
-            "tool_args": best.tool_args or {},
-        }
-    else:
+    existing confirmation gate handles the prompt (§20.3).
+
+    CRITICAL: for a real LLMDecision, `tool_plan` MUST be a ToolPlan model, not a
+    dict — pydantic's model_copy does NOT coerce update values, and think_node
+    calls `decision.tool_plan.model_dump()`. A dict there crashes the run.
+    """
+    is_wave = len(wave) >= 2
+    if not is_wave and not wave:
         return decision   # nothing to issue; leave the decision alone
+
     if hasattr(decision, "model_copy"):
-        return decision.model_copy(update=update)
-    if isinstance(decision, dict):
-        d = dict(decision)
-        d.update(update)
-        return d
-    return decision
+        if is_wave:
+            from state import ToolPlan, ToolPlanStep
+            plan = ToolPlan(steps=[
+                ToolPlanStep(tool_name=k.tool_name, tool_args=k.tool_args or {},
+                             rationale=k.probe_rationale)
+                for k in wave
+            ], plan_rationale="[LATS] wave")
+            return decision.model_copy(update={"action": "plan_tools", "tool_plan": plan,
+                                               "tool_name": None, "tool_args": None})
+        best = wave[0]
+        return decision.model_copy(update={"action": "use_tool",
+                                           "tool_name": best.tool_name,
+                                           "tool_args": best.tool_args or {},
+                                           "tool_plan": None})
+    # dict fallback (unit tests): keep the plain-dict shape for assertions.
+    d = dict(decision)
+    if is_wave:
+        d["action"] = "plan_tools"
+        d["tool_plan"] = _wave(wave)
+    else:
+        best = wave[0]
+        d["action"] = "use_tool"
+        d["tool_name"] = best.tool_name
+        d["tool_args"] = best.tool_args or {}
+    return d
 
 
 # =============================================================================

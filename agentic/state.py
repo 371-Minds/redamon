@@ -405,6 +405,7 @@ class PerStepAnalysis(BaseModel):
     verdict: str = ""            # ProductivityVerdict.verdict for this step
     finding: str = ""            # short description of any finding at this step
     confidence: int = 0          # confidence (0-100) of that finding
+    exploit_succeeded: bool = False   # this step reached a foothold (localizes a wave win)
 
 
 class OutputAnalysisInline(BaseModel):
