@@ -62,6 +62,72 @@ export enum MessageType {
   FIRETEAM_MEMBER_COMPLETED = 'fireteam_member_completed',
   FIRETEAM_COMPLETED = 'fireteam_completed',
   FIRETEAM_MEMBER_AWAITING_CONFIRMATION = 'fireteam_member_awaiting_confirmation',
+
+  // LATS (exploit-path tree search) events. String values MUST stay
+  // byte-identical to the Python MessageType enum in agentic/websocket_api.py.
+  LATS_START = 'lats_start',
+  LATS_TREE_UPDATE = 'lats_tree_update',
+  LATS_COMPLETE = 'lats_complete',
+}
+
+// ---------------------------------------------------------------------------
+// LATS (exploit-path tree search) payloads (mirror ExploitTree.to_view, §17.4)
+// ---------------------------------------------------------------------------
+
+export type LatsNodeStatus = 'proposed' | 'executing' | 'evaluated' | 'pruned' | 'terminal'
+
+export interface LatsNodeView {
+  id: string
+  parent_id: string | null
+  depth: number
+  label: string
+  tool_name: string | null
+  tool_args?: Record<string, unknown> | null
+  status: LatsNodeStatus
+  value: number
+  local_value: number
+  visits: number
+  verdict: string
+  error_class: string
+  finding_confidence: number
+  exploit_succeeded: boolean
+  duration_ms: number
+  observation: string
+  reflection: string
+  is_dangerous: boolean
+  step_id: string | null
+}
+
+export interface LatsTreeSnapshot {
+  search_id: string
+  objective: string
+  phase: string
+  shadow_mode: boolean
+  rollouts: number
+  budget: { max_rollouts: number; max_depth: number }
+  active_id: string | null
+  best_trajectory: string[]
+  nodes: LatsNodeView[]
+}
+
+export interface LatsStartPayload {
+  search_id: string
+  objective: string
+  phase: string
+  budget: { max_rollouts: number; max_depth: number }
+  shadow_mode: boolean
+}
+
+export interface LatsTreeUpdatePayload {
+  search_id: string
+  snapshot: LatsTreeSnapshot
+}
+
+export interface LatsCompletePayload {
+  search_id: string
+  best_trajectory: string[]
+  outcome: string
+  metrics?: Record<string, unknown>
 }
 
 export interface FireteamMemberAwaitingConfirmationPayload {

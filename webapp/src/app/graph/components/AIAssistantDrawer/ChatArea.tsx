@@ -11,12 +11,12 @@ import { FileDownloadCard } from './FileDownloadCard'
 import { TodoListWidget } from './TodoListWidget'
 import { SuggestionPanels } from './SuggestionPanels'
 import { extractTextFromChildren } from './phaseConfig'
-import type { ChatItem, Message, FileDownloadItem, FireteamItem } from './types'
+import type { ChatItem, Message, FileDownloadItem, FireteamItem, LatsSearchItem } from './types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem } from './AgentTimeline'
 import styles from './AIAssistantDrawer.module.css'
 import type { TodoItem } from '@/lib/websocket-types'
 
-type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | FireteamItem
+type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | FireteamItem | LatsSearchItem
 
 type GroupedItem = {
   type: 'message' | 'timeline' | 'file_download'

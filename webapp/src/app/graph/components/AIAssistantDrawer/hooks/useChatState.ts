@@ -1,10 +1,10 @@
 import { useState, useRef, useMemo } from 'react'
-import type { ChatItem, Message, FileDownloadItem, FireteamItem } from '../types'
+import type { ChatItem, Message, FileDownloadItem, FireteamItem, LatsSearchItem } from '../types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem } from '../AgentTimeline'
 import type { TodoItem } from '@/lib/websocket-types'
 import type { Phase } from '../types'
 
-type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | FireteamItem
+type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | FireteamItem | LatsSearchItem
 
 export function useChatState() {
   const [chatItems, setChatItems] = useState<ChatItem[]>([])
@@ -48,6 +48,7 @@ export function useChatState() {
           || item.type === 'plan_wave'
           || item.type === 'deep_think'
           || item.type === 'fireteam'
+          || item.type === 'lats_search'
         )
       ) {
         currentTimelineGroup.push(item as TimelineGroupItem)

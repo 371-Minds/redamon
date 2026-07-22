@@ -32,6 +32,11 @@ import {
   handleFireteamMemberCompleted,
   handleFireteamCompleted,
 } from './fireteamChatState'
+import {
+  handleLatsStart,
+  handleLatsUpdate,
+  handleLatsComplete,
+} from './latsChatState'
 
 interface WebSocketHandlerDeps {
   // From useChatState
@@ -436,6 +441,18 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
         setChatItems(prev => [...prev, deepThinkItem])
         break
       }
+
+      case MessageType.LATS_START:
+        setChatItems(prev => handleLatsStart(prev, message.payload))
+        break
+
+      case MessageType.LATS_TREE_UPDATE:
+        setChatItems(prev => handleLatsUpdate(prev, message.payload))
+        break
+
+      case MessageType.LATS_COMPLETE:
+        setChatItems(prev => handleLatsComplete(prev, message.payload))
+        break
 
       case MessageType.PHASE_UPDATE:
         setCurrentPhase(message.payload.current_phase as Phase)

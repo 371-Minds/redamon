@@ -13,6 +13,8 @@ import { ThinkingCard } from './ThinkingCard'
 import { ToolExecutionCard } from './ToolExecutionCard'
 import { PlanWaveCard } from './PlanWaveCard'
 import { DeepThinkCard } from './DeepThinkCard'
+import { LatsSearchCard } from './LatsSearchCard'
+import type { LatsTreeSnapshot } from '@/lib/websocket-types'
 import { FireteamCard } from './FireteamCard'
 import type { TodoItem } from '@/lib/websocket-types'
 
@@ -137,12 +139,33 @@ export interface FireteamItem {
   wall_clock_seconds?: number
 }
 
+// ---------------------------------------------------------------------------
+// LATS (exploit-path tree search) UI state — one card that mutates in place as
+// the search runs (keyed by search_id), holding the latest full-tree snapshot
+// plus per-wave history for the replay scrubber.
+// ---------------------------------------------------------------------------
+
+export interface LatsSearchItem {
+  type: 'lats_search'
+  id: string              // equals search_id
+  search_id: string
+  timestamp: Date
+  objective: string
+  phase: string
+  shadow_mode: boolean
+  status: 'running' | 'complete'
+  outcome?: string
+  latest: LatsTreeSnapshot
+  history: LatsTreeSnapshot[]
+}
+
 export type TimelineItem =
   | ThinkingItem
   | ToolExecutionItem
   | PlanWaveItem
   | DeepThinkItem
   | FireteamItem
+  | LatsSearchItem
 
 export interface AgentTimelineProps {
   items: TimelineItem[]
@@ -222,6 +245,8 @@ export function AgentTimeline({ items, isStreaming, onItemExpand, missingApiKeys
                 onToolConfirmation={onToolConfirmation}
                 onToolStop={onToolStop}
               />
+            ) : item.type === 'lats_search' ? (
+              <LatsSearchCard item={item} />
             ) : (
               <ToolExecutionCard
                 item={item}

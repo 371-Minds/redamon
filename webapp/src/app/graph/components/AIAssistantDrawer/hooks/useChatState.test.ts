@@ -7,21 +7,24 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import type { ChatItem, Message, FileDownloadItem } from '../types'
+import type { ChatItem, Message, FileDownloadItem, LatsSearchItem } from '../types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem } from '../AgentTimeline'
+import type { LatsTreeSnapshot } from '@/lib/websocket-types'
 
 // ---------------------------------------------------------------------------
 // Pure extraction of groupedChatItems logic (mirrors useChatState.ts useMemo)
 // ---------------------------------------------------------------------------
 
+type TimelineGroupItem = ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem | LatsSearchItem
+
 type GroupedItem = {
   type: 'message' | 'timeline' | 'file_download'
-  content: Message | Array<ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem> | FileDownloadItem
+  content: Message | TimelineGroupItem[] | FileDownloadItem
 }
 
 function groupChatItems(chatItems: ChatItem[]): GroupedItem[] {
   const result: GroupedItem[] = []
-  let currentTimelineGroup: Array<ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem> = []
+  let currentTimelineGroup: TimelineGroupItem[] = []
 
   chatItems.forEach((item) => {
     if ('role' in item) {
@@ -36,8 +39,8 @@ function groupChatItems(chatItems: ChatItem[]): GroupedItem[] {
         currentTimelineGroup = []
       }
       result.push({ type: 'file_download', content: item as FileDownloadItem })
-    } else if ('type' in item && (item.type === 'thinking' || item.type === 'tool_execution' || item.type === 'plan_wave' || item.type === 'deep_think')) {
-      currentTimelineGroup.push(item as ThinkingItem | ToolExecutionItem | PlanWaveItem | DeepThinkItem)
+    } else if ('type' in item && (item.type === 'thinking' || item.type === 'tool_execution' || item.type === 'plan_wave' || item.type === 'deep_think' || item.type === 'lats_search')) {
+      currentTimelineGroup.push(item as TimelineGroupItem)
     }
   })
 
@@ -289,5 +292,24 @@ describe('groupChatItems – isolation (no shared references)', () => {
     expect(group1).not.toBe(group2)
     expect(group1[0]).toBe(t1)
     expect(group2[0]).toBe(t2)
+  })
+})
+
+describe('groupChatItems – lats_search grouping', () => {
+  test('a lats_search item is grouped into the timeline', () => {
+    const snapshot: LatsTreeSnapshot = {
+      search_id: 's1:root', objective: 'o', phase: 'exploitation', shadow_mode: true,
+      rollouts: 1, budget: { max_rollouts: 24, max_depth: 6 },
+      active_id: null, best_trajectory: [], nodes: [],
+    }
+    const lats: LatsSearchItem = {
+      type: 'lats_search', id: 's1:root', search_id: 's1:root', timestamp: new Date(),
+      objective: 'o', phase: 'exploitation', shadow_mode: true,
+      status: 'running', latest: snapshot, history: [snapshot],
+    }
+    const result = groupChatItems([lats])
+    expect(result).toHaveLength(1)
+    expect(result[0].type).toBe('timeline')
+    expect(result[0].content).toEqual([lats])
   })
 })
