@@ -459,6 +459,24 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['FIRETEAM_ALLOWED_PHASES'] = list(project.get('fireteamAllowedPhases', DEFAULT_AGENT_SETTINGS['FIRETEAM_ALLOWED_PHASES']))
     settings['FIRETEAM_CONFIRMATION_TIMEOUT_SEC'] = int(project.get('fireteamConfirmationTimeoutSec', DEFAULT_AGENT_SETTINGS['FIRETEAM_CONFIRMATION_TIMEOUT_SEC']))
     settings['FIRETEAM_PROPENSITY'] = int(project.get('fireteamPropensity', DEFAULT_AGENT_SETTINGS['FIRETEAM_PROPENSITY']))
+    # LATS (exploit-path tree search). LATS_ALLOWED_PHASES is assembled from the
+    # two phase booleans; the rest map camelCase agentLats* -> LATS_* directly.
+    settings['LATS_ENABLED'] = bool(project.get('agentLatsEnabled', DEFAULT_AGENT_SETTINGS['LATS_ENABLED']))
+    settings['LATS_SHADOW_MODE'] = bool(project.get('agentLatsShadowMode', DEFAULT_AGENT_SETTINGS['LATS_SHADOW_MODE']))
+    _lats_phase_defaults = {'exploitation': True, 'post_exploitation': False}
+    _lats_phases = [
+        p for p, key in (('exploitation', 'agentLatsPhaseExploitation'),
+                         ('post_exploitation', 'agentLatsPhasePostExpl'))
+        if bool(project.get(key, _lats_phase_defaults[p]))
+    ]
+    settings['LATS_ALLOWED_PHASES'] = _lats_phases or list(DEFAULT_AGENT_SETTINGS['LATS_ALLOWED_PHASES'])
+    settings['LATS_MIN_HYPOTHESES'] = int(project.get('agentLatsMinHypotheses', DEFAULT_AGENT_SETTINGS['LATS_MIN_HYPOTHESES']))
+    settings['LATS_BRANCHING'] = int(project.get('agentLatsBranching', DEFAULT_AGENT_SETTINGS['LATS_BRANCHING']))
+    settings['LATS_MAX_DEPTH'] = int(project.get('agentLatsMaxDepth', DEFAULT_AGENT_SETTINGS['LATS_MAX_DEPTH']))
+    settings['LATS_MAX_ROLLOUTS'] = int(project.get('agentLatsMaxRollouts', DEFAULT_AGENT_SETTINGS['LATS_MAX_ROLLOUTS']))
+    settings['LATS_MAX_TREE_NODES'] = int(project.get('agentLatsMaxTreeNodes', DEFAULT_AGENT_SETTINGS['LATS_MAX_TREE_NODES']))
+    settings['LATS_UCT_C'] = float(project.get('agentLatsUctC', DEFAULT_AGENT_SETTINGS['LATS_UCT_C']))
+    settings['LATS_PRUNE_FLOOR'] = float(project.get('agentLatsPruneFloor', DEFAULT_AGENT_SETTINGS['LATS_PRUNE_FLOOR']))
     settings['PHISHING_SMTP_CONFIG'] = project.get('phishingSmtpConfig', DEFAULT_AGENT_SETTINGS['PHISHING_SMTP_CONFIG'])
     settings['DOS_MAX_DURATION'] = project.get('dosMaxDuration', DEFAULT_AGENT_SETTINGS['DOS_MAX_DURATION'])
     settings['DOS_MAX_ATTEMPTS'] = project.get('dosMaxAttempts', DEFAULT_AGENT_SETTINGS['DOS_MAX_ATTEMPTS'])

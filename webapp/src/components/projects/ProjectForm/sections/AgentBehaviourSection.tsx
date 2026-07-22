@@ -382,6 +382,223 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             )
           })()}
 
+          {/* Exploit-Path Search (LATS) */}
+          {(() => {
+            const latsEnabled = (data as any).agentLatsEnabled ?? false
+            const shadowMode = (data as any).agentLatsShadowMode ?? true
+            const phaseExpl = (data as any).agentLatsPhaseExploitation ?? true
+            const phasePostExpl = (data as any).agentLatsPhasePostExpl ?? false
+            const maxRollouts = (data as any).agentLatsMaxRollouts ?? 24
+            const maxDepth = (data as any).agentLatsMaxDepth ?? 6
+            const branching = (data as any).agentLatsBranching ?? 3
+            const minHypotheses = (data as any).agentLatsMinHypotheses ?? 2
+            const maxTreeNodes = (data as any).agentLatsMaxTreeNodes ?? 60
+            const uctC = (data as any).agentLatsUctC ?? 1.4
+            const pruneFloor = (data as any).agentLatsPruneFloor ?? 0.15
+            const noPhase = latsEnabled && !phaseExpl && !phasePostExpl
+            return (
+              <div className={styles.subSection}>
+                <h3 className={styles.subSectionTitle}>
+                  Exploit-Path Search (LATS)
+                  <WikiInfoButton target="Lats" />
+                </h3>
+                <div className={styles.fieldHint} style={{ marginBottom: 8 }}>
+                  Systematic tree search over exploit probes. Turns on only when the agent finds &gt;= 2 credible
+                  attack paths on a discovered surface, then concentrates the budget on the highest-value line and
+                  backs out of WAF/403 dead ends.
+                </div>
+                <div className={styles.toggleRow}>
+                  <Toggle
+                    checked={latsEnabled}
+                    onChange={(v) => updateField('agentLatsEnabled' as any, v as any)}
+                    labelOn="Exploit-Path Search enabled"
+                    labelOff="Exploit-Path Search disabled"
+                  />
+                </div>
+                {latsEnabled && (
+                  <>
+                    {shadowMode && (
+                      <div className={styles.shodanWarning} style={{ borderColor: 'rgba(59, 130, 246, 0.4)', background: 'rgba(59, 130, 246, 0.08)' }}>
+                        <span>Observe-only mode: the search tree is built and visualized but the normal agent drives the actual probes.</span>
+                      </div>
+                    )}
+                    <div className={styles.toggleRow}>
+                      <Toggle
+                        checked={shadowMode}
+                        onChange={(v) => updateField('agentLatsShadowMode' as any, v as any)}
+                        labelOn="Shadow mode (observe only)"
+                        labelOff="Shadow mode off (search drives)"
+                      />
+                    </div>
+                    <div className={styles.fieldGroup}>
+                      <label className={styles.fieldLabel}>Search in phases</label>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={phaseExpl}
+                            onChange={(e) => updateField('agentLatsPhaseExploitation' as any, e.target.checked as any)}
+                          />
+                          <span style={{ fontSize: '0.85rem' }}>exploitation</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={phasePostExpl}
+                            onChange={(e) => updateField('agentLatsPhasePostExpl' as any, e.target.checked as any)}
+                          />
+                          <span style={{ fontSize: '0.85rem' }}>post-exploitation <em>(experimental)</em></span>
+                        </label>
+                      </div>
+                      <span className={styles.fieldHint}>At least one phase required. Post-exploitation scoring is experimental (§6.1).</span>
+                    </div>
+                    <div className={styles.fieldRow}>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Search budget (max live probes)</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={maxRollouts}
+                          min={4}
+                          max={100}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            updateField('agentLatsMaxRollouts' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(4, Math.min(100, n)) : 24
+                            updateField('agentLatsMaxRollouts' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>
+                          4-100. Hard cap on real requests one search fires. Worst case: up to {maxRollouts} live probes, chains up to {maxDepth} deep.
+                        </span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Max chain depth</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={maxDepth}
+                          min={2}
+                          max={10}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            updateField('agentLatsMaxDepth' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(2, Math.min(10, n)) : 6
+                            updateField('agentLatsMaxDepth' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>2-10. Longest attack chain from the entry point (a ceiling, not the typical depth).</span>
+                      </div>
+                    </div>
+                    <div className={styles.fieldRow}>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Branch width (probes per step)</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={branching}
+                          min={2}
+                          max={4}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            updateField('agentLatsBranching' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(2, Math.min(4, n)) : 3
+                            updateField('agentLatsBranching' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>2-4. Candidate probes weighed at each node.</span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Activation sensitivity</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={minHypotheses}
+                          min={2}
+                          max={4}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            updateField('agentLatsMinHypotheses' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(2, Math.min(4, n)) : 2
+                            updateField('agentLatsMinHypotheses' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>2-4. Competing hypotheses needed before the search turns on. Higher = more selective.</span>
+                      </div>
+                    </div>
+                    <details className={styles.fieldGroup}>
+                      <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Advanced</summary>
+                      <div className={styles.fieldGroup} style={{ marginTop: 8 }}>
+                        <label className={styles.fieldLabel}>Exploration vs focus: <strong>{Number(uctC).toFixed(1)}</strong></label>
+                        <input
+                          type="range"
+                          min={0.5}
+                          max={2.5}
+                          step={0.1}
+                          value={uctC}
+                          onChange={(e) => updateField('agentLatsUctC' as any, parseFloat(e.target.value) as any)}
+                          style={{ width: '100%' }}
+                        />
+                        <span className={styles.fieldHint}>Low = laser-focus the single best line. High = also develop secondary footholds.</span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Prune aggressiveness: <strong>{Number(pruneFloor).toFixed(2)}</strong></label>
+                        <input
+                          type="range"
+                          min={0.0}
+                          max={0.5}
+                          step={0.05}
+                          value={pruneFloor}
+                          onChange={(e) => updateField('agentLatsPruneFloor' as any, parseFloat(e.target.value) as any)}
+                          style={{ width: '100%' }}
+                        />
+                        <span className={styles.fieldHint}>Value below which a branch is abandoned. Higher = give up on weak branches sooner.</span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Hard node cap</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={maxTreeNodes}
+                          min={10}
+                          max={200}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            updateField('agentLatsMaxTreeNodes' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(10, Math.min(200, n)) : 60
+                            updateField('agentLatsMaxTreeNodes' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>10-200. Hard tree-size cap.</span>
+                      </div>
+                    </details>
+                    {noPhase && (
+                      <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
+                        <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+                        <span>Select at least one phase for the search to run.</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Agent Limits */}
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Agent Limits</h3>
