@@ -123,6 +123,46 @@ export function buildLatsCardFromEvents(events: LatsRestoreEvent[]): LatsSearchI
   return (items.find(i => i.type === 'lats_search') as LatsSearchItem | undefined) ?? null
 }
 
+/**
+ * Restore post-pass (§18.2): fold inline LATS event markers into one card per
+ * search_id, placed at the position of that search's FIRST event and stamped
+ * with that event's persisted timestamp (so the timeline's sort-by-time keeps
+ * it where it happened). Non-LATS items pass through untouched.
+ *
+ * A "marker" is `{ _latsEvent, payload, timestamp? }` produced by
+ * useConversationRestoration from a persisted lats_* ChatMessage.
+ */
+export function foldLatsRestoreMarkers(items: ChatItem[]): ChatItem[] {
+  const groups = new Map<string, { firstIndex: number; events: LatsRestoreEvent[] }>()
+  const foldedIndices = new Set<number>()
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] as unknown as { _latsEvent?: LatsRestoreEvent['_latsEvent']; payload?: { search_id?: string } }
+    if (!it._latsEvent) continue
+    foldedIndices.add(i)
+    const sid = it.payload?.search_id
+    if (!sid) continue
+    if (!groups.has(sid)) groups.set(sid, { firstIndex: i, events: [] })
+    groups.get(sid)!.events.push({ _latsEvent: it._latsEvent, payload: it.payload as LatsRestoreEvent['payload'] })
+  }
+  if (foldedIndices.size === 0) return items
+
+  const cardAt = new Map<number, ChatItem>()
+  for (const { firstIndex, events } of groups.values()) {
+    const card = buildLatsCardFromEvents(events)
+    if (card) {
+      const ts = (items[firstIndex] as unknown as { timestamp?: Date }).timestamp
+      cardAt.set(firstIndex, ts ? { ...card, timestamp: ts } : card)
+    }
+  }
+  const out: ChatItem[] = []
+  for (let i = 0; i < items.length; i++) {
+    if (cardAt.has(i)) out.push(cardAt.get(i)!)
+    else if (foldedIndices.has(i)) continue   // folded (non-first) lats event
+    else out.push(items[i])
+  }
+  return out
+}
+
 export function handleLatsComplete(items: ChatItem[], p: LatsCompletePayload): ChatItem[] {
   const idx = findLatsIndex(items, p.search_id)
   if (idx < 0) {
@@ -130,8 +170,14 @@ export function handleLatsComplete(items: ChatItem[], p: LatsCompletePayload): C
     return items
   }
   return withLats(items, idx, it => {
-    // Pin the final best line onto the latest snapshot so the card shows it.
+    // Pin the final best line onto the latest snapshot so the card shows it,
+    // and onto the last replay frame so the expanded panel's latest frame draws
+    // the same golden thread as the card (S3).
     const latest = { ...it.latest, best_trajectory: p.best_trajectory }
-    return { ...it, status: 'complete', outcome: p.outcome, latest }
+    const history = it.history.length > 0
+      ? [...it.history.slice(0, -1),
+         { ...it.history[it.history.length - 1], best_trajectory: p.best_trajectory }]
+      : it.history
+    return { ...it, status: 'complete', outcome: p.outcome, latest, history }
   })
 }

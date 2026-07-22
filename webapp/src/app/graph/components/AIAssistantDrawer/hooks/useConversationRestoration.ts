@@ -4,7 +4,7 @@ import type { TodoItem } from '@/lib/websocket-types'
 import type { ChatItem, Message, FileDownloadItem, Phase } from '../types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem, FireteamItem } from '../AgentTimeline'
 import type { ActiveSkill } from './useSendHandlers'
-import { buildLatsCardFromEvents, type LatsRestoreEvent } from './latsChatState'
+import { foldLatsRestoreMarkers } from './latsChatState'
 
 interface ConversationRestorationDeps {
   // From useConversations
@@ -479,35 +479,12 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
       }
     }
 
-    // Post-pass: fold LATS events into one card per search_id (with history[]),
-    // placing each card at the position of its first event (§18.2).
+    // Post-pass: fold LATS event markers into one card per search_id (with
+    // history[]), placed at the first event's position + timestamp (§18.2, C1).
     {
-      const groups = new Map<string, { firstIndex: number; events: LatsRestoreEvent[] }>()
-      const foldedIndices = new Set<number>()
-      for (let i = 0; i < restored.length; i++) {
-        const item = restored[i] as any
-        if (!item._latsEvent) continue
-        foldedIndices.add(i)
-        const sid = item.payload?.search_id
-        if (!sid) continue
-        if (!groups.has(sid)) groups.set(sid, { firstIndex: i, events: [] })
-        groups.get(sid)!.events.push({ _latsEvent: item._latsEvent, payload: item.payload })
-      }
-      if (foldedIndices.size > 0) {
-        const cardAt = new Map<number, ChatItem>()
-        for (const { firstIndex, events } of groups.values()) {
-          const card = buildLatsCardFromEvents(events)
-          if (card) cardAt.set(firstIndex, card)
-        }
-        const rebuilt: ChatItem[] = []
-        for (let i = 0; i < restored.length; i++) {
-          if (cardAt.has(i)) rebuilt.push(cardAt.get(i)!)
-          else if (foldedIndices.has(i)) continue   // folded (non-first) lats event
-          else rebuilt.push(restored[i])
-        }
-        restored.length = 0
-        restored.push(...rebuilt)
-      }
+      const folded = foldLatsRestoreMarkers(restored)
+      restored.length = 0
+      restored.push(...folded)
     }
 
     // Post-pass: nest wave tool_complete items

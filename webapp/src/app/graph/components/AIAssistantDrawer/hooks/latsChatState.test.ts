@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { handleLatsStart, handleLatsUpdate, handleLatsComplete, findLatsIndex, buildLatsCardFromEvents } from './latsChatState'
+import { handleLatsStart, handleLatsUpdate, handleLatsComplete, findLatsIndex, buildLatsCardFromEvents, foldLatsRestoreMarkers } from './latsChatState'
 import type { ChatItem, LatsSearchItem } from '../types'
 import type {
   LatsStartPayload,
@@ -110,9 +110,10 @@ describe('handleLatsUpdate', () => {
 })
 
 describe('handleLatsComplete', () => {
-  test('marks complete and pins the best line', () => {
+  test('marks complete and pins the final best line on latest AND last frame (S3)', () => {
     const started = handleLatsStart([], START)
-    const updated = handleLatsUpdate(started, { search_id: 's1:root', snapshot: snapshot() })
+    // last replay frame has a STALE best line...
+    const updated = handleLatsUpdate(started, { search_id: 's1:root', snapshot: snapshot({ best_trajectory: ['root'] }) })
     const p: LatsCompletePayload = {
       search_id: 's1:root', best_trajectory: ['root', 'c3'],
       outcome: 'terminal_success', metrics: { rollouts: 3 },
@@ -122,6 +123,8 @@ describe('handleLatsComplete', () => {
     expect(card.status).toBe('complete')
     expect(card.outcome).toBe('terminal_success')
     expect(card.latest.best_trajectory).toEqual(['root', 'c3'])
+    // ...and the last history frame is updated so the panel's latest frame matches
+    expect(card.history[card.history.length - 1].best_trajectory).toEqual(['root', 'c3'])
   })
 
   test('orphan complete is a no-op', () => {
@@ -151,5 +154,49 @@ describe('buildLatsCardFromEvents (restore)', () => {
 
   test('an empty sequence yields null', () => {
     expect(buildLatsCardFromEvents([])).toBeNull()
+  })
+})
+
+describe('foldLatsRestoreMarkers (restore post-pass)', () => {
+  const marker = (kind: 'lats_start' | 'lats_tree_update' | 'lats_complete', payload: any, ts: Date) =>
+    ({ _latsEvent: kind, payload, timestamp: ts } as any)
+
+  test('folds one card per search_id at the first-event position + timestamp (C1)', () => {
+    const t0 = new Date('2020-01-01T00:00:00Z')
+    const t1 = new Date('2020-01-01T00:00:05Z')
+    const older = { type: 'message', id: 'm0', role: 'assistant', content: 'before', timestamp: new Date('2019-01-01') } as any
+    const newer = { type: 'message', id: 'm1', role: 'assistant', content: 'after', timestamp: new Date('2021-01-01') } as any
+    const items = [
+      older,
+      marker('lats_start', START, t0),
+      marker('lats_tree_update', { search_id: 's1:root', snapshot: snapshot() }, t1),
+      newer,
+    ]
+    const out = foldLatsRestoreMarkers(items)
+    // one card replaces the two markers; messages preserved around it
+    expect(out).toHaveLength(3)
+    const card = out.find(i => i.type === 'lats_search') as LatsSearchItem
+    expect(card).toBeTruthy()
+    // C1: stamped with the first event's persisted time, NOT now
+    expect(card.timestamp).toEqual(t0)
+    // placed between the two messages (index 1)
+    expect(out[0]).toBe(older)
+    expect(out[1]).toBe(card)
+    expect(out[2]).toBe(newer)
+  })
+
+  test('handles two distinct searches as two cards', () => {
+    const items = [
+      marker('lats_start', START, new Date('2020-01-01')),
+      marker('lats_start', { ...START, search_id: 's2:root' }, new Date('2020-01-02')),
+      marker('lats_tree_update', { search_id: 's2:root', snapshot: { ...snapshot(), search_id: 's2:root' } }, new Date('2020-01-02')),
+    ]
+    const cards = foldLatsRestoreMarkers(items).filter(i => i.type === 'lats_search') as LatsSearchItem[]
+    expect(cards.map(c => c.search_id).sort()).toEqual(['s1:root', 's2:root'])
+  })
+
+  test('passes through when there are no LATS markers', () => {
+    const items = [{ type: 'message', id: 'm', role: 'user', content: 'hi', timestamp: new Date() } as any]
+    expect(foldLatsRestoreMarkers(items)).toBe(items)
   })
 })
