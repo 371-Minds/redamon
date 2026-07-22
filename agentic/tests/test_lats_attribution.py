@@ -103,6 +103,17 @@ class TestNeverRanChildrenReset(unittest.TestCase):
         self.assertEqual(tree.nodes["c1"].status, "evaluated")
         self.assertEqual(tree.nodes["c2"].status, "proposed")
 
+    def test_operator_reject_prunes_executing_no_rollout(self):
+        # _reject_tool True -> the pending wave is pruned with a reflection and
+        # no rollout is counted (a rejection is not a probe result).
+        tree = _tree([("c1", "execute_curl"), ("c2", "kali_shell")])
+        state = {"current_phase": "exploitation", "_reject_tool": True, "_current_plan": None}
+        counted = lats._evaluate_wave(tree, state, {"per_step": []})
+        self.assertFalse(counted)
+        self.assertEqual(tree.nodes["c1"].status, "pruned")
+        self.assertEqual(tree.nodes["c2"].status, "pruned")
+        self.assertTrue(all(tree.nodes[c].reflection for c in ("c1", "c2")))
+
     def test_stranded_child_does_not_steal_another_waves_step(self):
         # A leftover executing child from a prior wave (metasploit) plus the new
         # wave [curl, httpx]. tool_name matching must pair curl<->curl and
