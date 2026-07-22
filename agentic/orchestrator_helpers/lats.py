@@ -980,6 +980,8 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
     else:
         tree = ExploitTree(**tree_dict)
         if _lats_should_reset(state, tree):
+            await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
+                        _search_id(session_id, tree), _tree_view(state, tree, shadow))
             await _emit(streaming_callbacks, session_id, "on_lats_complete",
                         _search_id(session_id, tree), best_trajectory(tree),
                         "reset", _complete_metrics(tree))
@@ -1007,6 +1009,11 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
         tree.best_terminal_id = _best_terminal(tree)
         override, outcome = "lats_terminal_success", "terminal_success"
     elif _single_open_line(tree):
+        # Stream the FINAL scored/pruned tree before completing, so the card
+        # shows the evaluated result (values, pruned nodes) instead of freezing
+        # at the rollout-0 "all executing / 0.00" snapshot.
+        await _emit(streaming_callbacks, session_id, "on_lats_tree_update",
+                    _search_id(session_id, tree), _tree_view(state, tree, shadow))
         await _emit(streaming_callbacks, session_id, "on_lats_complete",
                     _search_id(session_id, tree), best_trajectory(tree),
                     "branch_collapsed", _complete_metrics(tree))

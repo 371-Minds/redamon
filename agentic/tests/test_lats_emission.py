@@ -117,6 +117,70 @@ class TestEmission(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["action"], "use_tool")
 
 
+class _OrderedCallback:
+    """Records the order of on_lats_* calls with their payloads."""
+    def __init__(self):
+        self.calls = []
+
+    async def on_lats_start(self, *a):
+        self.calls.append(("start", a))
+
+    async def on_lats_tree_update(self, search_id, snapshot):
+        self.calls.append(("tree_update", snapshot))
+
+    async def on_lats_complete(self, search_id, traj, outcome, metrics=None):
+        self.calls.append(("complete", outcome))
+
+
+class TestCollapseStreamsFinalSnapshot(unittest.IsolatedAsyncioTestCase):
+    """Regression (found live): the branch_collapsed exit must stream the FINAL
+    evaluated/pruned tree before on_lats_complete, so the card shows the scored
+    result instead of freezing at the rollout-0 'all executing / 0.00' snapshot.
+    """
+
+    def setUp(self):
+        project_settings._settings = _settings(LATS_SHADOW_MODE=False)
+
+    def tearDown(self):
+        project_settings._settings = None
+
+    async def test_tree_update_precedes_complete_and_shows_evaluation(self):
+        from state import ExploitTree, ExploitTreeNode
+        # A live tree whose single executing child is at max depth: after it
+        # evaluates it becomes the lone leaf that cannot expand -> collapse.
+        root = ExploitTreeNode(id="root", status="evaluated", depth=0)
+        c1 = ExploitTreeNode(id="c1", parent_id="root", depth=6, status="executing",
+                             tool_name="execute_curl")
+        root.children = ["c1"]
+        tree = ExploitTree(root_id="root", nodes={"root": root, "c1": c1},
+                           active_node_id="root", objective="admin takeover")
+        state = _state()
+        state["_exploit_tree"] = tree.model_dump()
+        state["_current_plan"] = {"steps": [
+            {"tool_name": "execute_curl", "tool_output": "200 reflected error",
+             "error_class": "success", "duration_ms": 50, "step_id": "s1"},
+        ]}
+        decision = _decision()
+        decision["output_analysis"] = {"per_step": [], "productivity": {"verdict": "new_info"}}
+
+        cb = _OrderedCallback()
+        with patch("orchestrator_helpers.lats.lats_expand", AsyncMock(return_value=[])):
+            await lats.lats_hook(state, decision, llm=object(),
+                                 streaming_callbacks={"s1": cb}, session_id="s1")
+
+        kinds = [c[0] for c in cb.calls]
+        # a tree_update is streamed immediately before the complete
+        self.assertIn("tree_update", kinds)
+        self.assertIn("complete", kinds)
+        self.assertLess(kinds.index("tree_update"), kinds.index("complete"))
+        # and that final snapshot reflects the evaluation (no node left 'executing')
+        final_snap = [c[1] for c in cb.calls if c[0] == "tree_update"][-1]
+        statuses = {n["status"] for n in final_snap["nodes"]}
+        self.assertNotIn("executing", statuses)
+        # complete carried the collapse outcome
+        self.assertEqual([c[1] for c in cb.calls if c[0] == "complete"][-1], "branch_collapsed")
+
+
 class TestMsgTypeContract(unittest.TestCase):
     def test_lats_string_literals(self):
         from websocket_api import MessageType
