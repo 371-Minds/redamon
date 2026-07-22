@@ -189,5 +189,33 @@ class TestResetTriggers(unittest.TestCase):
         self.assertTrue(lats._lats_should_reset(s, self._tree()))
 
 
+class TestObjectiveOf(unittest.TestCase):
+    """Regression for the live-run bug: ConversationObjective stores the request
+    in `content`, so _objective_of must read that (an empty objective silently
+    broke the card label AND the objective-change reset trigger)."""
+
+    def test_reads_content_field(self):
+        state = {"conversation_objectives": [{"content": "recover the flag"}],
+                 "current_objective_index": 0}
+        self.assertEqual(lats._objective_of(state), "recover the flag")
+
+    def test_objective_change_reset_now_fires(self):
+        project_settings._settings = None
+        try:
+            tree = ExploitTree(root_id="root", nodes={"root": ExploitTreeNode(id="root")},
+                               objective="recover the flag", attack_path_type="sql_injection",
+                               primary_target="http://t")
+            # objective advanced to a different content -> reset must fire
+            state = {
+                "task_complete": False, "current_phase": "exploitation",
+                "conversation_objectives": [{"content": "different goal"}],
+                "current_objective_index": 0, "attack_path_type": "sql_injection",
+                "target_info": {"primary_target": "http://t"}, "chain_findings_memory": [],
+            }
+            self.assertTrue(lats._lats_should_reset(state, tree))
+        finally:
+            project_settings._settings = None
+
+
 if __name__ == "__main__":
     unittest.main()

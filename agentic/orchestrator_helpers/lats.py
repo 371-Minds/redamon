@@ -357,7 +357,9 @@ def _objective_of(state: dict) -> str:
     idx = state.get("current_objective_index", 0)
     if 0 <= idx < len(objs):
         o = objs[idx]
-        return (o.get("objective") or o.get("description") or "") if isinstance(o, dict) else str(o)
+        # ConversationObjective stores the request in `content` (state.py); keep
+        # objective/description as fallbacks for other shapes.
+        return (o.get("content") or o.get("objective") or o.get("description") or "") if isinstance(o, dict) else str(o)
     return state.get("original_objective", "") or ""
 
 
