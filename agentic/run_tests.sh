@@ -18,6 +18,9 @@ MODE="${1:-focused}"
 shift || true
 
 FOCUSED_TESTS=(
+    # Collected first so it imports the REAL langgraph before test_tool_confirmation
+    # stubs langgraph into sys.modules (its stubbing is conditional on absence).
+    tests.test_lats_checkpoint
     tests.test_prompt_caching
     tests.test_fireteam_regressions
     tests.test_fireteam_core
@@ -47,6 +50,7 @@ FOCUSED_TESTS=(
     tests.test_lats_integration
     tests.test_lats_attribution
     tests.test_lats_smoke
+    tests.test_lats_view_contract
 )
 
 case "$MODE" in

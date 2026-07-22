@@ -145,10 +145,6 @@ def _lats_value_web(step: dict, analysis: Any, credited: bool = True) -> float:
     return max(0.0, v)
 
 
-def _new_finding(step: dict, analysis: Any) -> bool:
-    return _new_finding_confidence(step, analysis) > 0
-
-
 def _privilege_increased(before: dict, after: dict) -> bool:
     return _delta_count(before, after, "privilege_escalation") > 0
 
@@ -859,7 +855,7 @@ def _post_expl_snapshots(state: dict):
         "hosts": ti.get("hosts", []) or ti.get("services", []),
     }
     # For v1 we do not diff across the fold; both snapshots equal, so the delta
-    # helpers return 0 and post-expl value leans on _new_finding. Refined later.
+    # helpers return 0 and post-expl value leans on the finding signal. Refined later.
     return snap, snap
 
 
