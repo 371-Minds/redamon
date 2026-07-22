@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { handleLatsStart, handleLatsUpdate, handleLatsComplete, findLatsIndex } from './latsChatState'
+import { handleLatsStart, handleLatsUpdate, handleLatsComplete, findLatsIndex, buildLatsCardFromEvents } from './latsChatState'
 import type { ChatItem, LatsSearchItem } from '../types'
 import type {
   LatsStartPayload,
@@ -129,5 +129,27 @@ describe('handleLatsComplete', () => {
     expect(handleLatsComplete(items, {
       search_id: 'nope', best_trajectory: [], outcome: 'x',
     })).toBe(items)
+  })
+})
+
+describe('buildLatsCardFromEvents (restore)', () => {
+  test('replays a persisted event sequence into one card with rebuilt history', () => {
+    const events = [
+      { _latsEvent: 'lats_start' as const, payload: START },
+      { _latsEvent: 'lats_tree_update' as const, payload: { search_id: 's1:root', snapshot: snapshot({ rollouts: 1 }) } },
+      { _latsEvent: 'lats_tree_update' as const, payload: { search_id: 's1:root', snapshot: snapshot({ rollouts: 2 }) } },
+      { _latsEvent: 'lats_complete' as const, payload: { search_id: 's1:root', best_trajectory: ['root', 'c3'], outcome: 'terminal_success' } },
+    ]
+    const card = buildLatsCardFromEvents(events)
+    expect(card).not.toBeNull()
+    expect(card!.search_id).toBe('s1:root')
+    expect(card!.status).toBe('complete')
+    expect(card!.outcome).toBe('terminal_success')
+    expect(card!.history).toHaveLength(2)              // one per tree_update
+    expect(card!.latest.best_trajectory).toEqual(['root', 'c3'])
+  })
+
+  test('an empty sequence yields null', () => {
+    expect(buildLatsCardFromEvents([])).toBeNull()
   })
 })

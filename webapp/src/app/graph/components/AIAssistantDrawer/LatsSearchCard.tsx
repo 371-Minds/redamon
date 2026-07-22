@@ -13,11 +13,13 @@
 import { useState } from 'react'
 import { GitBranch, Maximize2 } from 'lucide-react'
 import styles from './LatsSearchCard.module.css'
+import { LatsTreePanel } from './LatsTreePanel'
 import type { LatsSearchItem } from './AgentTimeline'
 import type { LatsNodeView, LatsNodeStatus } from '@/lib/websocket-types'
 
 interface LatsSearchCardProps {
   item: LatsSearchItem
+  /** Test seam / override; when omitted the card opens the built-in tree panel. */
   onExpand?: () => void
 }
 
@@ -80,6 +82,7 @@ function OutlineNode({
 
 export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
   const snap = item.latest
   const byParent = buildChildrenMap(snap.nodes)
   const roots = byParent.get(null) ?? []
@@ -126,10 +129,18 @@ export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
       )}
 
       <div className={styles.footer}>
-        <button className={styles.expandBtn} onClick={onExpand} data-testid="lats-expand-btn">
+        <button
+          className={styles.expandBtn}
+          onClick={() => (onExpand ? onExpand() : setPanelOpen(true))}
+          data-testid="lats-expand-btn"
+        >
           <Maximize2 size={12} /> Expand tree
         </button>
       </div>
+
+      {panelOpen && (
+        <LatsTreePanel item={item} isOpen={panelOpen} onClose={() => setPanelOpen(false)} />
+      )}
     </div>
   )
 }

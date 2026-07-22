@@ -99,6 +99,30 @@ export function handleLatsUpdate(items: ChatItem[], p: LatsTreeUpdatePayload): C
   }))
 }
 
+/**
+ * Rebuild a single LatsSearchItem (including its per-wave history[]) by replaying
+ * a persisted event sequence, for conversation restore (§18.2). Reuses the live
+ * handlers so restore and live paths stay identical.
+ */
+export interface LatsRestoreEvent {
+  _latsEvent: 'lats_start' | 'lats_tree_update' | 'lats_complete'
+  payload: LatsStartPayload | LatsTreeUpdatePayload | LatsCompletePayload
+}
+
+export function buildLatsCardFromEvents(events: LatsRestoreEvent[]): LatsSearchItem | null {
+  let items: ChatItem[] = []
+  for (const e of events) {
+    if (e._latsEvent === 'lats_start') {
+      items = handleLatsStart(items, e.payload as LatsStartPayload)
+    } else if (e._latsEvent === 'lats_tree_update') {
+      items = handleLatsUpdate(items, e.payload as LatsTreeUpdatePayload)
+    } else if (e._latsEvent === 'lats_complete') {
+      items = handleLatsComplete(items, e.payload as LatsCompletePayload)
+    }
+  }
+  return (items.find(i => i.type === 'lats_search') as LatsSearchItem | undefined) ?? null
+}
+
 export function handleLatsComplete(items: ChatItem[], p: LatsCompletePayload): ChatItem[] {
   const idx = findLatsIndex(items, p.search_id)
   if (idx < 0) {
