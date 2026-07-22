@@ -297,6 +297,22 @@ export const EXPLOITATION_GROUPS: SESubGroup[] = [
     ],
   },
   {
+    id: 'access_control',
+    title: 'Broken Access Control',
+    items: [
+      {
+        suggestions: [
+          { label: 'Bypass a 401/403 on a restricted path', prompt: 'For the endpoint returning 401/403, capture a baseline (status, length, body hash) with execute_curl, then sweep the bypass matrix against BOTH the directory and the concrete resource behind it: full HTTP method/verb space (standard + WebDAV + randomized-case + a non-standard token), method-override headers (X-HTTP-Method-Override), and path normalization (trailing slash, trailing dot, //, /./, /..;/, %2e, %2f, double-encoding). Report any mutation that returns the protected content.' },
+          { label: 'Trust-header bypass (X-Original-URL etc.)', prompt: 'Test reverse-proxy trust-header bypass on the blocked path. First send X-Original-URL / X-Rewrite-URL pointing at a definitely-invalid path and confirm the back-end returns its OWN 404 (proving it honors the header); then swap to the restricted path. Also sweep X-Forwarded-For, X-Real-IP, X-Custom-IP-Authorization, X-Forwarded-Host, and Referer, diffing each against the baseline.' },
+          { label: 'Hunt IDOR / BOLA with a two-account differential', prompt: 'Map every user-controllable object reference (numeric id, UUID, filename, token) in URLs, params, and JSON bodies. Using two accounts if available, request objects owned by User B while authenticated as User A across read/create/update/delete/export routes and diff responses; a 200 returning data owned by another principal confirms IDOR. Enumerate predictable ids with execute_ffuf (decimal/hex/timestamp) and script the two-session diff with execute_code.' },
+          { label: 'Forced browsing to hidden admin functions', prompt: 'Enumerate privileged/admin endpoints with execute_ffuf against SecLists Discovery/Web-Content wordlists, diffing status/length against a known-denied baseline; mine client JS with execute_jsluice and render with execute_playwright to surface endpoints the UI hides. Then call each privileged function as a low/no-privilege principal and diff to confirm missing function-level authorization.' },
+          { label: 'Tamper client-side role / hidden fields', prompt: 'Run execute_arjun to discover hidden parameters (role, isAdmin, uid, debug), then use execute_curl to flip role/flag/level values in query strings, cookies, hidden form fields, and JSON bodies and diff the response toward privileged access. Test mass assignment by adding fields the API did not send you (role, owner, isVerified) to update/create bodies.' },
+          { label: 'Attack a JWT / session token', prompt: 'Decode the session/JWT with execute_code and inspect role/identity claims. Test alg:none (unsigned, signature stripped, plus mixed-case obfuscation), attempt an offline weak-secret crack with jwt_tool or hashcat mode 16500 via kali_shell, test RS->HS key confusion and kid handling, then forge a privileged claim and diff the authorized response. For plain role cookies, tamper the value directly.' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'manual_exploit',
     title: 'Manual Exploitation',
     items: [

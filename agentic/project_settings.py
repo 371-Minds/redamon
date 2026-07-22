@@ -312,6 +312,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
             'ssrf': True,
             'rce': True,
             'path_traversal': True,
+            'access_control': True,
         },
         'user': {},
     },

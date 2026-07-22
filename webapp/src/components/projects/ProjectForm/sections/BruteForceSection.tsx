@@ -33,7 +33,7 @@ export function HydraSection({ data, updateField }: HydraSectionProps) {
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Project-Settings-Reference#hydra-credential-testing" title="Open Hydra wiki section" />
       </div>
-      <p className={styles.sectionDescription}>
+      <p className={styles.sectionDescription} style={{ paddingRight: '2.5rem' }}>
         Configure THC Hydra credential testing settings. Hydra supports 50+ protocols
         including SSH, FTP, RDP, SMB, HTTP forms, databases, and more.
       </p>

@@ -18,7 +18,7 @@ export function DosSection({ data, updateField }: DosSectionProps) {
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Agent-Skills" title="Open Agent Skills wiki page" />
       </div>
-      <p className={styles.sectionDescription}>
+      <p className={styles.sectionDescription} style={{ paddingRight: '2.5rem' }}>
         Configure availability testing settings. These control test intensity,
         duration limits, and whether to perform assessment-only (non-destructive) checks.
       </p>

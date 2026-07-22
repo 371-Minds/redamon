@@ -17,7 +17,7 @@ export function PhishingSection({ data, updateField }: PhishingSectionProps) {
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Project-Settings-Reference#social-engineering-simulation" title="Open Social Engineering wiki section" />
       </div>
-      <p className={styles.sectionDescription}>
+      <p className={styles.sectionDescription} style={{ paddingRight: '2.5rem' }}>
         Configure SMTP settings for social engineering simulation email delivery. The agent uses these when sending
         payloads or documents via email. Leave empty to be asked at runtime.
       </p>

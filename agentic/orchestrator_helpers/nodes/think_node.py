@@ -63,6 +63,7 @@ from prompts import (
     build_tool_args_section,
 )
 from prompts.base import build_fireteam_prompt_fragments, CACHE_PREFIX_END_MARKER
+from prompts.classification import build_skill_menu
 from prompt_safety import wrap_untrusted
 from utils import get_session_config_prompt
 from tools import set_tenant_context, set_phase_context, set_graph_view_context
@@ -474,6 +475,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         informational_guidance=build_informational_guidance(phase),
         attack_path_type=attack_path_type,
         attack_path_behavior=build_attack_path_behavior(attack_path_type),
+        skill_selection_guide=build_skill_menu(get_enabled_builtin_skills(), get_enabled_user_skills()),
         available_tools=available_tools,
         tool_name_enum=build_tool_name_enum(allowed_tools),
         tool_args_section=build_tool_args_section(allowed_tools),
@@ -765,19 +767,30 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # noop guard in evaluate_skill_switch prevent turn-wasting re-affirmations,
     # and "no new contradicting evidence" discourages A<->B flip-flop.
     _skill_label = attack_path_type or "unclassified"
+    # The switchable classes MUST reflect the actually-enabled built-in skills so
+    # the agent can name any of them as a `to_skill` (a class the agent never sees
+    # listed here is one it cannot switch to). Built dynamically from the enabled
+    # set so new built-in skills become selectable without editing this string.
+    try:
+        _switchable = sorted(get_enabled_builtin_skills()) + [
+            f'user_skill:{s["id"]}' for s in get_enabled_user_skills()
+        ]
+    except Exception:
+        _switchable = []
+    _switchable_str = ", ".join(_switchable) if _switchable else "xss, sql_injection, ssrf, rce, path_traversal"
     system_prompt += (
         f"\n\n## SKILL FIT CHECK — re-evaluate EVERY turn\n"
         f"Active attack skill: `{_skill_label}`.\n"
-        f"Before choosing your action, judge whether this skill still matches the STRONGEST "
-        f"current evidence from the live target:\n"
-        f"- If the target now clearly points to a DIFFERENT vulnerability class than "
-        f"`{_skill_label}` (xss, sql_injection, ssrf, rce, path_traversal, ...) — or you are "
-        f"still on a generic `*-unclassified` skill and the class has become clear — your action "
-        f"THIS TURN MUST be `switch_skill` to the correct class, before any further probing or "
-        f"exploitation.\n"
-        f"- If the active skill still fits, or the class is not yet determined, continue — do NOT "
-        f"switch to the skill you already have (that wastes a turn), and do NOT switch without "
-        f"new, contradicting evidence.\n"
+        f"Before choosing your action, match the STRONGEST current evidence from the live target "
+        f"against the **ATTACK SKILL SELECTION** catalog above (each class lists its description + "
+        f"selection criteria — the same used to classify at session start):\n"
+        f"- If the evidence fits the criteria of a DIFFERENT enabled class better than "
+        f"`{_skill_label}` (switchable: {_switchable_str}) — or you are still on a generic "
+        f"`*-unclassified` skill and the class has become clear — your action THIS TURN MUST be "
+        f"`switch_skill` to that class, before any further probing or exploitation.\n"
+        f"- If the active skill still best fits the evidence, or the class is not yet determined, "
+        f"continue — do NOT switch to the skill you already have (that wastes a turn), and do NOT "
+        f"switch without new, contradicting evidence.\n"
         f"Naming the right class in your thought but not switching is the mistake to avoid. "
         f"Switching is a first-class action and needs no phase change."
     )

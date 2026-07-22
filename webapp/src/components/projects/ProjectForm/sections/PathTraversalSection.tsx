@@ -42,7 +42,7 @@ export function PathTraversalSection({ data, updateField }: PathTraversalSection
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Agent-Skills" title="Open Agent Skills wiki page" />
       </div>
-      <p className={styles.sectionDescription} style={{ marginBottom: 'var(--space-4)' }}>
+      <p className={styles.sectionDescription} style={{ marginBottom: 'var(--space-4)', paddingRight: '2.5rem' }}>
         Configure which Path Traversal / LFI / RFI sub-workflows to inject into the agent
         prompt and tune probe parameters. Disable sub-sections you don&apos;t want for this engagement.
       </p>

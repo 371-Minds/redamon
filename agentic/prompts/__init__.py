@@ -112,6 +112,9 @@ from .path_traversal_prompts import (
 # Re-export from unclassified attack path prompts
 from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
 
+# Re-export from Broken Access Control / Authorization Bypass prompts
+from .access_control_prompts import ACCESS_CONTROL_TOOLS
+
 # Re-export from post-exploitation prompts
 from .post_exploitation import (
     POST_EXPLOITATION_TOOLS_STATEFULL,
@@ -464,6 +467,11 @@ def get_phase_tools(
                 else:
                     parts.append(NO_MODULE_FALLBACK_STATELESS)
             return True
+        elif (attack_path_type == "access_control"
+                and "access_control" in enabled_builtins
+                and "execute_curl" in allowed_tools):
+            parts.append(ACCESS_CONTROL_TOOLS)
+            return True
         return False
 
     # Tool descriptions: render in EVERY phase for every allowed tool.
@@ -597,6 +605,7 @@ __all__ = [
     "PATH_TRAVERSAL_PAYLOAD_REFERENCE",
     # Unclassified attack path
     "UNCLASSIFIED_EXPLOIT_TOOLS",
+    "ACCESS_CONTROL_TOOLS",
     # Post-exploitation
     "POST_EXPLOITATION_TOOLS_STATEFULL",
     "POST_EXPLOITATION_TOOLS_STATELESS",

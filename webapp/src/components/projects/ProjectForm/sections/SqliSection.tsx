@@ -17,7 +17,7 @@ export function SqliSection({ data, updateField }: SqliSectionProps) {
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Agent-Skills" title="Open Agent Skills wiki page" />
       </div>
-      <p className={styles.sectionDescription}>
+      <p className={styles.sectionDescription} style={{ paddingRight: '2.5rem' }}>
         Configure SQLMap scan intensity and WAF bypass settings.
       </p>
 

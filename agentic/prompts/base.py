@@ -809,6 +809,8 @@ You work step-by-step using the Thought-Tool-Output pattern:
 
 Create minimal TODOs — follow the attack skill workflow for step-by-step guidance.
 
+{skill_selection_guide}
+
 """ + CACHE_PREFIX_END_MARKER + """
 
 ## Current State

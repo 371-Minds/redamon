@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database, Code2, Globe, Terminal, FolderTree, Download } from 'lucide-react'
+import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database, Code2, Globe, Terminal, FolderTree, Download, ShieldAlert } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import { Toggle } from '@/components/ui/Toggle/Toggle'
@@ -76,6 +76,12 @@ const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
     icon: <FolderTree size={16} />,
   },
   {
+    id: 'access_control',
+    name: 'Broken Access Control',
+    description: 'Authorization bypass: forced browsing, IDOR / BOLA, vertical/horizontal privilege escalation, HTTP verb tampering, 401/403 path-normalization and trust-header bypass, hidden-field / role tampering, JWT attacks, and CORS/GraphQL authz flaws',
+    icon: <ShieldAlert size={16} />,
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',
@@ -108,6 +114,7 @@ const DEFAULT_CONFIG: AttackSkillConfig = {
     ssrf: true,
     rce: true,
     path_traversal: true,
+    access_control: true,
     brute_force_credential_guess: false,
     phishing_social_engineering: false,
     denial_of_service: false,

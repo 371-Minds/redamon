@@ -42,7 +42,7 @@ export function RceSection({ data, updateField }: RceSectionProps) {
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Agent-Skills" title="Open Agent Skills wiki page" />
       </div>
-      <p className={styles.sectionDescription} style={{ marginBottom: 'var(--space-4)' }}>
+      <p className={styles.sectionDescription} style={{ marginBottom: 'var(--space-4)', paddingRight: '2.5rem' }}>
         Configure how the agent tests for RCE / command injection. Disable sub-workflows you don&apos;t want
         injected into the prompt and gate destructive payloads behind the explicit aggressive toggle.
       </p>

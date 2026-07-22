@@ -43,7 +43,7 @@ export function SsrfSection({ data, updateField }: SsrfSectionProps) {
       <div style={{ position: 'absolute', top: 8, right: 16 }}>
         <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Agent-Skills" title="Open Agent Skills wiki page" />
       </div>
-      <p className={styles.sectionDescription} style={{ marginBottom: 'var(--space-4)' }}>
+      <p className={styles.sectionDescription} style={{ marginBottom: 'var(--space-4)', paddingRight: '2.5rem' }}>
         Configure which SSRF sub-workflows to inject into the agent prompt and tune
         probe parameters. Disable sections you don&apos;t want the agent to use for this engagement.
       </p>

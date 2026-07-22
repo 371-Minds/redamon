@@ -215,7 +215,47 @@ universal SSTI oracle:
   is engine- and target-dependent -- sometimes code execution, sometimes only data
   already in scope. Both are valid outcomes; pursue whichever the engine and objective
   actually allow. Do not assume a readable secret is present, and do not assume RCE is
-  reachable. See "Logic-less / sandboxed engines" in `RCE Payload Reference`.
+  reachable.
+  **MANDATORY positive canary before you ever write off a sandboxed sink.** An inert
+  arithmetic probe (the 7*7 probe not returning 49) proves NOTHING on these engines, so do NOT
+  stop there and do NOT default to it. To decide eval-vs-no-eval you MUST render something
+  GUARANTEED to be in scope and inspect HOW it comes back: pick a root object your recon shows
+  the context exposes (in most web frameworks the request object is always present), render it
+  BARE, and read the output. If it returns as an OBJECT / structure repr (a type name, an
+  address, a container's contents) the expression WAS evaluated -> sink CONFIRMED; if your exact
+  source text returns verbatim (your delimiters echoed unchanged) it was not. Run this positive
+  object-render canary on the SAME sink/URL/method you will exploit, and run it BEFORE ever
+  concluding "renders literally / not a sink." Never let an arithmetic-only probe -- or a value
+  echoed on some OTHER page -- stand in for this check. Only after this positive canary is inert
+  on the exact sink may you move on from it.
+  See "Logic-less / sandboxed engines" in `RCE Payload Reference`.
+- **Oracle discipline -- SSTI confirmation is MONOTONIC.** The MOMENT any probe returns a
+  positive evaluation signal on a sink -- an engine object rendered as its repr (a framework
+  request/response/session/config object printing as its `<... object ...>` form), a computed
+  arithmetic result, or a context variable resolving to its value -- that sink is CONFIRMED
+  injectable: record it and move to extraction on THAT sink. A LATER probe that renders empty
+  or inert (an engine comment that strips to nothing, a tag/char the filter removed, a payload
+  the sandbox silently ignores) is AMBIGUOUS: empty output is NOT proof of "no evaluation," and
+  it MUST NOT retract, downgrade, or "rule out" a sink that already produced a positive. Do not
+  let an inert probe talk you out of a sink that has evaluated. And ALWAYS run the oracle on the
+  EXACT sink/URL/method you will exploit -- a literal render on one page (e.g. a value echoed
+  verbatim elsewhere) says nothing about a different endpoint that compiles the value as a
+  template; never generalize a "no eval" verdict across sinks.
+- **Sink commitment -- do NOT diffuse across sinks.** Once ONE sink is CONFIRMED (per the
+  oracle above), STOP hunting for other injection points and EXTRACT from that sink to
+  exhaustion first -- only one working sink is ever needed, and finding "no eval" on other
+  parameters/pages/endpoints is NOT progress. From the confirmed sink, run the object-graph
+  walk as a SYSTEMATIC breadth-first sweep, not scattered one-off guesses:
+    1. list every ROOT object the render exposes by printing each one;
+    2. for each, print its PUBLIC attribute / index names (dump the object, read what it shows);
+    3. breadth-first, descend ONE public hop and print the result, diffing each;
+    4. QUEUE any child that looks like configuration, secret, cryptographic, serializer, or
+       storage/connection state for a deeper hop;
+    5. keep a written list of which object.path you have already expanded, so you never re-walk
+       one and never quit while the queue is non-empty;
+    6. continue until the target datum (a signing key, a config value, a credential, the flag)
+       surfaces. You have NOT exhausted a confirmed sink until every reachable public path is
+       printed -- do not abandon it to go re-hunt sinks.
 - **Deferred / stateful sinks:** the render may happen on a LATER request than
   the one you inject on (welcome/confirmation pages, generated emails/PDFs,
   dynamically-built JS/CSS, multi-step wizards). Carry the session forward and
@@ -223,6 +263,20 @@ universal SSTI oracle:
   reflected." For a directly-reflected sink you can conclude from the injection
   response itself; but where the sink COULD be stateful/deferred, absence of
   reflection on the injection request alone does not rule SSTI out.
+  - **Drive stateful/multi-step flows mechanically:** use a SESSION-PERSISTING client
+    (`execute_code` with a python requests.Session / cookie jar), NOT independent one-off
+    `execute_curl` calls -- every step depends on the cookies and CSRF/anti-forgery token
+    the previous step set. Before each step's POST, re-fetch that step's page and re-extract
+    the FRESH token plus any hidden/state-carrying fields from its HTML, then submit. A step
+    that keeps "redirecting back to the start" means server-side state was lost: fix the
+    session/cookie/token handling -- do NOT conclude the flow is unreachable and abandon the
+    vector. This tooling failure is the single most common reason a real stateful SSTI is
+    wrongly written off.
+  - **Seed-then-render:** when the value you control is STORED at one step and re-rendered at
+    another, place the payload in the EARLIEST field that gets stored (expect input filters
+    THERE), then request the LATER view that re-renders it -- the injection fires, and your
+    proof appears, on the RE-RENDER request (often a GET), not on the step you submitted to.
+    Enumerate every view/method that could re-render a stored value.
 
 #### 4C. Insecure deserialization (CONDITIONAL on `RCE_DESERIALIZATION_ENABLED`)
 
@@ -855,6 +909,32 @@ Django templates (Python/Django) -- SANDBOXED
   swallowed by an app catch-all -> blank page or redirect). __class__ object traversal is
   not available on Django templates; assess impact from what the engine actually exposes
   rather than assuming either outcome.
+
+  PUBLIC-ATTRIBUTE GADGET WALK (when tag/statement syntax AND dunder are BOTH filtered):
+  a sandboxed engine whose {% %}-style tags (and {% debug %}) are unavailable, and whose _-prefixed
+  attributes are blocked, has NOT closed the variable-expression graph. You can still descend the
+  PUBLIC (non-underscore) attribute/index chain of EVERY object the context exposes -- dump EACH
+  root object to see what it is (the framework's own request/response/session/user objects and
+  whatever else is in scope), not only the app's own variables. Framework internals reached this
+  way often hold a secret the app never passed into the template -- application configuration,
+  cryptographic or session material, serializers, and cache/storage/connection state are the usual
+  homes. Method (enumerate, do not guess):
+  dump each root object -> read the public attribute/index names it prints -> descend ONE public
+  hop at a time ( {{ ROOT.pubA.INDEX.pubB }} ... ) -> diff what each hop returns -> continue
+  until a config- or secret-bearing internal surfaces. Map the chain from what actually prints;
+  there is no single canonical path -- it depends on which objects THIS context exposes.
+  CRITICAL -- an OPAQUE object repr is an EXPAND node, NOT a dead end. Most framework objects print
+  as `<SomeClassName ...>` and do NOT list their own attributes, and a sandboxed template gives you
+  no dir()/vars() to enumerate them. So a `<X object>` repr (or an empty render) at a hop is NOT
+  evidence of "nothing here" -- the useful children are simply hidden behind the repr. Expand such
+  a node WITHOUT introspection by: (a) INDEXING it as a sequence -- try `.0`, `.1`, `.2` -- in case
+  it is a list / tuple / collection of children; (b) using the CLASS NAME shown in its repr as the
+  lead (you read that name from the LIVE output, so it needs no prior app knowledge): look up or
+  infer that class's documented PUBLIC attributes and try each as the next hop; (c) descending
+  through EVERY wrapper child even when the child's own repr is ALSO opaque. The secret usually sits
+  2-5 PUBLIC hops deep behind one or more opaque wrapper objects, so a depth-1 dump of a root object
+  is NEVER sufficient -- you may not declare a root object exhausted (or say "no secret reachable
+  here") until every opaque child it exposes has itself been expanded by (a)+(b)+(c).
 
 Handlebars (Node)   {{this}} / {{#each this}}{{@key}}={{this}}{{/each}}   (data; escalate via prototype gadget)
 Mustache (many)     {{.}} / {{#section}}...{{/section}}                    (pure logic-less -> data disclosure only)

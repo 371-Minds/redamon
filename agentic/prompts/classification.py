@@ -20,6 +20,7 @@ _CVE_EXPLOIT_SECTION = """### cve_exploit — CVE (MSF)
 
 _BRUTE_FORCE_SECTION = """### brute_force_credential_guess
 - Password guessing / credential attacks using Hydra against login services (SSH, FTP, MySQL, RDP, SMB, etc.)
+- Key distinction: choose this ONLY when the win genuinely requires DISCOVERING a valid secret (a real username+password that exists and must be found). A login form that can instead be defeated by the SHAPE or TYPE of the request, or by any comparison / trust / logic flaw in how the app checks credentials, is an authentication BYPASS -> use access_control. Credential guessing is a LAST resort, only after the authentication-logic bypass has been tried and recorded.
 - Keywords: brute force, crack password, dictionary attack, wordlist, password spray, guess password, credential attack
 """
 
@@ -92,6 +93,14 @@ _UNCLASSIFIED_SECTION = """### <descriptive_term>-unclassified
   - "Test for XXE on the SOAP endpoint" -> "xxe-unclassified"
 """
 
+_ACCESS_CONTROL_SECTION = """### access_control — Broken Access Control / Authorization Bypass
+- Defeating an authentication or authorization decision that has NO injection, inclusion, or template surface: reaching a resource, function, role, or object the request is not supposed to be allowed
+- Includes: authentication-logic bypass at a login / credential form (defeating the credential CHECK itself by the shape or TYPE of the submitted values — input-type confusion, loose / type-juggling comparisons, and client-trusted or default auth-state logic — rather than by discovering a valid password), forced browsing / function-level access to hidden or admin endpoints, vertical + horizontal privilege escalation, IDOR / BOLA (object-level authorization via numeric/UUID/filename/token references), HTTP verb / method tampering and method-override headers, 401/403 bypass via path normalization (trailing slash, `%2e`, `%2f`, double-encoding, `..;/`) and trust headers (X-Original-URL, X-Rewrite-URL, X-Forwarded-For, X-Custom-IP-Authorization), parameter / hidden-field / cookie role tampering, mass assignment, JWT attacks (alg:none, weak-secret cracking, claim tampering), CORS and GraphQL/API authorization flaws, and multi-step business-logic bypass
+- Key distinction: the goal is to defeat an ACCESS DECISION by changing the request shape (method, path form, trusted header, client-supplied role/id, token claim, or the type/presence of a submitted credential field) — NOT to inject code/SQL/templates (rce / sql_injection), run JS in a browser (xss), read files outside the web root (path_traversal), forge server-side requests (ssrf), or GUESS a valid secret (brute_force_credential_guess — that is only for when a real credential must be discovered, not for a login defeated by malformed/mistyped inputs or a comparison flaw)
+- A plain login form, or an explicit "bypass the login / get in as admin" objective, belongs HERE first when the credential may not need to be guessed — test the authentication-logic bypass before assuming a password must be brute-forced
+- Keywords: access control, broken access control, authorization bypass, authentication bypass, auth bypass, login bypass, login form bypass, bypass the login, type juggling, loose comparison, input type confusion, magic hash, IDOR, BOLA, insecure direct object reference, privilege escalation, forced browsing, function-level authorization, method tampering, verb tampering, HTTP method bypass, 401 bypass, 403 bypass, X-Original-URL, X-Forwarded-For bypass, trust header, hidden field, isAdmin, role tampering, mass assignment, JWT alg none, JWT bypass, business logic, CORS misconfiguration, GraphQL authorization
+"""
+
 # Map of built-in skill ID -> (section text, classification priority letter)
 _BUILTIN_SKILL_MAP = {
     'phishing_social_engineering': (_PHISHING_SECTION, 'a', 'phishing_social_engineering'),
@@ -103,6 +112,7 @@ _BUILTIN_SKILL_MAP = {
     'ssrf': (_SSRF_SECTION, 'g', 'ssrf'),
     'rce': (_RCE_SECTION, 'h', 'rce'),
     'path_traversal': (_PATH_TRAVERSAL_SECTION, 'i', 'path_traversal'),
+    'access_control': (_ACCESS_CONTROL_SECTION, 'j', 'access_control'),
 }
 
 # Classification instructions for built-in skills (no priority — best match wins)
@@ -114,7 +124,8 @@ _CLASSIFICATION_INSTRUCTIONS = {
       - Does it mention sending something via email to a target person?""",
     'brute_force_credential_guess': """   - **brute_force_credential_guess**:
       - Does the request mention password guessing, brute force, credential attacks, wordlists, or dictionary attacks?
-      - Does it target a login service (SSH, FTP, MySQL, etc.) with credential-based attack?""",
+      - Does it target a login service (SSH, FTP, MySQL, etc.) with credential-based attack?
+      - Does the win REQUIRE discovering a real, valid secret that genuinely exists? If a web login could instead be defeated by the request shape or malformed/mistyped inputs or a comparison/trust flaw, classify **access_control** FIRST and fall back to brute force only after that bypass is ruled out — do not brute-force a login before its authentication-logic bypass has been tried.""",
     'cve_exploit': """   - **cve_exploit**:
       - Does the request mention a specific CVE ID or Metasploit exploit module to use DIRECTLY against a service?
       - Does it describe exploiting a service vulnerability where NO target user interaction is needed?""",
@@ -149,7 +160,49 @@ _CLASSIFICATION_INSTRUCTIONS = {
       - Does it mention reading sensitive files like `/etc/passwd`, `/etc/hosts`, `/proc/self/environ`, `wp-config.php`, `.env`, `web.config`, or cloud credential files?
       - Does it mention archive-extraction (Zip Slip / TarSlip), symlink-in-archive escapes, or writing files outside an extraction directory?
       - Key boundary: STOP before this skill if the goal is direct command execution -- that belongs to `rce` -- unless the request explicitly chains LFI + log poisoning to land RCE (then it stays here).""",
+    'access_control': """   - **access_control**:
+      - Is there an authentication / authorization wall (login prompt, `401`/`403`, "admin only" gate, a resource or object you should not be able to reach) with NO injection / inclusion / template surface?
+      - Is this a plain login form or a "bypass the login / log in as admin" objective? Classify it HERE first: the flaw is often in HOW the app compares or trusts the submitted values (input-type confusion, loose or type-juggling comparison, client-trusted or default auth-state logic), defeated by the SHAPE or TYPE of the request rather than by a guessed password. Test that authentication-logic bypass before assuming credentials must be brute-forced.
+      - Would the bypass come from changing the REQUEST SHAPE — a different HTTP method/verb, a path/resource form, a trusted header, a client-supplied role/flag/id, a token claim, or the type/presence of a submitted credential field — rather than injecting a payload?
+      - Does it mention access control, authorization/authentication bypass, IDOR/BOLA, privilege escalation, forced browsing, method/verb tampering, hidden fields, mass assignment, JWT tampering, CORS, or business-logic abuse?
+      - Boundary: if the goal is specifically SQLi / XSS / SSRF / RCE / file read / credential guessing, use THAT skill instead — access_control is for defeating the access DECISION itself.""",
 }
+
+
+# =============================================================================
+# RUNTIME SKILL GUIDE — the SAME per-skill text step-1 shows, injected EVERY turn
+# =============================================================================
+# The classifier below runs ONCE, on the user's request text, before any recon,
+# so in a black-box run it yields `recon-unclassified`. The real class is then
+# chosen mid-run from LIVE EVIDENCE via `switch_skill` — but historically that
+# runtime decision saw only bare class NAMES and fell back to priors (any
+# login/401 -> sql_injection). This injects the FULL per-skill description +
+# selection criteria (identical to what step-1 renders: the `_*_SECTION` from
+# _BUILTIN_SKILL_MAP + the `_CLASSIFICATION_INSTRUCTIONS`) into every think turn,
+# so the agent re-selects against the real discriminators. It lives in the cached
+# prompt prefix, so after turn 1 it is billed at cache-read cost.
+def build_skill_menu(enabled_builtins: set[str], enabled_user_skills: list[dict]) -> str:
+    """Full per-skill selection text (step-1 sections + criteria) for every turn."""
+    order = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit',
+             'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control']
+    parts = [
+        "## ATTACK SKILL SELECTION — re-evaluate EVERY turn\n"
+        "Below is the full catalog of enabled attack classes, with the SAME description and "
+        "selection criteria used to classify at session start. Match the STRONGEST evidence from "
+        "the LIVE target to ONE class, then keep your active skill or `switch_skill` to the "
+        "better-fitting class (switching needs no phase change).\n"
+    ]
+    for sid in order:
+        if sid in enabled_builtins:
+            section_text, _, _ = _BUILTIN_SKILL_MAP[sid]
+            parts.append(section_text.rstrip())
+            parts.append(_CLASSIFICATION_INSTRUCTIONS[sid])
+    for skill in (enabled_user_skills or []):
+        preview = skill.get('description') or skill.get('content', '')[:500]
+        if not skill.get('description') and len(skill.get('content', '')) > 500:
+            preview += "..."
+        parts.append(f'### user_skill:{skill["id"]} — {skill["name"]}\n{preview}')
+    return "\n".join(parts)
 
 
 def build_classification_prompt(objective: str) -> str:
@@ -212,7 +265,7 @@ def build_classification_prompt(objective: str) -> str:
     parts.append("## Attack Skill Types (ONLY for exploitation phase)\n")
 
     # Built-in skills (only enabled ones)
-    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal']:
+    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control']:
         if skill_id in enabled_builtins:
             section_text, _, _ = _BUILTIN_SKILL_MAP[skill_id]
             parts.append(section_text)
@@ -243,7 +296,7 @@ def build_classification_prompt(objective: str) -> str:
                  "'brute force SSH' → brute_force_credential_guess). Pick the one whose criteria fit most closely:\n")
 
     # Built-in skill classification criteria
-    builtin_skill_ids = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal']
+    builtin_skill_ids = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control']
     for skill_id in builtin_skill_ids:
         if skill_id in enabled_builtins:
             parts.append(_CLASSIFICATION_INSTRUCTIONS[skill_id])
