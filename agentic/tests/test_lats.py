@@ -298,35 +298,36 @@ class TestActivationGate(unittest.TestCase):
 
 
 class TestExpandParsing(unittest.TestCase):
+    # execute_curl/kali_shell/metasploit_console require args/command respectively.
     ALLOWED = {"execute_curl", "kali_shell", "metasploit_console"}
 
     def test_valid_probes_parsed(self):
-        text = ('{"probes": [{"tool_name": "execute_curl", "tool_args": {"url": "x"}, '
-                '"rationale": "sqli"}, {"tool_name": "kali_shell", "tool_args": {}, "rationale": "enum"}]}')
+        text = ('{"probes": [{"tool_name": "execute_curl", "tool_args": {"args": "-s https://t/login"}, '
+                '"rationale": "sqli"}, {"tool_name": "kali_shell", "tool_args": {"command": "id"}, "rationale": "enum"}]}')
         probes = lats._parse_expand_response(text, self.ALLOWED, 3)
         self.assertEqual(len(probes), 2)
         self.assertEqual(probes[0]["tool_name"], "execute_curl")
-        self.assertEqual(probes[0]["tool_args"], {"url": "x"})
+        self.assertEqual(probes[0]["tool_args"], {"args": "-s https://t/login"})
 
     def test_off_registry_dropped(self):
-        text = '{"probes": [{"tool_name": "not_a_tool", "tool_args": {}}, {"tool_name": "execute_curl"}]}'
+        text = '{"probes": [{"tool_name": "not_a_tool", "tool_args": {"args": "x"}}, {"tool_name": "execute_curl", "tool_args": {"args": "-s x"}}]}'
         probes = lats._parse_expand_response(text, self.ALLOWED, 3)
         self.assertEqual(len(probes), 1)
         self.assertEqual(probes[0]["tool_name"], "execute_curl")
 
     def test_missing_tool_name_dropped(self):
-        text = '{"probes": [{"tool_args": {"x": 1}}, {"tool_name": "kali_shell"}]}'
+        text = '{"probes": [{"tool_args": {"x": 1}}, {"tool_name": "kali_shell", "tool_args": {"command": "id"}}]}'
         probes = lats._parse_expand_response(text, self.ALLOWED, 3)
         self.assertEqual([p["tool_name"] for p in probes], ["kali_shell"])
 
     def test_branching_cap(self):
-        items = ", ".join('{"tool_name": "execute_curl"}' for _ in range(6))
+        items = ", ".join('{"tool_name": "execute_curl", "tool_args": {"args": "-s x"}}' for _ in range(6))
         text = f'{{"probes": [{items}]}}'
         probes = lats._parse_expand_response(text, self.ALLOWED, 3)
         self.assertEqual(len(probes), 3)
 
     def test_fenced_json(self):
-        text = '```json\n{"probes": [{"tool_name": "execute_curl"}]}\n```'
+        text = '```json\n{"probes": [{"tool_name": "execute_curl", "tool_args": {"args": "-s x"}}]}\n```'
         probes = lats._parse_expand_response(text, self.ALLOWED, 3)
         self.assertEqual(len(probes), 1)
 
@@ -337,6 +338,59 @@ class TestExpandParsing(unittest.TestCase):
     def test_bad_args_type_dropped(self):
         text = '{"probes": [{"tool_name": "execute_curl", "tool_args": "notadict"}]}'
         self.assertEqual(lats._parse_expand_response(text, self.ALLOWED, 3), [])
+
+    def test_malformed_arg_keys_dropped(self):
+        # Fix #1: the LLM inventing url/flags instead of the real `args` key is
+        # dropped pre-flight; a correctly-shaped probe survives.
+        allowed = {"execute_curl", "proxy_get", "execute_httpx"}
+        text = ('{"probes": ['
+                '{"tool_name": "proxy_get", "tool_args": {"url": "http://t/"}},'          # wrong: needs id
+                '{"tool_name": "execute_httpx", "tool_args": {"flags": "-title", "target": "t"}},'  # wrong: needs args
+                '{"tool_name": "execute_curl", "tool_args": {"args": "-s http://t/"}}'      # correct
+                ']}')
+        probes = lats._parse_expand_response(text, allowed, 5)
+        self.assertEqual([p["tool_name"] for p in probes], ["execute_curl"])
+
+    def test_correctly_shaped_probes_kept(self):
+        allowed = {"proxy_get", "kali_shell"}
+        text = ('{"probes": ['
+                '{"tool_name": "proxy_get", "tool_args": {"id": "42", "part": "response"}},'
+                '{"tool_name": "kali_shell", "tool_args": {"command": "whoami"}}'
+                ']}')
+        probes = lats._parse_expand_response(text, allowed, 5)
+        self.assertEqual(len(probes), 2)
+
+
+class TestArgValidator(unittest.TestCase):
+    def test_primary_key_required_per_tool(self):
+        self.assertTrue(lats._probe_args_valid("execute_curl", {"args": "-s x"}))
+        self.assertFalse(lats._probe_args_valid("execute_curl", {"url": "x"}))
+        self.assertTrue(lats._probe_args_valid("proxy_get", {"id": "1"}))
+        self.assertFalse(lats._probe_args_valid("proxy_get", {"url": "x"}))
+        self.assertTrue(lats._probe_args_valid("execute_httpx", {"args": "-title"}))
+        self.assertFalse(lats._probe_args_valid("execute_httpx", {"flags": "-title", "target": "t"}))
+        self.assertTrue(lats._probe_args_valid("kali_shell", {"command": "id"}))
+        self.assertFalse(lats._probe_args_valid("kali_shell", {}))
+
+    def test_unknown_tool_passes(self):
+        # a tool with no registry schema can't be validated -> allowed
+        self.assertTrue(lats._probe_args_valid("some_unknown_tool", {"whatever": 1}))
+
+    def test_schema_block_lists_tool_arg_formats(self):
+        block = lats._tool_schema_block({"execute_httpx", "proxy_get"})
+        self.assertIn("execute_httpx", block)
+        self.assertIn("args", block)          # httpx schema mentions the args key
+        self.assertIn("id", block)            # proxy_get schema mentions id
+
+    def test_expand_prompt_carries_schema_and_warning(self):
+        state = {"current_phase": "exploitation",
+                 "conversation_objectives": [{"content": "get the flag"}],
+                 "current_objective_index": 0}
+        msgs = lats._expand_prompt_messages(state, None, {"execute_httpx", "proxy_get"}, 3)
+        system = msgs[0]["content"]
+        self.assertIn("EXACTLY", system)             # instructs exact keys
+        self.assertIn("do NOT invent keys", system.replace("Do NOT", "do NOT"))
+        self.assertIn("execute_httpx", system)       # per-tool schema present
 
 
 class TestExpandAsync(unittest.TestCase):
@@ -356,7 +410,8 @@ class TestExpandAsync(unittest.TestCase):
         }
 
         class _Resp:
-            content = '{"probes": [{"tool_name": "execute_curl", "rationale": "login sqli"}, {"tool_name": "execute_httpx", "rationale": "enum"}]}'
+            content = ('{"probes": [{"tool_name": "execute_curl", "tool_args": {"args": "-s http://t/login"}, "rationale": "login sqli"}, '
+                       '{"tool_name": "execute_httpx", "tool_args": {"args": "-title -tech-detect"}, "rationale": "enum"}]}')
 
         fake = AsyncMock(return_value=_Resp())
         with patch("orchestrator_helpers.llm_retry.retry_llm_call", fake):

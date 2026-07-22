@@ -535,10 +535,53 @@ def _phase_allowed_tools(state: dict) -> set:
     return {name for name, phases in tpm.items() if phase in phases}
 
 
+# --- Tool arg-schema awareness (Fix #1: the expand LLM kept inventing keys like
+# url/target/flags instead of each tool's real schema, so its probes bounced off
+# the tool layer with tool_internal_error). The schema is fed into the prompt AND
+# enforced by a deterministic pre-flight validator that drops malformed probes. -
+
+def _tool_arg_keys(tool_name: str) -> List[str]:
+    """The valid tool_args keys for a tool, parsed from its registry
+    args_format (first key = primary/required). Empty list = the tool takes no /
+    freeform args, so no key check applies."""
+    try:
+        from prompts.tool_registry import TOOL_REGISTRY
+    except Exception:
+        return []
+    af = (TOOL_REGISTRY.get(tool_name, {}) or {}).get("args_format", "") or ""
+    return re.findall(r'"([a-zA-Z_][a-zA-Z0-9_]*)"\s*:', af)
+
+
+def _probe_args_valid(tool_name: str, args: dict) -> bool:
+    """Deterministic pre-flight arg check. A probe must include the tool's PRIMARY
+    key (e.g. `args` for execute_*, `id` for proxy_get, `command` for kali_shell);
+    this catches the LLM inventing url/target/flags/depth keys. Tools with no
+    schema (freeform / unknown) pass through untouched."""
+    keys = _tool_arg_keys(tool_name)
+    if not keys:
+        return True
+    return keys[0] in (args or {})
+
+
+def _tool_schema_block(allowed_tools: set) -> str:
+    """Render each allowed tool's arg schema for the expand prompt so the model
+    emits correctly-shaped tool_args."""
+    try:
+        from prompts.tool_registry import TOOL_REGISTRY
+    except Exception:
+        TOOL_REGISTRY = {}
+    lines = []
+    for name in sorted(allowed_tools):
+        af = (TOOL_REGISTRY.get(name, {}) or {}).get("args_format", "") if TOOL_REGISTRY else ""
+        lines.append(f"  {name}: tool_args = {{{af}}}" if af else f"  {name}: tool_args = {{}}")
+    return "\n".join(lines)
+
+
 def _parse_expand_response(text: str, allowed_tools: set, branching: int) -> List[dict]:
     """Pure parser + validator for a structured expand response. Returns up to
-    `branching` probes, each {tool_name, tool_args, rationale}, dropping any
-    probe whose tool_name is missing or not phase-allowed (§20.9)."""
+    `branching` probes, each {tool_name, tool_args, rationale}, dropping any probe
+    whose tool_name is missing / not phase-allowed, or whose tool_args are the
+    wrong shape for that tool (§20.9, Fix #1)."""
     if not text:
         return []
     payload = _extract_json(text)
@@ -557,6 +600,8 @@ def _parse_expand_response(text: str, allowed_tools: set, branching: int) -> Lis
         args = item.get("tool_args")
         if args is not None and not isinstance(args, dict):
             continue
+        if not _probe_args_valid(tn, args or {}):
+            continue                      # malformed args (wrong keys) -> drop pre-flight
         probes.append({
             "tool_name": tn,
             "tool_args": args or {},
@@ -594,7 +639,7 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
     deterministic so the only variable is the model's response."""
     objective = _objective_of(state)
     phase = state.get("current_phase", "exploitation")
-    tool_list = ", ".join(sorted(allowed_tools)) if allowed_tools else "(any)"
+    tool_schema = _tool_schema_block(allowed_tools) if allowed_tools else "  (any tool)"
     if node is None or node.tool_name is None:
         context = f"Assess the current situation and propose the {branching} most credible NEXT exploit probes."
     else:
@@ -608,9 +653,13 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
     system = (
         "You are the expansion step of a value-guided exploit-path search. "
         "Return ONLY strict JSON of the form "
-        '{\"probes\": [{\"tool_name\": <one of the allowed tools>, '
+        '{\"probes\": [{\"tool_name\": <one of the tools below>, '
         '\"tool_args\": {..}, \"rationale\": \"why this probe advances the exploit\"}]}. '
-        f"Each tool_name MUST be one of: {tool_list}. "
+        "CRITICAL: tool_args MUST use EXACTLY the argument keys shown for the chosen "
+        "tool below. Do NOT invent keys like url/target/flags/depth/silent — most "
+        "tools take a single \"args\" string holding the raw CLI arguments (without "
+        "the tool name). Allowed tools and their required tool_args schema:\n"
+        f"{tool_schema}\n"
         f"Return at most {branching} probes, ordered most-promising first. "
         "Each must be a concrete, executable probe (never a plan or a question)."
     )
