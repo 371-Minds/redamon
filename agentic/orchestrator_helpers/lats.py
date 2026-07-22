@@ -285,16 +285,23 @@ def _open_leaves(tree: ExploitTree) -> List[ExploitTreeNode]:
 
 
 def _single_open_line(tree: ExploitTree) -> bool:
-    """True when the search has collapsed to one credible line with nothing
-    queued: no proposed/executing probes anywhere and exactly one live leaf.
-    LATS then hands that obvious line back to legacy ReAct (§5.4 EXIT collapse).
+    """True when the search has degenerated to one credible line with no
+    remaining branching decision: nothing queued (no proposed/executing probes)
+    and exactly one live leaf that CANNOT expand further (depth-capped or
+    already fully expanded). LATS then hands that obvious line back to legacy
+    ReAct rather than keep the tree machinery running (§5.4 EXIT collapse).
+
+    A lone leaf that can still expand is NOT a collapse — LATS deepens it (that
+    is the §10 hot-branch behavior), so we only collapse when there is genuinely
+    nothing left to branch on.
     """
     if tree.rollouts < 1:
         return False
     for n in tree.nodes.values():
         if n.status in ("proposed", "executing"):
             return False
-    return len(_open_leaves(tree)) == 1
+    leaves = _open_leaves(tree)
+    return len(leaves) == 1 and not _can_expand(leaves[0])
 
 
 def _tree_exhausted(tree: ExploitTree) -> bool:
@@ -663,3 +670,202 @@ def _complete(decision: Any, tree: ExploitTree, reason: str) -> Any:
         d["thought"] = thought
         return d
     return decision
+
+
+# =============================================================================
+# EXECUTED-STEP GATHERING + ATTRIBUTION (§20.2)
+# =============================================================================
+
+def _executed_steps(state: dict) -> List[dict]:
+    """The step(s) whose output is pending this turn: a plan_tools wave (each
+    step stamped with its wave index) or a single use_tool step."""
+    plan = state.get("_current_plan")
+    if plan and plan.get("steps"):
+        out = []
+        for i, s in enumerate(plan["steps"]):
+            s2 = dict(s)
+            s2["_step_index"] = i
+            out.append(s2)
+        return out
+    single = state.get("_current_step")
+    if single:
+        s2 = dict(single)
+        s2.setdefault("_step_index", 0)
+        return [s2]
+    return []
+
+
+def _ordered_executing_children(tree: ExploitTree) -> List[ExploitTreeNode]:
+    """Executing children in stable wave order (parent insertion order, then
+    each parent's children order), so positional attribution to _current_plan
+    steps is deterministic (§20.2)."""
+    out = []
+    for node in list(tree.nodes.values()):
+        for cid in node.children:
+            c = tree.nodes.get(cid)
+            if c is not None and c.status == "executing":
+                out.append(c)
+    return out
+
+
+def _evaluate_wave(tree: ExploitTree, state: dict, analysis: Any) -> bool:
+    """Evaluate + backprop the children we issued last turn, but ONLY those that
+    ACTUALLY EXECUTED (§20.2). Returns True if at least one child produced a
+    result (so the caller counts a rollout). Mutates the tree in place.
+
+    Attribution is positional: the wave was built in child order and
+    execute_plan preserves step order, so executing-child[i] <-> step[i].
+    """
+    children = _ordered_executing_children(tree)
+    if not children:
+        return False
+
+    # Operator rejected the pending confirmation: prune, do NOT evaluate or
+    # count a rollout (a rejection is not a probe result).
+    if state.get("_reject_tool"):
+        for child in children:
+            child.status = "pruned"
+            child.reflection = "operator declined"
+        return False
+
+    steps = _executed_steps(state)
+    phase = state.get("current_phase")
+    before, after = _post_expl_snapshots(state)
+    prune_floor = get_setting("LATS_PRUNE_FLOOR", 0.15)
+    evaluated_any = False
+    for i, child in enumerate(children):
+        step = steps[i] if i < len(steps) else None
+        if not step or step.get("tool_output") is None:
+            continue                                  # never ran; leave as-is
+        evaluated_any = True
+        child.local_value = lats_value(step, analysis, phase=phase, before=before, after=after)
+        child.observation_summary = _summarize(step.get("tool_output"))
+        child.verdict = _verdict_for(step, analysis)
+        child.error_class = step.get("error_class", "") or ""
+        child.duration_ms = int(step.get("duration_ms", 0) or 0)
+        child.step_id = step.get("step_id")
+        child.finding_confidence_delta = _new_finding_confidence(step, analysis)
+        child.exploit_succeeded = _exploit_succeeded(step, analysis)
+        child.status = "terminal" if child.exploit_succeeded else "evaluated"
+        lats_backprop(tree, child.id, child.local_value)
+        if not child.exploit_succeeded and child.local_value < prune_floor:
+            child.status = "pruned"
+            child.reflection = _reflect(step, analysis)
+    return evaluated_any
+
+
+def _post_expl_snapshots(state: dict):
+    """Cheap before/after engagement-state snapshots for post-exploitation
+    scoring (§6.1). In v1 we compare the tree-persisted 'before' against the
+    current state; when unavailable both are empty and the web value function
+    is used anyway (phase != post_exploitation)."""
+    ti = state.get("target_info", {}) or {}
+    snap = {
+        "sessions": ti.get("sessions", []),
+        "credentials": ti.get("credentials", []),
+        "hosts": ti.get("hosts", []) or ti.get("services", []),
+    }
+    # For v1 we do not diff across the fold; both snapshots equal, so the delta
+    # helpers return 0 and post-expl value leans on _new_finding. Refined later.
+    return snap, snap
+
+
+def _as_wave_or_use_tool(decision: Any, wave: List[ExploitTreeNode]) -> Any:
+    """Override the decision's action with the next LATS move: a plan_tools wave
+    when >= 2 probes, else a single use_tool. Dangerous steps are allowed; the
+    existing confirmation gate handles the prompt (§20.3)."""
+    if len(wave) >= 2:
+        update = {
+            "action": "plan_tools",
+            "tool_plan": _wave(wave),
+        }
+    elif len(wave) == 1:
+        best = wave[0]
+        update = {
+            "action": "use_tool",
+            "tool_name": best.tool_name,
+            "tool_args": best.tool_args or {},
+        }
+    else:
+        return decision   # nothing to issue; leave the decision alone
+    if hasattr(decision, "model_copy"):
+        return decision.model_copy(update=update)
+    if isinstance(decision, dict):
+        d = dict(decision)
+        d.update(update)
+        return d
+    return decision
+
+
+# =============================================================================
+# THE HOOK (§5.3) — runs inside think_node AFTER the think LLM call. Uses
+# decision.output_analysis as the evaluation signal and (in DRIVE mode) overrides
+# the action with the next LATS move. Strict no-op when LATS_ENABLED=false or
+# when LATS is not driving. `llm` is the SAME single agent model think_node uses.
+# =============================================================================
+
+async def lats_hook(state: dict, decision: Any, *, llm: Any,
+                    streaming_callbacks: Any = None, session_id: Optional[str] = None) -> Any:
+    if not get_setting("LATS_ENABLED", False):
+        return decision
+    shadow = bool(get_setting("LATS_SHADOW_MODE", True))
+
+    # ---- ENTER (no tree) or STAY (tree live) ----
+    tree_dict = state.get("_exploit_tree")
+    if not tree_dict:
+        if not lats_active(state):
+            return decision                              # legacy path, untouched
+        probes = await lats_expand(llm, state, None)     # LATS's own assessment
+        if len(probes) < int(get_setting("LATS_MIN_HYPOTHESES", 2)):
+            return decision                              # < 2 credible probes: no real branch
+        tree = _new_tree(state, probes)
+    else:
+        tree = ExploitTree(**tree_dict)
+        if _lats_should_reset(state, tree):
+            _archive_tree(state, tree, "stale")
+            return decision                              # archived; fresh tree may start next turn
+
+    analysis = _attr(decision, "output_analysis")
+
+    # ---- 1. EVALUATE + BACKPROP the wave we issued last turn ----
+    if _evaluate_wave(tree, state, analysis):
+        tree.rollouts += 1
+
+    # ---- 2. EXITS (order matters: collapse hands off to legacy, budget completes) ----
+    override = None
+    if any(n.status == "terminal" for n in tree.nodes.values()):
+        tree.best_terminal_id = _best_terminal(tree)
+        override = "lats_terminal_success"
+    elif _single_open_line(tree):
+        _archive_tree(state, tree, "branch_collapsed")
+        return decision                                  # legacy drives the one obvious line
+    elif _budget_hit(tree) or _tree_exhausted(tree):
+        override = "lats_budget_exhausted"
+
+    # ---- 3. SELECT + 4. EXPAND (skip when exiting via complete) ----
+    wave: List[ExploitTreeNode] = []
+    if override is None:
+        node = tree.nodes[lats_select(tree, get_setting("LATS_UCT_C", 1.4))]
+        tree.active_node_id = node.id
+        if _can_expand(node) and not _has_proposed_children(tree, node):
+            max_nodes = int(get_setting("LATS_MAX_TREE_NODES", 60))
+            for cand in await lats_expand(llm, state, node):
+                if len(tree.nodes) >= max_nodes:
+                    break
+                _add_child(tree, node, cand)
+        kids = _proposed_children(tree, node)
+        wave = _mutex_safe_subset(kids)
+        for k in wave:
+            k.status = "executing"
+
+    # ---- persist the tree ----
+    state["_exploit_tree"] = tree.model_dump()
+
+    # ---- SHADOW: build/stream the tree but never drive ----
+    if shadow:
+        return decision
+
+    # ---- DRIVE (Step 6): apply the override / next move ----
+    if override is not None:
+        return _complete(decision, tree, override)
+    return _as_wave_or_use_tool(decision, wave)

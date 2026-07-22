@@ -994,6 +994,22 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
 
     logger.info(f"{'='*60}\n")
 
+    # LATS (exploit-path tree search) hook. Strict no-op unless LATS_ENABLED.
+    # Runs AFTER the fireteam gate and BEFORE the ExecutionStep build so the
+    # router, the confirmation gate, and the RoE gates all inherit any LATS
+    # override automatically. In shadow mode it builds/streams the tree but
+    # returns the decision unchanged. See internal/LATS_integration.md §5.3/§19.
+    if get_setting("LATS_ENABLED", False):
+        from orchestrator_helpers.lats import lats_hook
+        # Expose Deep Think's FIRING (not its output, §20.16) and guidance-drain
+        # as intra-turn signals the hook reads via state.
+        state["deep_think_ran_this_turn"] = deep_think_triggered
+        state["guidance_drained_this_turn"] = bool(guidance_messages)
+        decision = await lats_hook(
+            state, decision, llm=llm,
+            streaming_callbacks=streaming_callbacks, session_id=session_id,
+        )
+
     # Create execution step
     step = ExecutionStep(
         iteration=iteration,
@@ -1028,6 +1044,13 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         "_input_tokens_this_turn": input_tokens_this_turn,
         "_output_tokens_this_turn": output_tokens_this_turn,
     }
+
+    # LATS state pass-through (declared keys, or LangGraph strips them, §20.1).
+    # Only written when LATS_ENABLED so the disabled path is a strict no-op.
+    if get_setting("LATS_ENABLED", False):
+        updates["deep_think_ran_this_turn"] = deep_think_triggered
+        updates["guidance_drained_this_turn"] = bool(guidance_messages)
+        updates["_exploit_tree"] = state.get("_exploit_tree")
 
     logger.info(
         f"[{user_id}/{project_id}/{session_id}] Tokens this turn: "

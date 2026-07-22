@@ -209,15 +209,18 @@ class TestExpandabilityBudget(unittest.TestCase):
         self.assertTrue(lats._budget_hit(tree))
 
     def test_single_open_line(self):
+        # A lone leaf that can still EXPAND is NOT a collapse (LATS deepens it).
         root = ExploitTreeNode(id="root", status="evaluated")
         c1 = ExploitTreeNode(id="c1", parent_id="root", depth=1, status="pruned")
         c2 = ExploitTreeNode(id="c2", parent_id="root", depth=1, status="evaluated", value=0.5)
         tree = ExploitTree(root_id="root", nodes={"root": root, "c1": c1, "c2": c2})
         root.children = ["c1", "c2"]
         tree.rollouts = 1
-        # one live leaf (c2), nothing proposed -> collapsed
+        self.assertFalse(lats._single_open_line(tree))   # c2 can expand -> not collapsed
+        # A lone leaf at max depth CANNOT expand -> collapsed.
+        c2.depth = 6   # LATS_MAX_DEPTH default
         self.assertTrue(lats._single_open_line(tree))
-        # add a proposed node -> not collapsed
+        # add a proposed node -> not collapsed (still work queued)
         c3 = ExploitTreeNode(id="c3", parent_id="c2", depth=2, status="proposed")
         tree.nodes["c3"] = c3
         c2.children = ["c3"]
@@ -357,9 +360,7 @@ class TestExpandAsync(unittest.TestCase):
 
         fake = AsyncMock(return_value=_Resp())
         with patch("orchestrator_helpers.llm_retry.retry_llm_call", fake):
-            probes = asyncio.get_event_loop().run_until_complete(
-                lats.lats_expand(object(), state, None)
-            )
+            probes = asyncio.run(lats.lats_expand(object(), state, None))
         self.assertEqual(len(probes), 2)
         self.assertEqual(probes[0]["tool_name"], "execute_curl")
         # retry_llm_call was invoked (the single agent model), and the messages

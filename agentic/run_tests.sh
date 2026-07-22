@@ -40,6 +40,7 @@ FOCUSED_TESTS=(
     tests.test_lats_models
     tests.test_lats
     tests.test_lats_trace
+    tests.test_lats_hook
 )
 
 case "$MODE" in
