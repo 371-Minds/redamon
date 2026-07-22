@@ -396,6 +396,17 @@ class ProductivityVerdict(BaseModel):
     rationale: str = Field(default="", description="One sentence citing specific evidence from the output.")
 
 
+class PerStepAnalysis(BaseModel):
+    """Per-step read of a plan_tools wave, used by LATS to score each child
+    probe independently (see LATS_integration.md §5.3, §6). Optional: when the
+    LLM does not populate it, LATS falls back to the deterministic per-step
+    `error_class` stamped by execute_plan_node."""
+    step_index: int = 0
+    verdict: str = ""            # ProductivityVerdict.verdict for this step
+    finding: str = ""            # short description of any finding at this step
+    confidence: int = 0          # confidence (0-100) of that finding
+
+
 class OutputAnalysisInline(BaseModel):
     """Inline output analysis embedded in LLMDecision when tool output is pending."""
     interpretation: str = ""
@@ -406,6 +417,8 @@ class OutputAnalysisInline(BaseModel):
     exploit_details: Optional[dict] = None
     chain_findings: List[ChainFindingExtract] = Field(default_factory=list)
     productivity: ProductivityVerdict = Field(default_factory=ProductivityVerdict)
+    # Optional per-step verdicts for a plan_tools wave (LATS wave scoring, §5.3).
+    per_step: List[PerStepAnalysis] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -812,6 +825,59 @@ class AttackPathClassification(BaseModel):
 # LANGGRAPH STATE
 # =============================================================================
 
+# =============================================================================
+# LATS (Language Agent Tree Search) MODELS
+# Bounded, value-guided tree search over executed exploit probes. See
+# internal/LATS_integration.md. The whole tree rides inside AgentState as a
+# plain dict (_exploit_tree), so the Postgres checkpointer persists it for free.
+# =============================================================================
+
+LatsNodeStatus = Literal[
+    "proposed",    # candidate edge, not yet executed
+    "executing",   # emitted as this iteration's decision, awaiting output
+    "evaluated",   # observation scored, value known
+    "pruned",      # value below floor or dead-end (WAF/403/rate-limited)
+    "terminal",    # exploit_succeeded on this node
+]
+
+
+class ExploitTreeNode(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    parent_id: Optional[str] = None
+    depth: int = 0
+
+    # The edge that produced this node (None only for the synthetic root).
+    tool_name: Optional[str] = None
+    tool_args: Optional[dict] = None
+    probe_rationale: str = ""           # from the hypothesis / expand step
+
+    # Filled after execution + evaluation.
+    observation_summary: str = ""       # compressed tool_output (~200 chars; NOT raw)
+    verdict: str = ""                   # ProductivityVerdict.verdict
+    error_class: str = ""               # from error_class.py annotation
+    duration_ms: int = 0                # from the executed step
+    finding_confidence_delta: int = 0   # confidence of any new ChainFinding at this node
+    exploit_succeeded: bool = False
+    step_id: Optional[str] = None       # ExecutionStep.step_id; links to execution_trace for raw output
+
+    # Search bookkeeping.
+    status: LatsNodeStatus = "proposed"
+    value: float = 0.0                  # backprop-aggregated value (higher = closer to foothold)
+    local_value: float = 0.0            # this node's own evaluation, pre-aggregation
+    visits: int = 0
+    reflection: str = ""                # lesson_learned when pruned/failed
+    children: List[str] = Field(default_factory=list)
+
+
+class ExploitTree(BaseModel):
+    root_id: str
+    nodes: Dict[str, ExploitTreeNode] = Field(default_factory=dict)
+    active_node_id: Optional[str] = None   # parent node whose children are the current wave
+    rollouts: int = 0                      # completed Select->...->Backprop cycles
+    best_terminal_id: Optional[str] = None
+    objective: str = ""                    # the exploitation objective this tree serves
+
+
 class AgentState(TypedDict):
     """
     LangGraph state for the ReAct agent orchestrator.
@@ -965,6 +1031,23 @@ class AgentState(TypedDict):
     # process_fireteam_confirmation_node so each escalation gets its own
     # operator decision. See FIRETEAM.md §20 Q3 ("v1: 3 times").
     _pending_escalations: Optional[list]
+
+    # LATS (Language Agent Tree Search) — bounded exploit-path search.
+    # `_exploit_tree` is ExploitTree.model_dump() (or None when LATS inactive);
+    # it carries all per-node search state, so no other LATS bookkeeping key is
+    # needed. The remaining flags are per-turn signals the LATS hook reads:
+    #   `deep_think_ran_this_turn` — think_node's local deep_think_triggered,
+    #     the LATS activation pre-gate (NOT Deep Think's output, §20.16).
+    #   `guidance_drained_this_turn` — operator guidance was drained this turn,
+    #     so LATS should graft it as a high-prior probe (§21.1).
+    #   `_lats_operator_stop` / `_lats_refocus_target` — typed operator controls
+    #     to stop or refocus a running search (§21.2).
+    # ALL must be declared here or LangGraph strips them on merge (§20.1).
+    _exploit_tree: Optional[dict]
+    deep_think_ran_this_turn: bool
+    guidance_drained_this_turn: bool
+    _lats_operator_stop: bool
+    _lats_refocus_target: Optional[str]
 
 
 # =============================================================================

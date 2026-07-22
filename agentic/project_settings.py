@@ -74,6 +74,23 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'FIRETEAM_CONFIRMATION_TIMEOUT_SEC': 600,    # how long a member waits for operator approval before auto-rejecting
     'FIRETEAM_PROPENSITY': 3,                    # 1-5 scalar: how strongly LLM is pushed to deploy fireteams (3=baseline, 1=reluctant, 5=aggressive)
 
+    # LATS (Language Agent Tree Search) — bounded exploit-path search.
+    # See internal/LATS_integration.md §8 "Settings summary". Ships OFF by
+    # default; SHADOW builds+streams the tree without letting it drive.
+    'LATS_ENABLED': False,                        # master switch (opt-in)
+    'LATS_SHADOW_MODE': True,                     # observe-only: build the tree, do NOT drive decisions
+    'LATS_ALLOWED_PHASES': ['exploitation'],     # phases where the tree search runs (post_exploitation experimental, §6.1)
+    'LATS_MIN_HYPOTHESES': 2,                     # min credible probes lats_expand must yield to activate
+    'LATS_BRANCHING': 3,                          # max candidate probes per Expand (tree width)
+    'LATS_MAX_DEPTH': 6,                          # max chain length from root; node at this depth cannot expand further
+    'LATS_MAX_ROLLOUTS': 24,                      # max Select->Backprop cycles = max live probes per objective
+    'LATS_MAX_TREE_NODES': 60,                    # hard tree-size (total node) cap
+    'LATS_UCT_C': 1.4,                            # exploration constant (focus vs breadth)
+    'LATS_PRUNE_FLOOR': 0.15,                     # value below which a cold branch is pruned
+    'LATS_RESPECT_GUIDANCE': True,                # graft operator guidance as a high-prior probe (§21.1)
+    'LATS_VERIFY_TERMINAL': False,               # verify a claimed foothold before declaring success (§20.15)
+    'LATS_REACTIVE_TRIGGERS': False,             # also activate on axis lock-in (deferred, §14)
+
     # Phase Configuration
     'ACTIVATE_POST_EXPL_PHASE': True,
     'POST_EXPL_PHASE_TYPE': 'statefull',

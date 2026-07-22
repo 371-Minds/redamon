@@ -37,6 +37,7 @@ FOCUSED_TESTS=(
     tests.test_state_priority_coercion
     tests.test_chain_context
     tests.test_startup_guard
+    tests.test_lats_models
 )
 
 case "$MODE" in
