@@ -835,6 +835,21 @@ model Project {
   fireteamConfirmationTimeoutSec        Int      @default(600)             @map("fireteam_confirmation_timeout_sec")
   fireteamPropensity                    Int      @default(3)               @map("fireteam_propensity")
 
+  // LATS (exploit-path tree search) Settings. Defaults kept consistent with
+  // DEFAULT_AGENT_SETTINGS in agentic/project_settings.py (ships OFF; SHADOW on;
+  // exploitation-only until post-exploitation scoring is tuned, §6.1).
+  agentLatsEnabled                      Boolean  @default(false)           @map("agent_lats_enabled")
+  agentLatsShadowMode                   Boolean  @default(true)            @map("agent_lats_shadow_mode")
+  agentLatsPhaseExploitation            Boolean  @default(true)            @map("agent_lats_phase_exploitation")
+  agentLatsPhasePostExpl                Boolean  @default(false)           @map("agent_lats_phase_post_expl")
+  agentLatsMinHypotheses                Int      @default(2)               @map("agent_lats_min_hypotheses")
+  agentLatsBranching                    Int      @default(6)               @map("agent_lats_branching")
+  agentLatsMaxDepth                     Int      @default(6)               @map("agent_lats_max_depth")
+  agentLatsMaxRollouts                  Int      @default(50)              @map("agent_lats_max_rollouts")
+  agentLatsMaxTreeNodes                 Int      @default(120)             @map("agent_lats_max_tree_nodes")
+  agentLatsUctC                         Float    @default(1.4)             @map("agent_lats_uct_c")
+  agentLatsPruneFloor                   Float    @default(0.15)            @map("agent_lats_prune_floor")
+
   // Hydra Brute Force Settings
   hydraEnabled                          Boolean  @default(true) @map("hydra_enabled")
   hydraThreads                          Int      @default(16) @map("hydra_threads")

@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import type { ChatItem, FireteamItem } from '../types'
-import type { PlanWaveItem } from '../AgentTimeline'
-import type { TodoItem } from '@/lib/websocket-types'
+import type { PlanWaveItem, LatsSearchItem } from '../AgentTimeline'
+import type { TodoItem, LatsNodeView } from '@/lib/websocket-types'
 import { PHASE_CONFIG, formatModelDisplay } from '../phaseConfig'
 import type { Phase } from '../types'
 import { downloadStreaming } from '../../../utils/exportHelpers'
@@ -162,6 +162,51 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
         if (item.analysis) {
           lines.push(item.analysis)
           lines.push('')
+        }
+        lines.push('---')
+        lines.push('')
+      } else if (item.type === 'lats_search') {
+        const lats = item as LatsSearchItem
+        const time = lats.timestamp.toLocaleTimeString()
+        const snap = lats.latest
+        const outcome = lats.outcome ? ` — ${lats.outcome}` : ''
+        const statusTag = lats.status === 'complete' ? 'COMPLETE' : 'RUNNING'
+        lines.push(`### LATS Exploit-Path Search  \`${time}\`  [${statusTag}${outcome}]`)
+        lines.push('')
+        lines.push(`> **Objective:** ${lats.objective || '(none)'}`)
+        lines.push(`> **Phase:** ${lats.phase}${lats.shadow_mode ? ' · shadow (observe-only)' : ''}`)
+        lines.push('')
+        if (snap) {
+          const nodes = snap.nodes || []
+          const probes = nodes.filter((n: LatsNodeView) => n.depth >= 1)
+          lines.push(
+            `**Search:** ${snap.rollouts} rollouts (max ${snap.budget?.max_rollouts ?? '?'}) · ` +
+            `${nodes.length} nodes · depth cap ${snap.budget?.max_depth ?? '?'} · ${probes.length} probes`
+          )
+          lines.push('')
+          if (probes.length > 0) {
+            lines.push('**Probes (tree nodes)**')
+            lines.push('')
+            probes
+              .slice()
+              .sort((a: LatsNodeView, b: LatsNodeView) => a.depth - b.depth || b.value - a.value)
+              .forEach((n: LatsNodeView) => {
+                const args =
+                  n.tool_args && Object.keys(n.tool_args).length ? ' ' + JSON.stringify(n.tool_args) : ''
+                const tag = n.exploit_succeeded
+                  ? 'EXPLOIT ✓'
+                  : n.verdict || n.error_class || n.status || ''
+                lines.push(
+                  `- \`d${n.depth}\` **${n.tool_name || '(root)'}**${args} — value ${n.value.toFixed(2)}` +
+                    (tag ? `, ${tag}` : '')
+                )
+              })
+            lines.push('')
+          }
+          if (snap.best_trajectory && snap.best_trajectory.length > 0) {
+            lines.push(`**Best trajectory:** ${snap.best_trajectory.join(' → ')}`)
+            lines.push('')
+          }
         }
         lines.push('---')
         lines.push('')

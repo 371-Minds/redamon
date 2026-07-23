@@ -628,6 +628,11 @@ def _compute_weights(
         "w_state_growth":     1.0 + 2.0 * bracket,       # 1.0 → 3.0
         "w_axis_repeats":     2.0 + 2.0 * bracket,       # 2.0 → 4.0
         "w_same_pattern":     0.5,                       # constant; mild
+        "w_chain_stall":      1.0,                        # Proposal 3: badness per excess
+                                                          # iteration-since-chain-advance (past
+                                                          # the grace window). Constant so it is
+                                                          # predictable; the value that actually
+                                                          # RAISES the score on pure recon churn.
         "r_new_info":         2.0 - 1.0 * bracket,       # 2.0 → 1.0
         "r_actionable":       1.0 - 0.5 * bracket,       # 1.0 → 0.5
     }
@@ -730,6 +735,8 @@ def compute_productivity_score(
     phase: str = "informational",
     window: int = 6,
     new_info_window: int = 5,
+    iterations_since_chain_advance: int = 0,
+    novelty_saturation_grace: int = 3,
 ) -> dict:
     """Compute the continuous productivity score and return a structured
     breakdown of components and weights. Pure function — no I/O, no state
@@ -759,13 +766,30 @@ def compute_productivity_score(
     same_pat = _same_pattern_count(execution_trace, window=window)
     new_info, actionable = _new_info_events_in_window(execution_trace, window=new_info_window)
 
+    # Churn-aware score (Proposal 3). Map-growth (new endpoints / params) keeps
+    # `stall` at 0 AND feeds `new_info`, so pure enumeration can pin the score to
+    # green forever even when the run is not converging. `chain_stall` = the excess
+    # think iterations past a grace window WITHOUT a chain-advance (a confirmed
+    # finding / foothold — see detect_chain_advance), capped like `stall` at 10. It
+    # does TWO things, both required:
+    #   (a) adds a positive BADNESS term (w_chain_stall) — this is what actually
+    #       RAISES the score during pure recon churn, where base badness is ~0; and
+    #   (b) DECAYS the novelty reward (novelty_scale) so the credit the agent earns
+    #       for "found another endpoint" can no longer cancel that pressure.
+    # isca == 0 (default + churn-aware-disabled path) => chain_stall 0 => the score
+    # is byte-identical to the pre-churn behavior, so existing callers/tests are safe.
+    isca_capped = max(0, min(int(iterations_since_chain_advance or 0), 10))
+    chain_stall = max(0, isca_capped - int(novelty_saturation_grace or 0))
+    novelty_scale = 1.0 / (1.0 + chain_stall)
+
     weighted = {
         "unproductive_verdicts":      weights["w_verdict_count"] * unproductive,
         "iterations_since_state_grew": weights["w_state_growth"] * stall,
         "max_axis_repeats":           weights["w_axis_repeats"] * axis_max,
         "same_pattern_count":         weights["w_same_pattern"] * same_pat,
-        "new_info_events":          - weights["r_new_info"]     * new_info,
-        "actionable_events":        - weights["r_actionable"]   * actionable,
+        "chain_stall":                weights["w_chain_stall"]  * chain_stall,
+        "new_info_events":          - weights["r_new_info"]     * new_info   * novelty_scale,
+        "actionable_events":        - weights["r_actionable"]   * actionable * novelty_scale,
     }
     score = sum(weighted.values())
     score = max(0.0, score)  # clamp at zero; negatives are just "very healthy"
@@ -779,6 +803,9 @@ def compute_productivity_score(
             "same_pattern_count": same_pat,
             "new_info_events": new_info,
             "actionable_events": actionable,
+            "iterations_since_chain_advance": int(iterations_since_chain_advance or 0),
+            "chain_stall": chain_stall,
+            "novelty_scale": round(novelty_scale, 3),
         },
         "weights": {k: round(v, 2) for k, v in weights.items()},
         "weighted": {k: round(v, 2) for k, v in weighted.items()},
@@ -831,6 +858,33 @@ def detect_state_growth(before_state: dict, after_state: dict) -> bool:
     after_cfm = len((after_state or {}).get("chain_findings_memory") or [])
     if after_cfm > before_cfm:
         return True
+    return False
+
+
+def detect_chain_advance(before_state: dict, after_state: dict) -> bool:
+    """Return True only when the engagement CHAIN advanced toward the objective —
+    a confirmed finding was appended, or a real foothold (credential / session)
+    was gained. This is the DEPTH signal, deliberately narrower than
+    `detect_state_growth`, which also fires on MAP-growth (a newly discovered
+    endpoint / parameter / vuln-candidate = recon breadth).
+
+    The distinction is the core of the churn-aware score (Proposal 3): enumerating
+    forever keeps enlarging the map (so `detect_state_growth` stays True and the
+    stall counter never climbs), yet the run may be making no progress toward the
+    flag. Tracking iterations-since-`detect_chain_advance` lets the novelty reward
+    saturate so pure breadth stops masquerading as progress.
+
+    Observed from orchestrator-owned state, NOT the LLM's self-reported verdict.
+    """
+    before_cfm = len((before_state or {}).get("chain_findings_memory") or [])
+    after_cfm = len((after_state or {}).get("chain_findings_memory") or [])
+    if after_cfm > before_cfm:
+        return True
+    b = (before_state or {}).get("target_info") or {}
+    a = (after_state or {}).get("target_info") or {}
+    for key in ("credentials", "sessions"):
+        if len(a.get(key, []) or []) > len(b.get(key, []) or []):
+            return True
     return False
 
 

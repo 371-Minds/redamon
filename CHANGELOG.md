@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2026-07-23
+
+### Added
+
+- **Exploit-Path Search (LATS).** An opt-in, value-guided tree search over executed exploit probes, running as a single hook inside the think node (same model, no new graph node). It activates during exploitation when the agent finds two or more credible attack paths, fans them out, scores each probe by how close it got to a foothold, concentrates the budget on the highest-value line via UCT, and prunes WAF/403 dead ends. Off by default and shadow-mode by default (builds/streams the tree without driving); every knob (budget, depth, branch width, activation sensitivity, exploration-vs-focus, prune floor, node cap) is per-project in AI Agent Behaviour. Live tree card in the agent drawer plus an expandable React Flow modal with per-node inspector and replay. Operator guide in the [Exploit-Path Search (LATS) wiki page](https://github.com/samugit83/redamon/wiki/Exploit-Path-Search-LATS); architecture in [readmes/README.AGENTIC_SYSTEM.md](readmes/README.AGENTIC_SYSTEM.md#exploit-path-search-lats).
+
+---
+
 ## [6.1.1] - 2026-07-21
 
 ### Added

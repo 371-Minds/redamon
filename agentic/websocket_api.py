@@ -113,6 +113,11 @@ class MessageType(str, Enum):
     FIRETEAM_MEMBER_COMPLETED = "fireteam_member_completed"
     FIRETEAM_COMPLETED = "fireteam_completed"
     FIRETEAM_MEMBER_AWAITING_CONFIRMATION = "fireteam_member_awaiting_confirmation"
+    # LATS (exploit-path tree search) lifecycle events. String values MUST stay
+    # byte-identical to the TS MessageType enum in webapp/src/lib/websocket-types.ts.
+    LATS_START = "lats_start"
+    LATS_TREE_UPDATE = "lats_tree_update"
+    LATS_COMPLETE = "lats_complete"
     # Background-job lifecycle events emitted by JobRegistry
     JOB_UPDATE = "job_update"
 
@@ -250,6 +255,12 @@ class WebSocketManager:
         self.active_connections: Dict[str, WebSocketConnection] = {}
         # Separate task registry keyed by session_key — survives connection replacement
         self._active_tasks: Dict[str, asyncio.Task] = {}
+        # Callback registry keyed by session_key. Mirrors _active_tasks so a
+        # NEW connection joining a still-running session (reconnect / switch back
+        # from history) can reach the live StreamingCallback and flush its
+        # persist queue — the DB otherwise lags the live stream, so the restore
+        # read returns a stale/empty timeline. See handle_init flush-on-connect.
+        self._active_callbacks: Dict[str, 'StreamingCallback'] = {}
         # Per-tool task registry for individual tool cancellation.
         # Keyed by f"{session_key}|{wave_id or '__standalone__'}|{step_index if step_index is not None else -1}|{tool_name}".
         # Populated by execute_tool_node / execute_plan_node before awaiting the
@@ -405,6 +416,18 @@ class WebSocketManager:
     def clear_task(self, session_key: str):
         """Remove task from registry"""
         self._active_tasks.pop(session_key, None)
+
+    def register_callback(self, session_key: str, callback: 'StreamingCallback'):
+        """Register the live StreamingCallback for a session (survives reconnect)."""
+        self._active_callbacks[session_key] = callback
+
+    def get_callback(self, session_key: str) -> Optional['StreamingCallback']:
+        """Return the live callback for a session, or None if no run is active."""
+        return self._active_callbacks.get(session_key)
+
+    def clear_callback(self, session_key: str):
+        """Remove callback from registry."""
+        self._active_callbacks.pop(session_key, None)
 
     def get_connection(self, user_id: str, project_id: str, session_id: str) -> Optional[WebSocketConnection]:
         """Get active connection by session identifiers"""
@@ -565,6 +588,29 @@ class StreamingCallback:
         if self._persist_worker_task and not self._persist_worker_task.done():
             self._persist_worker_task.cancel()
 
+    async def flush_persist_queue(self, timeout: float = 3.0) -> bool:
+        """Block until the currently-queued persist messages are written to the DB,
+        WITHOUT stopping the worker (unlike drain_persist_queue). Called on a new
+        connection so the client's restore read sees an up-to-date timeline instead
+        of a snapshot lagging behind the live stream.
+
+        Bounded by `timeout` so a fast-emitting agent (queue never reaches zero)
+        can't block CONNECTED indefinitely; returns True if fully flushed, False
+        on timeout (partial flush — the client's post-connect resync still closes
+        any remaining gap).
+        """
+        if self._persist_queue.qsize() == 0:
+            return True
+        self._ensure_persist_worker()
+        try:
+            await asyncio.wait_for(self._persist_queue.join(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"flush_persist_queue timed out after {timeout}s for session "
+                f"{self._session_id} ({self._persist_queue.qsize()} still queued)")
+            return False
+
     @property
     def connection(self) -> WebSocketConnection:
         """Always resolve to the current connection (may have been replaced by reconnect)."""
@@ -591,7 +637,10 @@ class StreamingCallback:
     async def on_thinking(self, iteration: int, phase: str, thought: str, reasoning: str,
                           action: Optional[str] = None,
                           input_tokens: int = 0,
-                          output_tokens: int = 0):
+                          output_tokens: int = 0,
+                          productivity_score: Optional[float] = None,
+                          productivity_tier: Optional[str] = None,
+                          stall: Optional[int] = None):
         """Called when agent starts thinking.
 
         `action` is the decision's action (e.g. "use_tool", "deploy_fireteam").
@@ -611,6 +660,11 @@ class StreamingCallback:
             "action": action,
             "input_tokens": int(input_tokens or 0),
             "output_tokens": int(output_tokens or 0),
+            # Live agent-status KPIs (rendered on the Todos bar). Optional so
+            # older callers / restores without them still work.
+            "productivity_score": productivity_score,
+            "productivity_tier": productivity_tier,
+            "stall": stall,
         }
         await self.connection.send_message(MessageType.THINKING, payload)
         self._persist("thinking", payload)
@@ -924,6 +978,41 @@ class StreamingCallback:
         self._persist("deep_think", payload)
         logger.info(f"Deep Think analysis sent to session {self.connection.session_id}")
 
+    async def on_lats_start(self, search_id: str, objective: str, phase: str,
+                            budget: dict, shadow_mode: bool):
+        """Called when a LATS exploit-path search activates (a new tree seeded)."""
+        payload = {
+            "search_id": search_id,
+            "objective": objective,
+            "phase": phase,
+            "budget": budget,
+            "shadow_mode": shadow_mode,
+        }
+        await self.connection.send_message(MessageType.LATS_START, payload)
+        self._persist("lats_start", payload)
+        logger.info(f"LATS search {search_id} started for session {self.connection.session_id}")
+
+    async def on_lats_tree_update(self, search_id: str, snapshot: dict):
+        """Called once per hook invocation (= once per wave) with the full tree
+        snapshot. The tree is <= LATS_MAX_TREE_NODES nodes, so no diffing."""
+        payload = {"search_id": search_id, "snapshot": snapshot}
+        await self.connection.send_message(MessageType.LATS_TREE_UPDATE, payload)
+        self._persist("lats_tree_update", payload)
+
+    async def on_lats_complete(self, search_id: str, best_trajectory: list,
+                               outcome: str, metrics: Optional[dict] = None):
+        """Called when a LATS search ends (terminal_success | budget_exhausted |
+        branch_collapsed). metrics carries the A/B telemetry (§20.13)."""
+        payload = {
+            "search_id": search_id,
+            "best_trajectory": best_trajectory,
+            "outcome": outcome,
+            "metrics": metrics or {},
+        }
+        await self.connection.send_message(MessageType.LATS_COMPLETE, payload)
+        self._persist("lats_complete", payload)
+        logger.info(f"LATS search {search_id} complete ({outcome}) for session {self.connection.session_id}")
+
     async def on_phase_update(self, current_phase: str, iteration_count: int, attack_path_type: str = ""):
         """Called when phase changes"""
         payload = {
@@ -1112,6 +1201,20 @@ class WebSocketHandler:
             # Store graph view scope (if provided)
             connection.graph_view_cypher = init_msg.graph_view_cypher
 
+            # Flush-on-connect: if this session has a live run, force its persist
+            # queue to the DB before we confirm the connection. The client's
+            # restore reads the conversation over HTTP right around now; without
+            # this the read races ahead of the async persist queue and returns a
+            # stale/empty timeline (the "empty chat that fills in over seconds"
+            # bug when reopening a running session from history). Bounded so a
+            # busy agent can't stall the handshake.
+            try:
+                live_cb = self.ws_manager.get_callback(connection.get_key())
+                if live_cb is not None:
+                    await live_cb.flush_persist_queue()
+            except Exception as e:
+                logger.warning(f"flush-on-connect failed for {session_id}: {e}")
+
             # Send connected confirmation with protocol version + feature
             # advertising. Protocol v2 adds the FIRETEAM_* event family;
             # older clients ignore unknown fields so this is backwards-compat.
@@ -1172,6 +1275,7 @@ class WebSocketHandler:
             )
             connection._active_task = task
             self.ws_manager.register_task(connection.get_key(), task)
+            self.ws_manager.register_callback(connection.get_key(), callback)
 
         except ValidationError as e:
             logger.error(f"Invalid query message: {e}")
@@ -1209,6 +1313,7 @@ class WebSocketHandler:
             await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
+            self.ws_manager.clear_callback(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
 
     async def handle_approval(self, connection: WebSocketConnection, payload: dict):
@@ -1241,6 +1346,7 @@ class WebSocketHandler:
             )
             connection._active_task = task
             self.ws_manager.register_task(connection.get_key(), task)
+            self.ws_manager.register_callback(connection.get_key(), callback)
 
         except ValidationError as e:
             logger.error(f"Invalid approval message: {e}")
@@ -1277,6 +1383,7 @@ class WebSocketHandler:
             await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
+            self.ws_manager.clear_callback(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
 
     async def handle_answer(self, connection: WebSocketConnection, payload: dict):
@@ -1308,6 +1415,7 @@ class WebSocketHandler:
             )
             connection._active_task = task
             self.ws_manager.register_task(connection.get_key(), task)
+            self.ws_manager.register_callback(connection.get_key(), callback)
 
         except ValidationError as e:
             logger.error(f"Invalid answer message: {e}")
@@ -1343,6 +1451,7 @@ class WebSocketHandler:
             await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
+            self.ws_manager.clear_callback(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
 
     async def handle_fireteam_member_confirmation(self, connection: WebSocketConnection, payload: dict):
@@ -1427,6 +1536,7 @@ class WebSocketHandler:
             )
             connection._active_task = task
             self.ws_manager.register_task(connection.get_key(), task)
+            self.ws_manager.register_callback(connection.get_key(), callback)
 
         except ValidationError as e:
             logger.error(f"Invalid tool confirmation message: {e}")
@@ -1463,6 +1573,7 @@ class WebSocketHandler:
             await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
+            self.ws_manager.clear_callback(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
 
     async def handle_guidance(self, connection: WebSocketConnection, payload: dict):
@@ -1655,6 +1766,7 @@ class WebSocketHandler:
         )
         connection._active_task = task
         self.ws_manager.register_task(connection.get_key(), task)
+        self.ws_manager.register_callback(connection.get_key(), callback)
         logger.info(f"Resuming execution for session {connection.session_id}")
 
     async def _run_orchestrator_resume(self, connection: WebSocketConnection, callback):
@@ -1683,6 +1795,7 @@ class WebSocketHandler:
             await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
+            self.ws_manager.clear_callback(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
 
     async def handle_ping(self, connection: WebSocketConnection, payload: dict):

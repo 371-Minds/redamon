@@ -7,20 +7,25 @@
 'use client'
 
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { CheckCircle2, Circle, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import styles from './TodoListWidget.module.css'
 import type { TodoItem } from '@/lib/websocket-types'
 
 interface TodoListWidgetProps {
   items: TodoItem[]
+  /** Live KPI chips rendered on the right of the header (Todos bar). */
+  headerRight?: ReactNode
 }
 
-export function TodoListWidget({ items }: TodoListWidgetProps) {
+export function TodoListWidget({ items, headerRight }: TodoListWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
-  if (!items || items.length === 0) {
+  if ((!items || items.length === 0) && !headerRight) {
     return null
   }
+
+  const hasItems = !!items && items.length > 0
 
   // Find the current in-progress task
   const currentTask = items.find(item => item.status === 'in_progress')
@@ -71,20 +76,25 @@ export function TodoListWidget({ items }: TodoListWidgetProps) {
 
   return (
     <div className={styles.todoWidget}>
-      {/* Header with current task and expand button */}
+      {/* Header: label + expand toggle grouped on the LEFT, live KPIs on the RIGHT */}
       <div className={styles.todoHeader}>
-        <span className={styles.todoLabel}>Todos</span>
-        <button
-          className={styles.expandButton}
-          onClick={() => setIsExpanded(!isExpanded)}
-          title={isExpanded ? 'Collapse list' : 'Expand list'}
-        >
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
+        <div className={styles.todoHeaderLeft}>
+          <span className={styles.todoLabel}>Todos</span>
+          {hasItems && (
+            <button
+              className={styles.expandButton}
+              onClick={() => setIsExpanded(!isExpanded)}
+              title={isExpanded ? 'Collapse list' : 'Expand list'}
+            >
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          )}
+        </div>
+        {headerRight && <div className={styles.todoHeaderRight}>{headerRight}</div>}
       </div>
 
       {/* Current task (visible only when collapsed) */}
-      {!isExpanded && currentTask && (
+      {hasItems && !isExpanded && currentTask && (
         <div className={`${styles.todoItem} ${getStatusClass(currentTask.status)}`}>
           <div className={styles.todoIcon}>{getStatusIcon(currentTask.status)}</div>
           <div className={styles.todoContent}>
@@ -94,7 +104,7 @@ export function TodoListWidget({ items }: TodoListWidgetProps) {
       )}
 
       {/* Expanded list (shown when expanded) */}
-      {isExpanded && (
+      {hasItems && isExpanded && (
         <div className={styles.todoListExpanded}>
           {items.map((item, index) => {
             const description = getDescription(item)

@@ -161,6 +161,7 @@ export function AIAssistantDrawer({
     conversationId, setConversationId,
     showHistory, setShowHistory,
     handleSelectConversation,
+    resyncActiveConversation,
     handleHistoryNewChat,
     handleDeleteConversation,
   } = useConversationRestoration({
@@ -242,6 +243,10 @@ export function AIAssistantDrawer({
     graphViewCypher,
     enabled: isOpen,
     onMessage: handleWebSocketMessage,
+    // On (re)connect, if we just restored a still-running session, re-read it
+    // now that the backend has flushed its persist queue so the timeline is
+    // complete (fixes the empty/partial chat that trickles in over seconds).
+    onConnect: useCallback(() => { resyncActiveConversation(sessionId) }, [resyncActiveConversation, sessionId]),
   })
 
   // ─── Send handlers ────────────────────────────────────────────────────────

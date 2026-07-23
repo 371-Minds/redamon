@@ -7,6 +7,7 @@ import type {
   FireteamItem,
   FireteamMemberPanel,
   FireteamMemberStatus,
+  LatsSearchItem,
 } from './AgentTimeline'
 
 // Re-export AgentTimeline types so consumers only need one import path
@@ -19,6 +20,7 @@ export type {
   FireteamItem,
   FireteamMemberPanel,
   FireteamMemberStatus,
+  LatsSearchItem,
 }
 
 export type Phase = 'informational' | 'exploitation' | 'post_exploitation'
@@ -56,6 +58,7 @@ export type ChatItem =
   | FileDownloadItem
   | DeepThinkItem
   | FireteamItem
+  | LatsSearchItem
 
 export interface AIAssistantDrawerProps {
   isOpen: boolean

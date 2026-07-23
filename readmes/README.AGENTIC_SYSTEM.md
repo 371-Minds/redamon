@@ -125,26 +125,27 @@ Engineers wanting to extend the platform should focus on the LangGraph chapter, 
    - [Per-Tool Stop](#per-tool-stop)
 9. [Tool Confirmation Gate](#tool-confirmation-gate)
 10. [Deep Think (Strategic Reasoning Pre-Step)](#deep-think-strategic-reasoning-pre-step)
-11. [Productivity Verdict & Unproductive-Streak Loop Detector](#productivity-verdict--unproductive-streak-loop-detector-1)
-12. [Wave Execution (Parallel Tool Plans)](#wave-execution-parallel-tool-plans)
-13. [Fireteam - Parallel Specialist Sub-Agents](#fireteam--parallel-specialist-sub-agents)
-14. [Output Analysis (Inline)](#output-analysis-inline)
-15. [Guardrails (Hard, Soft, Scope)](#guardrails-hard-soft-scope)
-16. [Rules of Engagement (RoE)](#rules-of-engagement-roe)
-17. [Stealth Mode](#stealth-mode)
-18. [Frontend Integration](#frontend-integration)
-19. [Detailed Workflows](#detailed-workflows)
-20. [Multi-Objective Support](#multi-objective-support)
-21. [EvoGraph - Evolutive Attack Chain Graph](#evograph--evolutive-attack-chain-graph)
-22. [Security & Multi-Tenancy](#security--multi-tenancy)
-23. [Token Accounting & Cost Tracking](#token-accounting--cost-tracking)
-24. [Knowledge Base Integration](#knowledge-base-integration)
-25. [Report Summarizer (Narrative Synthesis)](#report-summarizer-narrative-synthesis)
-26. [Companion Orchestrators (Cypherfix)](#companion-orchestrators-cypherfix)
-27. [Comparative Benchmark - RedAmon vs. Other AI Pentesters](#comparative-benchmark--redamon-vs-other-ai-pentesters)
-28. [Error Handling & Resilience](#error-handling--resilience)
-29. [Codebase Layout](#codebase-layout)
-30. [Configuration Reference](#configuration-reference)
+11. [Exploit-Path Search (LATS)](#exploit-path-search-lats)
+12. [Productivity Verdict & Unproductive-Streak Loop Detector](#productivity-verdict--unproductive-streak-loop-detector-1)
+13. [Wave Execution (Parallel Tool Plans)](#wave-execution-parallel-tool-plans)
+14. [Fireteam - Parallel Specialist Sub-Agents](#fireteam--parallel-specialist-sub-agents)
+15. [Output Analysis (Inline)](#output-analysis-inline)
+16. [Guardrails (Hard, Soft, Scope)](#guardrails-hard-soft-scope)
+17. [Rules of Engagement (RoE)](#rules-of-engagement-roe)
+18. [Stealth Mode](#stealth-mode)
+19. [Frontend Integration](#frontend-integration)
+20. [Detailed Workflows](#detailed-workflows)
+21. [Multi-Objective Support](#multi-objective-support)
+22. [EvoGraph - Evolutive Attack Chain Graph](#evograph--evolutive-attack-chain-graph)
+23. [Security & Multi-Tenancy](#security--multi-tenancy)
+24. [Token Accounting & Cost Tracking](#token-accounting--cost-tracking)
+25. [Knowledge Base Integration](#knowledge-base-integration)
+26. [Report Summarizer (Narrative Synthesis)](#report-summarizer-narrative-synthesis)
+27. [Companion Orchestrators (Cypherfix)](#companion-orchestrators-cypherfix)
+28. [Comparative Benchmark - RedAmon vs. Other AI Pentesters](#comparative-benchmark--redamon-vs-other-ai-pentesters)
+29. [Error Handling & Resilience](#error-handling--resilience)
+30. [Codebase Layout](#codebase-layout)
+31. [Configuration Reference](#configuration-reference)
 
 ---
 
@@ -594,6 +595,14 @@ Two newer mechanisms keep Deep Think itself from looping. The **cooldown** (`DEE
 
 The advantage of having Deep Think as a *separate* call rather than asking the regular `think` to "think harder" is **focus**. The Deep Think prompt does not have to also pick a tool, parse a previous output, or update a TODO list - its only job is strategic reasoning, specifically hypothesis-engineering. The result is rendered as markdown and surfaces in the chat as a distinct purple "Deep Think" card so the operator can see *why* the agent paused to re-strategize. Full details: [Deep Think chapter](#deep-think-strategic-reasoning-pre-step).
 
+### Exploit-Path Search (LATS)
+
+Where Deep Think re-strategizes *once* and hands a plan back to the linear loop, **LATS (Language Agent Tree Search)** turns exploitation into an explicit, bounded **tree search over executed probes**. The default `think` loop is a greedy depth-first walk: it commits to one hypothesis and grinds until the productivity engine reactively forces a pivot. A real exploit chain is a tree, from a login endpoint the promising moves fan out (default creds, SQLi, password-reset probe, JWT confusion) and only the branch that keeps yielding signal should grow deep. LATS makes that tree explicit: it fans out competing vectors, scores each *executed* probe by how much closer it got to a foothold (a reflected DB error scores higher than a generic 403), concentrates the iteration budget on the highest-value line via UCT, and **backs out of WAF / 403 dead ends** instead of hammering them.
+
+Architecturally, LATS is not a new graph node. It is a single `lats_hook(...)` call **inside `think_node`** (plus a few state fields) that maps the classic MCTS cycle, Select -> Expand -> Evaluate -> Backpropagate, one-to-one onto the existing `think -> execute -> think` loop, spread across iterations. It runs on the **same single agent model**, only ever emits the existing `use_tool` / `plan_tools` actions, and reuses the primitives already in the codebase: the value function is the productivity score plus `error_class` annotations plus `ChainFinding.confidence`; the detonation gate is the existing tool-confirmation node; durability is free because the whole tree rides inside `AgentState`. It ships behind two off-switches (`LATS_ENABLED=false`, `LATS_SHADOW_MODE=true`) and self-limits: it only turns on when the agent finds at least 2 credible attack paths on a discovered surface, and hands the objective back to the normal loop the moment the branches collapse to one obvious line.
+
+The quality of the fan-out depends entirely on **what the expansion step knows about the live target**. Each expand call is grounded in a lean-but-complete slice of the same context the normal `think` node sees: the rendered **attack-chain** (the real endpoints, parameters, and observations the agent has actually discovered, so a probe targets `post.php?id=` instead of a hallucinated path), the **active attack-skill workflow** for the classified vuln class (the technique playbook and payload templates, factored into a shared `build_builtin_skill_workflow()` so LATS gets the method without the ~22K-token tool inventory), the target-info and the dead-ends-already-tried, and the exact **tool-argument schema** so every proposed probe is executable. It deliberately excludes the think-node bookkeeping (full tool docs, skill menu, phase definitions, TODO / Q&A history) that does not change *which* probe is correct, keeping each expand around 13-14K tokens. Controlled by `LATS_FULL_CONTEXT` with a `LATS_CONTEXT_WINDOW`-bounded chain window. Full details: [Exploit-Path Search (LATS) chapter](#exploit-path-search-lats).
+
 ### Productivity Verdict & Unproductive-Streak Loop Detector
 
 Every tool output is classified by the LLM into one of five **productivity verdicts** - `new_info`, `confirmation`, `no_progress`, `blocked`, `duplicate` - emitted in the same `output_analysis` JSON object as the inline analysis. The verdict is required, not optional; the schema forces the model to cite specific evidence (`what_was_new`) and a rationale before accepting a non-`no_progress` claim. The orchestrator then performs a small **honesty audit** on each verdict: it cross-checks `new_information_gained=true` against the actual state delta for the same iteration (did `chain_findings` grow? was `extracted_info` populated? was an `actionable_finding` produced?). If the LLM claims new information but nothing actually changed, the verdict is auto-downgraded to `no_progress` and the downgrade reason is surfaced in the next prompt so the model sees its own dishonest claim being corrected.
@@ -611,10 +620,12 @@ Each signal is multiplied by a **dynamic weight** that scales with session age (
 | Tier | Threshold | Action |
 |------|-----------|--------|
 | green | < 3 | None |
-| yellow | 3-5 | Soft hint in next prompt: "consider whether your current hypothesis is still viable" |
-| orange | 5-7 | Fire Deep Think (subject to cooldown + novelty check) |
+| yellow | 3-4 | Soft hint in next prompt: "consider whether your current hypothesis is still viable" |
+| orange | 4-7 | Fire Deep Think (subject to cooldown + novelty check) |
 | red | 7-9 | Demand the agent name a new hypothesis class in its next reasoning |
 | critical | ≥9 | Prompt warns the next expensive call on the dominant axis will be rejected |
+
+> **Churn-aware scoring (`PRODUCTIVITY_CHURN_AWARE`).** Signal 2 (state-growth) treats *any* state growth as progress, including a growing recon map. But map-growth (new endpoints / parameters) is recon **breadth**, not **convergence** on the flag, so a session that keeps discovering novel-but-useless surface used to stay pinned green while genuinely stalling. Churn-awareness distinguishes *attack-chain advance* (a new confirmed finding, credential, or session, tracked by an orchestrator-owned `_iterations_since_chain_advance` depth counter) from mere map-growth. Once the run goes `PRODUCTIVITY_NOVELTY_SATURATION_GRACE` (default 3) think iterations without a chain-advance, two things happen: the novelty reward is progressively **decayed** (`novelty_scale = 1 / (1 + chain_stall)`) so pure enumeration stops crediting the score toward green, and a positive `chain_stall` **badness** term is added so the score actually climbs. The tier ladder (hint → Deep Think → pivot) then fires on real stall instead of being masked by recon diffusion. The Deep Think threshold was lowered to **4.0** (orange) and LATS re-triggers at **3.0**, so the cheaper LATS search engages first in the `[3.0, 4.0)` band before a full Deep Think.
 
 The score and component breakdown are logged on every think turn and persisted onto state (`_last_productivity_score`) for the UI and post-session analysis. A **same-pattern fingerprint audit** still injects the existing recent-fingerprint block when 3+ same-pattern calls are detected; the audit is the LLM-facing render of one of the five score signals. The same pipeline runs in the wave path (one verdict per wave, axis recorded per wave step) and in fireteam member subgraphs. Full details: [Productivity Verdict & Loop Detector chapter](#productivity-verdict--unproductive-streak-loop-detector-1).
 
@@ -962,6 +973,7 @@ The frontend exposes a skill picker. When the operator changes the active skill 
 1. Pushes the formatted content (`[CHAT SKILL: <name>]\n\n<content>`) into the connection's `guidance_queue`.
 2. The next `think` iteration drains the queue and prepends the skill body as a `## USER GUIDANCE` block.
 3. For attack skills (not just chat skills), `attack_path_type` on parent state is also updated so subsequent fireteam deploys snapshot the new value.
+4. **Behavior-triggered phase auto-transition (`AUTO_TRANSITION_ON_ATTACK_SKILL`).** When the resolved skill is a concrete attack skill (not `<term>-unclassified`) and the agent is still in the `informational` phase, the orchestrator promotes it to `exploitation` in the same step, instead of waiting for the agent to discretionarily request a transition. Classifying "this is an RCE / XSS / SQLi engagement" *is* the decision to exploit, so the phase follows the classification. The auto-promotion is gated: it is skipped when `REQUIRE_APPROVAL_FOR_EXPLOITATION` is set (the operator still gets the approval gate), and it never downgrades a phase. This is what lets LATS - which is exploitation-gated - engage early instead of stalling in recon (see the [`should_auto_transition_on_skill`](../agentic/state.py) predicate).
 
 Members of an in-flight fireteam wave keep their deploy-time `attack_path_type` snapshot, skill changes only take effect on the next fan-out.
 
@@ -1786,6 +1798,516 @@ Deep Think runs *inside* `think_node` rather than as its own LangGraph node beca
 
 The trade-off: harder to instrument as a discrete node in LangGraph traces. Mitigation: the dedicated WebSocket event and the `Deep Think triggered: <reason>` log line provide the observability hook.
 
+### Interplay With Exploit-Path Search (LATS)
+
+Deep Think and LATS are the two strategic-reasoning layers, and they are wired to cooperate rather than fight. On the turn LATS activates, Deep Think's `competing_hypotheses` and `attack_vectors_identified` are handed to LATS as **branching material** for the root of the search tree (each hypothesis becomes one candidate probe), but LATS never consumes Deep Think's `recommended_approach` or `priority_order`, following a single recommended plan would collapse the tree into a line. Conversely, while a LATS tree is **live and driving** (non-shadow), `think_node` **suppresses Deep Think entirely**: the tree search *is* the re-planning Deep Think would otherwise do, and letting both run would double the meta-reasoning while LATS overrides the decision anyway. Deep Think resumes the moment LATS archives its tree, now informed by the tree-summary LATS carries into the execution trace. Full details: [Exploit-Path Search (LATS) chapter](#exploit-path-search-lats).
+
+---
+
+## Exploit-Path Search (LATS)
+
+LATS (Language Agent Tree Search) is a **bounded, value-guided tree search over executed exploit probes**. It replaces the agent's default "commit to one hypothesis and grind" behaviour during exploitation with an explicit search that fans out competing attack vectors, scores each *executed* probe by how much closer it got to a foothold, concentrates the iteration budget on the highest-value line, and **backs out of WAF / 403 / filtered dead ends** instead of hammering them. It ships behind two off-switches (`LATS_ENABLED=false` and `LATS_SHADOW_MODE=true`) so existing sessions see zero change until an operator opts in.
+
+The implementation lives in a single self-contained engine, `agentic/orchestrator_helpers/lats.py`. The orchestrator's only contact with it is (a) a handful of state fields declared on `AgentState` (LangGraph strips undeclared keys), and (b) **one `lats_hook(...)` call inside `think_node`**, placed after the fireteam gate and before the `ExecutionStep` is built. There are **no new graph nodes, no new router branches, and no new LLM model**: LATS runs entirely on the same single agent model `think_node` already uses, and only ever emits the existing `use_tool` / `plan_tools` actions, so the router never learns a new branch.
+
+### Why Linear ReAct Under-Performs on Exploit Paths
+
+The default `think` loop is a **greedy depth-first walk**: it picks the single next action from the linear transcript plus engagement state, commits to one hypothesis (say "SQLi in `username`"), and keeps probing it. When a filter or WAF keeps rejecting, the productivity engine notices *reactively* (axis lock-in, uniform-response anomaly, orange/red tier) and eventually nudges a pivot, but several iterations have already been spent on a dead axis.
+
+A real exploit chain is a **tree**, not a line. From a login endpoint the promising moves fan out (default creds, SQLi on `username`, password-reset probe, JWT alg-confusion), and the winning branch grows deep only under the node that keeps yielding signal (reset-flow probe -> reset token leaked -> forge token -> set new password -> reset admin account). LATS makes that tree explicit and scores a reflected DB error higher than a generic 403, so the budget flows to the branch that is actually progressing.
+
+### The Core Insight: Virtual MCTS Over an Append-Only Stream
+
+You cannot un-send a request to a live target, so the execution history only ever grows. LATS is therefore a **virtual tree search over an append-only execution stream**: the tree is bookkeeping metadata that decides *which single probe to run next*, and "backtracking" does not restore a checkpoint, it **re-roots the reasoning frontier** onto a different, more promising node and builds the next probe from that node's branch context.
+
+Classic MCTS runs one rollout at a time through a four-step cycle (Select -> Expand -> Evaluate -> Backpropagate). RedAmon already runs one action per `think` iteration, so that cycle maps **one-to-one onto the existing `think -> execute -> think` loop, spread across iterations**:
+
+```mermaid
+flowchart LR
+    subgraph turnN["think turn N"]
+      direction TB
+      EV["EVALUATE + BACKPROP<br/>score last turn's wave,<br/>push value up ancestors"]
+      SEL["SELECT<br/>descend root by UCT to<br/>an actionable node"]
+      EXP["EXPAND<br/>lats_expand -> candidate<br/>child probes"]
+      ISS["ISSUE WAVE<br/>override decision with<br/>use_tool / plan_tools"]
+      EV --> SEL --> EXP --> ISS
+    end
+    ISS -->|"execute_tool / execute_plan"| TOOLS["real probes hit<br/>the live target"]
+    TOOLS -->|"tool_output + output_analysis"| turnN1["think turn N+1<br/>(EVALUATE the wave just run)"]
+```
+
+Each hook invocation completes one virtual rollout: it evaluates the wave issued *last* turn, then selects/expands/issues the wave for *this* turn. The `output_analysis` the think LLM already produces is the evaluation signal, so LATS adds no extra scoring call on the evaluate side.
+
+The crucial timing subtlety: the EVALUATE step does **not** run before the think LLM call, it runs **after** it. RedAmon's single think call produces `output_analysis` (the read of the previous wave) *and* a proposed action in one JSON. LATS keeps the analysis half (that is the evaluation) and overrides the action half. So on an evaluation turn the LLM call still fires (it is the one that reads the wave), and LATS post-processes its result. One think visit therefore performs the *evaluate* phase of the previous wave and the *select + expand + emit* phase of the next one, around a single LLM call.
+
+### Classic LATS and the RedAmon Mapping
+
+Every LATS concept maps onto a primitive RedAmon already had, which is why the integration is additive (no new node, no new model):
+
+| Classic LATS concept | RedAmon mechanism |
+|----------------------|-------------------|
+| Node (state) | An entry in `_exploit_tree.nodes` summarizing a branch's observation, value, and visits |
+| Edge (action) | A tool call (`tool_name`, `tool_args`), executed by `execute_tool_node` / `execute_plan_node` |
+| Environment observation | `tool_output` + the inline `output_analysis` produced the next turn |
+| Value function | `compute_productivity_score` (inverted) + `error_class` signal + `ChainFinding.confidence` |
+| Actor / Expand | LATS's own structured `lats_expand()` call on the single agent model |
+| Select (UCT) | `lats_select(tree, c)` reading node value + visit counts |
+| Backpropagate | `lats_backprop(tree, node_id, value)` (running max up the ancestor chain) |
+| Reflection | A deterministic one-line lesson stamped on the pruned node (`reflection`) |
+| Terminal success | `output_analysis.exploit_succeeded == True` on a node |
+| Detonation gate | The existing `await_tool_confirmation` node on `DANGEROUS_TOOLS` |
+| Rollout / branch budget | `MAX_ITERATIONS` + `LATS_MAX_ROLLOUTS` + `LATS_MAX_TREE_NODES` |
+| Durability | The Postgres checkpointer serializes `_exploit_tree` with the rest of state, for free |
+
+The field guide raises two cautions for autonomous pentest use, both already satisfied here: **depth is not free** (every edge is a real request, so cap rollouts and keep branching low) is handled by the budget knobs; **gate detonating actions** (irreversible steps behind an approval checkpoint) is handled by the unchanged confirmation gate.
+
+### Where LATS Sits in the Think Node
+
+```mermaid
+flowchart TB
+    START(["think_node begins"]) --> DT["Deep Think pre-step<br/>(suppressed if LATS driving)"]
+    DT --> PROMPT["Assemble system prompt<br/>productivity, guardrails, skills"]
+    PROMPT --> LLM["Agent LLM call<br/>-> LLMDecision (+ output_analysis)"]
+    LLM --> FTGATE["Fireteam gate"]
+    FTGATE --> HOOK{"LATS_ENABLED?"}
+    HOOK -->|no| STEP["Build ExecutionStep<br/>(decision unchanged)"]
+    HOOK -->|yes| LATS["lats_hook(state, decision, llm)<br/>may OVERRIDE decision.action"]
+    LATS --> STEP
+    STEP --> ROUTE["_route_after_think<br/>dispatches on decision.action"]
+
+    style LATS fill:#3b3b6d,color:#fff
+    style HOOK fill:#5a5a5a,color:#fff,stroke:#2d2d2d
+```
+
+Because the hook mutates only `decision` (via `decision.model_copy(update=...)`) and runs before the step is built, everything downstream, the router, the tool-confirmation gate, the RoE gates, inherits the LATS override automatically. In shadow mode the hook builds and streams the tree but returns the decision untouched.
+
+### Activation: When the Search Turns On
+
+LATS does not run on every exploitation turn. A two-stage gate protects against spinning up a tree when there is nothing to search. First `lats_active(state)` is a cheap pre-gate; only if it passes does LATS make its **own** structured assessment call (`lats_expand` with `node=None`), and the tree is created **only if that assessment yields at least `LATS_MIN_HYPOTHESES` credible probes**. One obvious path is not a search, so LATS stays off and legacy ReAct drives.
+
+```mermaid
+flowchart TB
+    A(["hook: no live tree"]) --> B{"LATS_ENABLED?"}
+    B -->|no| Z["return decision<br/>(legacy path)"]
+    B -->|yes| C{"current_phase in<br/>LATS_ALLOWED_PHASES?"}
+    C -->|no| Z
+    C -->|yes| D{"attack surface exists?<br/>(findings / vulns /<br/>services / tech)"}
+    D -->|no| Z
+    D -->|yes| E{"objective already<br/>exploited?"}
+    E -->|yes| Z
+    E -->|no| F{"re-activation cooldown<br/>elapsed since last archive?<br/>(LATS_REACTIVATE_COOLDOWN)"}
+    F -->|no| Z
+    F -->|yes| G{"trigger fired?"}
+    G -->|"Deep Think ran this turn"| H["run lats_expand(node=None)"]
+    G -->|"productivity score >=<br/>LATS_SCORE_THRESHOLD"| H
+    G -->|"state-growth stall >=<br/>LATS_REACTIVATE_STUCK_TURNS"| H
+    G -->|"none"| Z
+    H --> I{">= LATS_MIN_HYPOTHESES<br/>credible probes?"}
+    I -->|no| Z
+    I -->|yes| J["seed a new tree<br/>-> LATS drives"]
+
+    style B fill:#5a5a5a,color:#fff,stroke:#2d2d2d
+    style G fill:#5a5a5a,color:#fff,stroke:#2d2d2d
+    style I fill:#5a5a5a,color:#fff,stroke:#2d2d2d
+    style J fill:#3b3b6d,color:#fff
+```
+
+The **trigger** is an escalation ladder so LATS engages *within* an objective, not only on a Deep Think turn:
+1. **Deep Think fired this turn** (`deep_think_ran_this_turn`): a moment of strategic significance already recognised by the orchestrator. LATS activates off Deep Think's *firing*, never its output.
+2. **Productivity score `>= LATS_SCORE_THRESHOLD`** (default 4.0): the churn-aware first responder, deliberately set *just below* the Deep Think threshold (5.0) so LATS engages as the cheaper re-planner before a full strategic re-plan.
+3. **State-growth stall `>= LATS_REACTIVATE_STUCK_TURNS`** (default 5): the non-gameable floor, observed by the orchestrator (no new facts for N turns), independent of anything the LLM self-reports.
+
+The **re-activation cooldown** (`LATS_REACTIVATE_COOLDOWN`, default 4 iterations) applies to every activation *after* the first archive, so a freshly collapsed tree cannot immediately rebuild the same dead branches. LATS also refuses to start if a foothold for the current objective is already in hand (`exploit_success`, `access_gained`, `privilege_escalation`, `remote_code_execution`, or `session_hijacked` findings present).
+
+### The Input to LATS: Situational Context
+
+Every `lats_expand` call, the seed *and* every node extension, is grounded in the same forward-looking situation a normal think step reasons over, assembled by `_situational_context()` and rendered compactly (each part capped so a deep tree's prompt stays bounded).
+
+When `LATS_FULL_CONTEXT` is on (default), `_situational_context()` **prepends a lean-but-complete grounding block** (`_full_think_context()`) before the LATS-specific deltas below. This is the fix for the original grounding gap: `target_info.endpoints` is frequently empty because the surface the agent actually discovered lives in the **execution trace**, not the structured recon fields, so an expand step reading only `target_info` saw `technologies=[…]` and no endpoints, and hallucinated paths. The prepended block carries:
+
+- **Attack-chain so far** - the rendered execution trace (`format_chain_context`, windowed by `LATS_CONTEXT_WINDOW`): the real endpoints, parameters, and observations the agent has actually hit (e.g. an `LFI via post.php?id` finding with its evidence). This is *the* grounding source, the answer to "where do I probe".
+- **Active attack-skill workflow** - the full technique playbook + payload templates for the classified vuln class, produced by the module-level `build_builtin_skill_workflow()` (split out of `get_phase_tools` so LATS gets the method without the ~22K-token tool-inventory docs). The answer to "how do I probe this class".
+- **target_info, Rules of Engagement (when enabled), and the Agent/Chat skills catalog.**
+
+The arg schema that makes each probe executable is supplied separately in the expand **system** message (`_tool_schema_block`). Deliberately **excluded** from the grounding block (they do not change which probe is correct): the full tool-inventory docs, the switchable skill menu, phase definitions, and TODO / Q&A / objective-history bookkeeping - keeping each expand around 13-14K tokens. The LATS-specific deltas then follow under a `## LATS deltas` header:
+
+- **Recon surface** from `target_info`: primary target, hosts, services, technologies, endpoints, parameters, vulnerabilities.
+- **Confirmed findings** from `chain_findings_memory` (last 8), each as `finding_type: description`.
+- **Tried-and-failed dead ends** from `chain_failures_memory` (last 8), rendered as "do not repeat these".
+- **Prior LATS searches this run**: a dedicated, append-only, capped digest (`_lats_tree_digest`, up to `LATS_DIGEST_MAX` entries) that survives execution-trace eviction, so every new tree sees the accumulated history of every finished tree (outcome + best line + what it ruled out), not just the last one.
+- **Active skill methodology**: the exploitation playbook for the current vuln class, reused from the same builder the think step uses, so probes follow proven technique rather than ad-hoc guesses.
+- **Deep Think hypotheses (seed only, and only when Deep Think fired this turn)**: because activation can also come from the score or stall triggers with no Deep Think, this block is present only when `_lats_deep_think_hints` was set that turn; when present, each competing hypothesis and attack vector becomes a distinct root branch. On a node *extension* (not the seed), this block is replaced by the **root-to-node trajectory** (each ancestor probe with its verdict and short observation) plus a **dedup list** of probe signatures already in the tree, so an extension sees the whole line and never re-proposes an existing probe.
+
+### The Tree Model
+
+The whole tree rides inside `AgentState._exploit_tree` as a plain dict (`ExploitTree.model_dump()`), so the Postgres checkpointer persists it for free and concurrent sessions never share state. A tree is a synthetic root plus `ExploitTreeNode` children, each of which is one **edge = one probe**:
+
+| Node field | Meaning |
+|------------|---------|
+| `tool_name`, `tool_args`, `probe_rationale` | the probe this edge fires (None only for the synthetic root) |
+| `status` | `proposed` -> `executing` -> `evaluated` / `pruned` / `terminal` |
+| `local_value` | this probe's own evaluation, pre-aggregation |
+| `value` | backprop-aggregated value (running max up the branch) |
+| `visits` | UCT visit count |
+| `observation_summary` | compressed tool output (~200 chars, deterministic, never raw) |
+| `verdict`, `error_class`, `duration_ms`, `finding_confidence_delta` | evaluation signals copied from the executed step |
+| `exploit_succeeded` | true = foothold reached at this node (terminal) |
+| `reflection` | one-line lesson when pruned/failed |
+| `step_id` | links back to the `execution_trace` step for raw output |
+
+The five node states:
+
+```mermaid
+stateDiagram-v2
+    [*] --> proposed: added by Expand
+    proposed --> executing: selected into a wave
+    executing --> evaluated: ran + scored >= prune floor
+    executing --> terminal: exploit_succeeded
+    executing --> pruned: ran + scored < prune floor
+    executing --> proposed: never ran (re-selectable)
+    evaluated --> proposed: (its children get expanded)
+    evaluated --> pruned: dead frontier (stall guard)
+    terminal --> [*]
+    pruned --> [*]
+```
+
+### The Value Function: Scoring an Executed Probe
+
+The value function inverts the productivity engine's "badness" into "goodness" (higher = closer to a foothold) and enriches it with the `error_class` annotation. It adds **no I/O**, everything it reads (`output_analysis`, `error_class`, `ChainFinding.confidence`, engagement-state deltas) is already computed upstream. A confirmed foothold is always the strong terminal reward of **1.0**; otherwise scoring dispatches on phase.
+
+**Web-exploitation value** (`exploitation` phase), where the `error_class` carries the signal:
+
+| Signal | Delta |
+|--------|:-----:|
+| `exploit_succeeded` | **1.0** (terminal) |
+| Diagnostic failure (probe never reached the app: bad quoting, DNS, tool crash, parse-time 5xx) | **0.15** neutral floor (retry, do not abandon) |
+| New durable finding | `+0.5 x confidence/100` |
+| Verdict `new_info` or `diagnostic_progress` | `+0.3` |
+| `application_5xx_normal` (DB / business-logic path reached) | `+0.2` |
+| Verdict `confirmation` | `+0.1` |
+| Verdict `blocked` / `duplicate` / `no_progress` | `-0.3` |
+| `application_4xx` (403 / WAF / semantic rejection) | `-0.2` |
+
+The result is clamped to `>= 0`. The key design choice: a **diagnostic failure is neutral (0.15), not negative**, so UCT retries a possibly-live vector rather than pruning it, whereas a real app-layer rejection (403 / blocked) is penalised because the probe genuinely reached the target and was refused.
+
+**Post-exploitation value** (`post_exploitation` phase, experimental), where 4xx/5xx branches are inert, so scoring comes from engagement-state growth instead: privilege escalation `+0.6`, new session `+0.5`, new credentials `+0.4`, new host reached `+0.4`, new finding `+0.3`, `no_progress`/`duplicate` `-0.3`, clamped to `[0, 1]`.
+
+### UCT, Select, and Backprop
+
+**UCT** balances exploiting the best-known branch against exploring under-visited ones: `value + c x sqrt(ln(parent_visits) / visits)`, where `c` is `LATS_UCT_C`. An unvisited node scores `+inf`, so every frontier node is tried at least once.
+
+**Select** descends from the root by UCT to the first node the hook can act on this turn: a node with `proposed` (unexecuted) children is where the next wave fires; an `evaluated` leaf with room to grow gets expanded; otherwise it descends into the best `evaluated` child by UCT. This refines the textbook pseudocode to return the *parent of the next wave* rather than descend past it, matching the hook flow.
+
+**Backprop** pushes the new value up the ancestor chain as a **running max** (not an average), incrementing each ancestor's visit count. Running max keeps a branch "hot" if *any* descendant is promising, which is the right semantic for exploit paths: one live sub-branch justifies keeping the whole line.
+
+The three functions are pure and textbook:
+
+```python
+def uct(node, parent_visits, c):
+    if node.visits == 0:
+        return float("inf")                 # always try an unvisited frontier node once
+    return node.value + c * math.sqrt(math.log(max(parent_visits, 1)) / node.visits)
+
+def lats_select(tree, c):
+    cur = tree.nodes[tree.root_id]
+    while True:
+        if _has_proposed_children(tree, cur):   # a node with pending probes is where the wave fires
+            return cur.id
+        if _can_expand(cur):                     # an evaluated leaf with room to grow is expanded next
+            return cur.id
+        eval_children = [n for n in children(cur) if n.status == "evaluated"]
+        if not eval_children:
+            return cur.id                        # dead frontier: nothing to do under this node
+        cur = max(eval_children, key=lambda n: uct(n, cur.visits, c))   # descend the best line
+
+def lats_backprop(tree, node_id, value):
+    nid = node_id
+    while nid is not None:
+        n = tree.nodes[nid]
+        n.visits += 1
+        n.value = max(n.value, value)            # running max: one hot descendant keeps the branch hot
+        nid = n.parent_id
+```
+
+**Backtracking is implicit and never touches the world.** Against a live target you cannot un-send a request, so a WAF-blocked branch is not "undone", it simply accrues visits with low value, so its UCT term stops dominating and `lats_select` descends a different, higher-value sibling instead. "Backtrack to node X" means set `active_node_id = X` and build the next probe from X's branch context, ignoring the failed sibling except for its reflection. The LangGraph checkpointer is used only for **durability** (the tree rides inside `AgentState`, so a backend restart mid-search resumes the exact frontier); branch isolation is virtual, done in the tree, not in the checkpoint store.
+
+### Expand: LATS Generates Its Own Probes
+
+Expansion is LATS's own structured LLM call (`lats_expand`) on the single agent model, it never parses Deep Think's discarded markdown. It asks for up to `LATS_BRANCHING` concrete, executable probes as strict JSON (`{"probes": [{"tool_name", "tool_args", "rationale"}]}`), ordered most-promising first, grounded in the situational context above. Two layers keep the probes well-formed:
+
+1. **Phase filtering**: only tools allowed in the current phase (via `TOOL_PHASE_MAP`) are offered, and any probe naming an off-phase or unknown tool is dropped.
+2. **Arg-schema pre-flight**: each allowed tool's real `args_format` (from `tool_registry.py`) is rendered into the prompt, and a deterministic validator drops any probe missing the tool's primary key. This catches the LLM inventing keys like `url`/`target`/`flags` when a tool actually takes a single `args` string, so malformed probes never reach the tool layer as `tool_internal_error`.
+
+`lats_expand`'s own token usage is folded back into the turn's counters, so a LATS-active turn is never undercounted in the cost KPIs.
+
+### The Hook, End to End
+
+```mermaid
+flowchart TB
+    START(["lats_hook(decision)"]) --> EN{"LATS_ENABLED?"}
+    EN -->|no| RET["return decision"]
+    EN -->|yes| TREE{"live tree in state?"}
+
+    TREE -->|no| ACT{"lats_active + expand<br/>>= MIN_HYPOTHESES?"}
+    ACT -->|no| RET
+    ACT -->|yes| SEED["seed new tree<br/>emit on_lats_start"]
+
+    TREE -->|yes| RST{"should reset?<br/>(objective/skill/target<br/>changed, phase left,<br/>task done)"}
+    RST -->|yes| FINRST["finish(reset) + archive"] --> RET
+    RST -->|no| EVAL
+
+    SEED --> EVAL["1. EVALUATE + BACKPROP<br/>the wave issued last turn"]
+    EVAL --> EXITS{"2. EXIT?"}
+    EXITS -->|"terminal node exists"| SUCCESS["override = complete<br/>(best trajectory)"]
+    EXITS -->|"single open line left"| COLLAPSE["finish(collapse)<br/>hand back to legacy"] --> RET
+    EXITS -->|"tree exhausted"| EXH["finish(exhausted)<br/>hand back to legacy"] --> RET
+    EXITS -->|"budget hit"| BUDGET["override = complete"]
+    EXITS -->|"none"| SELECT["3. SELECT node by UCT"]
+
+    SELECT --> EXPAND["4. EXPAND if node is<br/>expandable -> add children"]
+    EXPAND --> WAVE["mutex-safe subset -> wave<br/>mark children executing"]
+    WAVE --> STALL{"empty wave?"}
+    STALL -->|yes| PRUNE["stall guard:<br/>prune dead frontier<br/>(forward progress)"]
+    STALL -->|no| PERSIST["persist tree +<br/>emit on_lats_tree_update"]
+    PRUNE --> PERSIST
+
+    SUCCESS --> FINC["finish(carry forward) keep tree"]
+    BUDGET --> FINC
+    FINC --> DRV1{"shadow?"}
+    DRV1 -->|yes| RET
+    DRV1 -->|no| COMPLETE["return decision as action=complete"]
+
+    PERSIST --> DRV2{"shadow?"}
+    DRV2 -->|yes| RET
+    DRV2 -->|no| ISSUE["return decision as<br/>plan_tools wave / use_tool"]
+
+    style SEED fill:#3b3b6d,color:#fff
+    style ISSUE fill:#3b3b6d,color:#fff
+    style COMPLETE fill:#3b3b6d,color:#fff
+```
+
+### Evaluate + Backprop: Wave Attribution
+
+The trickiest correctness concern is attributing a wave's outcome to the right child. `_evaluate_wave` scores **only children that actually executed** this turn:
+
+- Children with no matching executed step (for example a metasploit probe re-routed to `ask_user`) are reset from `executing` back to `proposed` so the search re-selects them next turn, leaving them stranded would skew all later attribution.
+- If the operator **rejected** the pending confirmation (`_reject_tool`), the children are pruned and **no rollout is counted**, a rejection is not a probe result.
+- Each executing child is matched to an executed step **by tool_name** (consuming each step once, in order), which is robust to a child stranded from a prior wave and to shadow mode (where the legacy step's tool differs).
+
+A subtle over-credit bug is handled by the **credited child** rule: a wave-level `exploit_succeeded=true` or an aggregate finding must **not** mark every sibling terminal. Attribution order is: the step's own flag, then a `per_step` entry keyed by `step_index` (authoritative per-child localization), then the aggregate, credited to exactly **one** designated child (the strongest-signal child by its non-credited base value; a single-step wave is always credited). After scoring, a child that did not succeed and fell below `LATS_PRUNE_FLOOR` is pruned with a one-line deterministic reflection ("server rejected the probe", "blocked; vector rejected", "duplicate", "no progress; branch cold").
+
+### Deterministic Observation and Reflection (No LLM)
+
+Two per-node text fields, the `observation_summary` shown on the card and the `reflection` recorded when a node is pruned, are produced **deterministically, never by an LLM call**, so evaluation stays cheap and reproducible:
+
+- `_summarize(tool_output)` compresses raw output to ~200 chars by preferring the first line that carries an HTTP status (`\b[1-5]\d{2}\b`) or a signal keyword (`token`, `secret`, `key`, `flag`, `error`, `exception`, `traceback`, `denied`, `unauthorized`, `admin`); if none match it falls back to the whitespace-collapsed head. This keeps the highest-signal token visible in the snapshot while raw output stays out of it (fetched on demand via `step_id`).
+- `_reflect(step, analysis)` maps the `error_class` and verdict to a fixed lesson: `application_4xx` -> "server rejected the probe (auth / WAF / method)", `blocked` -> "blocked; vector rejected at the app layer", `duplicate` / `no_progress` -> their obvious lines, otherwise "low value; `<summary>`". These lessons are exactly what the carried-forward tree tells the next agent turn not to repeat.
+
+### Tree Reset and Invalidation
+
+A live tree is stamped with the objective, `attack_path_type`, and `primary_target` it was seeded for. On every subsequent hook invocation, `_lats_should_reset` archives the tree (and lets a fresh one seed next turn) if **any** of these hold, because the existing probes are now for the wrong problem:
+
+- `task_complete` is set;
+- the current phase left `LATS_ALLOWED_PHASES`;
+- a foothold for the current objective is already in hand;
+- the objective advanced (`tree.objective != current objective`);
+- the skill switched (`switch_skill` rebinds `attack_path_type` without necessarily changing the objective text);
+- the primary target changed.
+
+A reset streams the final scored tree and completes the search with outcome `reset` before archiving, so the operator still sees why it stopped.
+
+### The Exits: How a Search Ends
+
+The exits are checked in a strict order, and only two of them end the whole run:
+
+| Exit | Trigger | What happens |
+|------|---------|--------------|
+| **terminal_success** | a node reached `exploit_succeeded` | override the decision to `complete` on the best trajectory; keep the tree; carry it forward |
+| **branch_collapsed** | one credible line left, nothing to branch on, and it cannot expand further | stream the final scored tree, carry it forward, **archive**, and **hand the obvious line back to legacy ReAct** |
+| **exhausted** | no proposed/executing probes remain and nothing is expandable | carry forward, **archive**, hand back to legacy |
+| **budget_exhausted** | `rollouts >= LATS_MAX_ROLLOUTS` **or** `nodes >= LATS_MAX_TREE_NODES` | override to `complete`; keep the tree; carry forward |
+| **stall guard** | Select landed on a dead frontier while branches remain elsewhere | **prune that one node** (guaranteed forward progress) so the descent reaches other branches next turn, rather than abandoning them |
+
+The distinction matters: **collapse and exhausted hand the objective *back* to the agent** (with the carried-forward summary) so it keeps working, they do not end the run. Only a claimed foothold or a spent budget ends the search with `action=complete`. The **stall guard** exists because Select descends greedily down a single path and can land on a depth-capped or expand-empty leaf while expandable branches remain on other paths; pruning one node per otherwise-stuck turn guarantees the tree converges to a real top-level exit instead of becoming a live-forever "zombie" driving nothing.
+
+### The Handoff: Carrying the Tree Forward
+
+When a driving (non-shadow) search finishes, `_carry_tree_forward` renders the tree into an `lats_search` step appended to `execution_trace`, the one channel the next `think_node` reads. The next agent turn therefore inherits **what the search learned**, structure, per-node scores, the best line, and the pruning reflections, instead of re-deriving it from raw probe logs:
+
+- The **tree summary** (capped at `LATS_SUMMARY_MAX_NODES` highest-value nodes) is an indented render of every probe with its status, value, visit count, success star, danger flag, and reflection, wrapped as untrusted output.
+- A separate **`Analysis:` directive** (trusted) tells the agent how to act: on success, "continue along the best line and convert it, do not restart discovery"; otherwise, "build on the highest-value open leaf, do not re-run pruned probes with the same arguments, and if every branch is pruned pivot to an axis not in the tree".
+- The compact digest is also appended to `_lats_tree_digest` so it survives execution-trace eviction and feeds every subsequent tree.
+
+### Worked Example: From a Login Page to Account Takeover
+
+Root objective: "gain authenticated access to the admin account on `https://target/login`." LATS seeds the root with four competing probes and, over a handful of rollouts, concentrates on the branch that keeps yielding signal:
+
+```mermaid
+graph TD
+    R["root: /login"] --> A["default creds<br/>value 0.00 pruned"]
+    R --> B["SQLi on username<br/>403 WAF -> value 0.00 pruned<br/>reflection: WAF filters quotes"]
+    R --> C["password-reset probe<br/>200, token leaked<br/>value 0.80 HOT"]
+    R --> D["JWT alg-confusion<br/>value 0.10"]
+
+    C --> C1["reuse leaked token<br/>value 0.40"]
+    C --> C2["tamper expiry field<br/>value 0.60"]
+    C --> C3["forge token (DANGEROUS)<br/>operator-approved<br/>value 1.00 TERMINAL"]
+
+    C3 --> E["reset admin password<br/>FOOTHOLD"]
+
+    classDef hot fill:#166534,stroke:#052e16,color:#ffffff;
+    classDef dead fill:#7f1d1d,stroke:#450a0a,color:#ffffff;
+    classDef term fill:#a16207,stroke:#422006,color:#ffffff;
+    class C,C2 hot;
+    class A,B dead;
+    class C3,E term;
+```
+
+How each value is computed (web value function): the SQLi probe returns a 403, so `error_class=application_4xx` gives `-0.2`, clamped to `0.0`, below the prune floor, pruned with a reflection after **one** probe. The password-reset probe returns 200 with a leaked token: verdict `new_info` (`+0.3`) plus a finding at confidence ~85 (`+0.5 x 0.85 = +0.425`) sums to ~0.7-0.8, "hot", so UCT concentrates the budget there. The forged-token probe reaches `exploit_succeeded`, the terminal `1.0`.
+
+What LATS bought over linear ReAct:
+- The SQLi/WAF branch was **pruned after one probe** with a reflection, instead of `tested_axes` lock-in taking 3+ repeats to notice.
+- The budget concentrated on the highest-value branch and drove it three edges deep to a foothold.
+- The single irreversible step (forge token) was gated by the existing confirmation node; LATS never detonated autonomously.
+- The whole tree stayed around nine nodes, not `branching^depth`, because UCT + the prune floor + `LATS_BRANCHING` keep it narrow.
+
+### Step-by-Step Execution Timeline (Two Think Visits)
+
+One MCTS rollout is stretched across two `think` visits: visit N emits the wave (Select -> Expand -> Emit), the tool nodes run it, and visit N+1 evaluates and backpropagates. This trace labels every operation as **LLM**, **Python**, **tools**, or **state write**, showing exactly where cost is spent.
+
+**Think visit #1, expand root and fire the wave** (a fresh activation):
+
+| # | operation | type | effect |
+|---|-----------|------|--------|
+| 1 | no live tree; `lats_active` passes | Python | pre-gate cleared |
+| 2 | `lats_expand(node=None)` situational assessment | **1 LLM call** (agent model) | yields >= `LATS_MIN_HYPOTHESES` probes -> activate; 3 proposed root children |
+| 3 | `lats_select` -> root, `_mutex_safe_subset` | Python | all 3 read-only -> one wave |
+| 4 | override -> `plan_tools`, children `executing` | Python + state write | issue the wave |
+
+**Between visits, `execute_plan_node`** runs the three probes with `asyncio.gather` (tools, no LLM), each stamped deterministically with `error_class` / `success` / `tool_output`:
+
+```
+c1 admin/admin  -> 401 wrong password        error_class=application_4xx
+c2 sqli         -> 403 blocked (WAF)          error_class=application_4xx
+c3 forgot-pass  -> 200 {debug_token:9f3a1c7b} error_class=success, finding conf 85
+```
+
+**Think visit #2, evaluate the wave and expand the winner:**
+
+| # | operation | type | effect |
+|---|-----------|------|--------|
+| 1 | the one think LLM call runs | **LLM (the only mandatory call)** | `output_analysis`: c1 blocked, c2 blocked, c3 new_info + finding conf 85 |
+| 2 | `lats_hook` scores each child via `lats_value` | Python | c1=0.00, c2=0.00, c3=0.80 |
+| 3 | `lats_backprop` | Python | root.value = max(0, 0.8) = 0.80; visits bumped |
+| 4 | prune c1, c2 + write reflections | Python + state write | two dead siblings recorded |
+| 5 | `lats_select` -> c3 (hot frontier) | Python | UCT now favours c3 |
+| 6 | `lats_expand(node=c3)` -> grandchildren | **1 LLM call** (agent model) | LATS's own follow-up probes |
+| 7 | override action -> `plan_tools` (grandchildren) | Python | the LLM's own proposed action is discarded |
+
+This repeats until a grandchild's analysis reports `exploit_succeeded=true`; that node becomes `terminal` and `_complete(decision, tree, "lats_terminal_success")` returns `action=complete` with the trajectory `login -> forgot-password -> reset-admin`.
+
+The same three rollouts as a sequence, showing the tree filling and the confirmation gate firing on the one dangerous edge:
+
+```mermaid
+sequenceDiagram
+    participant T as think_node (LATS)
+    participant X as execute_tool / execute_plan
+    participant Tree as _exploit_tree (state)
+    participant Op as Operator (confirm gate)
+
+    Note over T,Tree: rollout 1 - root expanded
+    T->>Tree: Expand root -> [default-creds, sqli, reset-probe, jwt]
+    T->>X: plan_tools wave (executing)
+    X-->>T: sqli 403 WAF; reset-probe 200 token leaked
+
+    Note over T,Tree: rollout 2 - evaluate + reselect
+    T->>Tree: score sqli 0.0 -> prune + reflection "WAF filters quotes"
+    T->>Tree: score reset 0.8 -> hot; backprop; UCT favours reset branch
+    T->>Tree: Select reset; Expand -> [reuse, tamper-expiry, forge-token]
+
+    Note over T,Tree: rollout 3 - hot branch deepens
+    T->>Op: forge-token probe is DANGEROUS -> await_tool_confirmation
+    Op-->>T: approve
+    T->>X: use_tool (forge token)
+    X-->>T: password reset for admin (exploit_succeeded)
+    T->>Tree: node status=terminal; best_terminal set
+    T->>T: emit action=complete (foothold reached)
+```
+
+### LLM-Cost Accounting
+
+LATS adds **zero extra LLM round-trips on the evaluate/select/backprop side**, those reuse the analysis call that every think turn already makes, and are pure Python. The only added spend is **one structured `lats_expand` call per node expansion** on the single agent model (plus the one ENTER assessment call, which is the root's expand). The K parallel probes in a wave and all of Select / Evaluate / Backprop cost nothing. Over a ~15-node search that is ~15 expand calls on top of the analysis calls RedAmon already makes, far cheaper than a fireteam, whose cost scales with N full member reasoning loops. Each `lats_expand`'s tokens are folded back into the turn's counters so the cost KPI stays honest.
+
+### Shadow Mode vs Drive Mode
+
+| | Shadow (`LATS_SHADOW_MODE=true`, default) | Drive (`false`) |
+|---|---|---|
+| Tree built + scored | yes | yes |
+| Streamed to the UI card | yes | yes |
+| Overrides the agent's decision | **no** (returns decision unchanged) | **yes** (issues the wave / completes) |
+| Carries the tree into `execution_trace` | no | yes |
+| Suppresses Deep Think | no | yes (when a tree is live) |
+
+Shadow mode is the safe evaluation posture: an operator can watch exactly what LATS *would* do, and compare its proposed line against the agent's actual choices, before granting it the wheel.
+
+### Streaming Protocol
+
+Three WebSocket events drive the UI, each also persisted so a reconnecting operator replays the search from history:
+
+- `on_lats_start(search_id, objective, phase, budget, shadow_mode)`: a new tree seeded. The `search_id` is `session:root_id`, so a second search after a reset renders as a distinct card.
+- `on_lats_tree_update(search_id, snapshot)`: emitted once per hook invocation (once per wave) with the full tree projection (`ExploitTree.to_view`), the tree is capped at `LATS_MAX_TREE_NODES` so the whole snapshot is sent with no diffing. Raw tool output is intentionally excluded from the snapshot (size); the inspector fetches it from `execution_trace` via `step_id`. The client reducer (`latsChatState`) pushes each snapshot onto a `history[]` array and keeps `latest`, which is what powers replay.
+- `on_lats_complete(search_id, best_trajectory, outcome, metrics)`: the search ended, carrying A/B telemetry (`rollouts`, `max_depth_reached`, `nodes_total`, `pruned_count`, `outcome_terminal`).
+
+### Operator-Facing Visualization (Three Layers)
+
+The UI renders the same snapshot stream at three depths of detail:
+
+- **Layer 1, in-chat card (`LatsSearchCard`).** One card that mutates in place per search. A header with a running badge, the phase, a `rollout N/max` counter, an `observe-only` badge in shadow mode, and the final `outcome` badge on completion; a HUD row (`probes`, `depth`, node count vs budget); the tree as a compact indented outline with per-status glyphs (`·` proposed, `○` executing, `◉` evaluated, `✗` pruned, `⚑` terminal), each row showing the node label, a `!` danger flag for `DANGEROUS_TOOLS`, the aggregated value, and the reflection or observation; and the current best root-to-hot-leaf line pinned at the bottom.
+- **Layer 2, expanded canvas (`LatsTreePanel` -> `LatsTreeCanvas`).** "Expand tree" opens a modal wrapping a React Flow graph (laid out by `latsTreeLayout` / `useLatsGraph`, one `LatsNode` per probe) so the operator can pan/zoom the whole search.
+- **Layer 3, inspector + replay (`LatsNodeInspector`, `LatsReplayScrubber`).** Clicking a node opens the trust-builder: the exact probe, the **score breakdown** (why `value` is what it is), and the **UCT breakdown** (why the search picked this node over its sibling), both recomputed client-side from `value` / `visits` / the parent's `visits` already in the snapshot, using the same `c = 1.4` constant. The replay scrubber is a slider over `history[]` so the operator can step through how the search unfolded, wave by wave.
+
+### Parameter Reference and Impact
+
+Every parameter is settable per-project in the **Agent Behaviour -> Exploit-Path Search (LATS)** panel and maps to a `LATS_*` setting.
+
+| Setting (UI label) | Default | Range | Meaning and impact |
+|--------------------|:-------:|:-----:|--------------------|
+| `LATS_ENABLED` (Exploit-Path Search) | `false` | on/off | Master switch. Off = the hook is a strict no-op and behaviour is identical to before. |
+| `LATS_SHADOW_MODE` (Shadow mode) | `true` | on/off | Observe-only. On = build/stream the tree but let the normal agent drive. Off = the search issues the probes. |
+| `LATS_ALLOWED_PHASES` (Search in phases) | `["exploitation"]` | exploitation, post_exploitation | Which phases the search runs in. Assembled from two checkboxes; at least one required. Post-exploitation scoring is experimental. |
+| `LATS_MIN_HYPOTHESES` (Activation sensitivity) | `2` | 2-4 | Credible probes the seed assessment must yield before a tree is created. Higher = more selective, LATS only engages when the surface genuinely branches. |
+| `LATS_BRANCHING` (Branch width) | `6` | 2-10 | Max candidate probes weighed at each node (tree width). Higher = broader fan-out per node, more thorough but more expand calls. |
+| `LATS_MAX_DEPTH` (Max chain depth) | `6` | 2-10 | Longest attack chain from the entry point; a node at this depth cannot expand further. A ceiling, not the typical depth. |
+| `LATS_MAX_ROLLOUTS` (Search budget) | `50` | 4-300 | Hard cap on **real requests** one search fires (= max Select->Backprop cycles). Worst case: this many live probes against the target. |
+| `LATS_MAX_TREE_NODES` (Hard node cap) | `120` | 10-1000 | Hard tree-size ceiling; expansion stops when the tree reaches it. A second budget backstop alongside rollouts. |
+| `LATS_UCT_C` (Exploration vs focus) | `1.4` | 0.5-2.5 | The UCT exploration constant. Low = laser-focus the single best line; high = also develop secondary footholds. |
+| `LATS_PRUNE_FLOOR` (Prune aggressiveness) | `0.15` | 0.0-0.5 | Value below which a non-terminal branch is abandoned. Higher = give up on weak branches sooner. |
+| `LATS_REACTIVATE_COOLDOWN` | `4` | iterations | Min iterations between an archive and the next activation, so a collapsed tree cannot immediately rebuild the same dead branches. |
+| `LATS_REACTIVATE_STUCK_TURNS` | `5` | turns | No-state-growth turns that re-trigger LATS without a Deep Think (halfway to Deep Think's hard stall override of 10). |
+| `LATS_SCORE_THRESHOLD` | `4.0` | score | Productivity score that re-triggers LATS, set just below the Deep Think threshold (5.0) so LATS is the cheaper first responder. |
+| `LATS_DIGEST_MAX` | `8` | entries | Max prior-tree digests accumulated and fed to each new tree's seed. |
+| `LATS_SUMMARY_MAX_NODES` | `40` | nodes | Max nodes rendered in the tree summary carried into the next think prompt. |
+
+The first ten rows are exposed in the UI panel (the last five, cooldown / stall / score / digest / summary, are code-level tuning constants). `LATS_MIN_HYPOTHESES`, `LATS_BRANCHING`, `LATS_MAX_DEPTH`, `LATS_UCT_C`, and `LATS_PRUNE_FLOOR` are read by the engine with a hardcoded fallback (used only if the key is somehow absent) that differs from the shipped default; the operative defaults are the ones above, sourced from `DEFAULT_AGENT_SETTINGS`.
+
+**Reserved settings (declared, not yet wired into the current engine).** These have a default in `DEFAULT_AGENT_SETTINGS` and a documented intent but are **not read by `lats.py` today**, so changing them has no effect on the current build. They are placeholders for planned work, do not rely on them:
+
+| Setting | Default | Intended behaviour (not active) |
+|---------|:-------:|---------------------------------|
+| `LATS_RESPECT_GUIDANCE` | `true` | Graft operator guidance drained this turn as a high-prior seed probe. The plumbing exists (`guidance_drained_this_turn` is written by `think_node`; `_add_child(prior="high")` seeds `local_value=0.5`; `_highest_prior` helper) but nothing calls the graft path yet. |
+| `LATS_VERIFY_TERMINAL` | `false` | Run a verification probe on a claimed foothold before declaring `terminal_success`. Not referenced by the engine; a terminal node is trusted as-is today. |
+| `LATS_REACTIVE_TRIGGERS` | `false` | Add axis-lock-in as an additional activation trigger. Not referenced; the three-rung ladder above is the full trigger set. |
+
+Two typed operator-control state fields, `_lats_operator_stop` (force-archive the live tree) and `_lats_refocus_target` (re-root onto a chosen target), are likewise **declared on `AgentState` but not yet consumed** by the engine.
+
+### Design Invariants
+
+- **Off means off.** With `LATS_ENABLED=false` the hook returns immediately and no LATS state is written; there is a dedicated regression test for this off-diff.
+- **One model only.** The seed assessment, every expansion, and the optional terminal-verify all use the single agent model already threaded into `think_node`. No secondary or cheap model, no extra LATS model setting.
+- **Dangerous tools are fanned out normally.** A LATS wave issues any tool, dangerous ones included, exactly like a hand-written `plan_tools`; the `DANGEROUS_TOOLS` mark stays confirmation-only and the existing `await_tool_confirmation` gate handles the prompt. The only wave constraint is `TOOL_MUTEX_GROUPS` (at most one tool per mutex group per wave).
+- **Never reads Deep Think's output.** LATS activates on Deep Think's *firing* flag and generates its own probes; it never parses `deep_think_result`, which is discarded markdown that goes stale.
+- **Stateless engine.** All per-session search state lives in the `_exploit_tree` dict on `AgentState`, so concurrent sessions never share LATS state and the checkpointer persists the tree for free.
+
 ---
 
 ## Productivity Verdict & Unproductive-Streak Loop Detector
@@ -1918,19 +2440,26 @@ score =
     + w_state_growth    * iterations_since_state_grew_clipped  (clipped to 10)
     + w_axis_repeats    * max_axis_repeats
     + w_same_pattern    * same_pattern_count
-    - r_new_info        * new_info_events_in_last_5
-    - r_actionable      * actionable_events_in_last_5
+    + w_chain_stall     * chain_stall                            (churn-aware, see below)
+    - r_new_info        * new_info_events_in_last_5   * novelty_scale
+    - r_actionable      * actionable_events_in_last_5 * novelty_scale
+
+    where (PRODUCTIVITY_CHURN_AWARE, default on):
+      chain_stall   = max(0, iterations_since_chain_advance - NOVELTY_SATURATION_GRACE)
+      novelty_scale = 1 / (1 + chain_stall)      # decays the novelty reward as the CHAIN, not the map, stalls
 
 score = max(0.0, score)    # clamped at zero; negative means "very healthy"
 ```
+
+**Churn-awareness** closes a blind spot in the state-growth signal: growing the recon *map* (new endpoints / parameters) counts as state growth, but it is recon **breadth**, not **convergence** on a foothold, so a session that keeps enumerating novel-but-useless surface would stay green while genuinely stalling. `detect_chain_advance()` tracks a separate counter, `_iterations_since_chain_advance`, that resets only on an *attack-chain* advance (a new confirmed finding, credential, or session), not on map-growth. After `PRODUCTIVITY_NOVELTY_SATURATION_GRACE` (default 3) iterations without a chain-advance, `chain_stall` starts adding badness **and** `novelty_scale` decays the novelty reward, so pure enumeration stops pinning the score to green and the tier ladder fires on real stall. With churn-awareness off (or `iterations_since_chain_advance == 0`), `chain_stall` is 0 and the formula reduces to the original five-signal score.
 
 The score is **continuous** and **non-negative**. Reward terms can offset penalty terms; healthy sessions stay near zero. A `tier` label is derived by lookup:
 
 | Score | Tier | Action |
 |---|---|---|
 | 0 - 3 | `green` | No action |
-| 3 - 5 | `yellow` | Inject soft prompt hint: "state has not grown in N iterations, consider whether the current hypothesis is still viable" |
-| 5 - 7 | `orange` | Fire Deep Think (subject to cooldown + novelty check) |
+| 3 - 4 | `yellow` | Inject soft prompt hint: "state has not grown in N iterations, consider whether the current hypothesis is still viable" |
+| 4 - 7 | `orange` | Fire Deep Think (subject to cooldown + novelty check). LATS re-triggers earlier still, at `3.0` |
 | 7 - 9 | `red` | Demand the agent name a different hypothesis class in its next reasoning |
 | ≥ 9 | `critical` | Warn that the next expensive call on the dominant axis will be rejected |
 
@@ -1950,9 +2479,11 @@ Settings:
 |---|---|---|
 | `PRODUCTIVITY_SCORE_ENABLED` | `true` | Master switch. When off, falls back to the legacy 3-of-6 binary counter |
 | `PRODUCTIVITY_SCORE_HINT_THRESHOLD` | `3.0` | Yellow tier (soft hint) |
-| `PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD` | `5.0` | Orange tier (Deep Think) |
+| `PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD` | `4.0` | Orange tier (Deep Think). Lowered from 5.0 so Deep Think fires sooner; LATS re-triggers below it at `LATS_SCORE_THRESHOLD=3.0` |
 | `PRODUCTIVITY_SCORE_REQUIRE_PIVOT_THRESHOLD` | `7.0` | Red tier (demand pivot) |
 | `PRODUCTIVITY_SCORE_BLOCK_THRESHOLD` | `9.0` | Critical tier (next call blocked); also bypasses Deep Think cooldown |
+| `PRODUCTIVITY_CHURN_AWARE` | `true` | Distinguish attack-chain advance from recon map-growth: adds `chain_stall` badness + decays the novelty reward once the chain stops advancing |
+| `PRODUCTIVITY_NOVELTY_SATURATION_GRACE` | `3` | Iterations without a chain-advance before churn decay begins |
 
 ### Dynamic Weights (Session Age + Phase)
 
@@ -2975,7 +3506,10 @@ flowchart TB
     PROC_A --> THINK
     PROC_Q --> THINK
 
-    THINK --> PRE_VALID{Pre-exploitation<br/>validation}
+    THINK --> LATS_HOOK{LATS enabled<br/>+ driving?}
+    LATS_HOOK -->|Yes| LATS["LATS hook - select/expand/score<br/>tree, may override action<br/>with wave / use_tool / complete"]
+    LATS_HOOK -->|No / shadow| PRE_VALID{Pre-exploitation<br/>validation}
+    LATS --> PRE_VALID
     PRE_VALID -->|Missing LHOST/LPORT| FORCE_ASK[Force ask_user]
     PRE_VALID -->|OK| DECISION{Action?}
     FORCE_ASK --> AWAIT_Q
@@ -4333,9 +4867,10 @@ This section is a **map of the source tree** for engineers who need to find a sp
 | `orchestrator_helpers/chain_graph_writer.py` | EvoGraph persistence, attack chain nodes, bridge relationships, and cross-session queries to Neo4j |
 | `orchestrator_helpers/fireteam_member_graph.py` | Compiled 5-node member subgraph (think / execute_tool / execute_plan / await_confirmation / complete) |
 | `orchestrator_helpers/fireteam_confirmation_registry.py` | In-process `(session, wave, member) → asyncio.Event` registry powering parallel per-member confirmations |
+| `orchestrator_helpers/lats.py` | Self-contained [LATS](#exploit-path-search-lats) engine: tree model helpers, value function, UCT/select/backprop, expand (probe generation), activation gate, exits, and the single `lats_hook()` the think node calls |
 | `orchestrator_helpers/debug.py` | Graph visualization (Mermaid PNG export) |
 | `orchestrator_helpers/nodes/initialize_node.py` | Session setup, guardrail check, attack-path classification, prior-chain loading |
-| `orchestrator_helpers/nodes/think_node.py` | ReAct think + Deep Think pre-step + RoE/stealth/scope-guardrail injection |
+| `orchestrator_helpers/nodes/think_node.py` | ReAct think + Deep Think pre-step + LATS hook + RoE/stealth/scope-guardrail injection |
 | `orchestrator_helpers/nodes/execute_tool_node.py` | Sequential tool execution with progress streaming |
 | `orchestrator_helpers/nodes/execute_plan_node.py` | Wave execution, parallel tool plan runner via `asyncio.gather()` |
 | `orchestrator_helpers/nodes/approval_nodes.py` | `await_approval` / `process_approval` / `await_question` / `process_answer` |
@@ -4481,6 +5016,24 @@ flowchart LR
 | `FIRETEAM_TIMEOUT_SEC` | `1800` | Wall-clock ceiling per wave (gather timeout) |
 | `FIRETEAM_CONFIRMATION_TIMEOUT_SEC` | `600` | Per-member confirmation wait before auto-reject |
 | `FIRETEAM_ALLOWED_PHASES` | `["informational","exploitation","post_exploitation"]` | Phases in which the agent may deploy a fireteam |
+| `LATS_ENABLED` | `false` | Master switch for [Exploit-Path Search (LATS)](#exploit-path-search-lats). Off = the think-node hook is a strict no-op |
+| `LATS_SHADOW_MODE` | `true` | Observe-only: build/stream the search tree but let the normal agent drive the probes |
+| `LATS_ALLOWED_PHASES` | `["exploitation"]` | Phases where the tree search runs (post_exploitation scoring is experimental) |
+| `LATS_MIN_HYPOTHESES` | `2` | Credible probes the seed assessment must yield before a tree is created (activation sensitivity) |
+| `LATS_BRANCHING` | `6` | Max candidate probes weighed per node (tree width) |
+| `LATS_MAX_DEPTH` | `6` | Longest attack chain from the entry point; a node at this depth cannot expand |
+| `LATS_MAX_ROLLOUTS` | `50` | Hard cap on real requests one search fires (= max Select->Backprop cycles) |
+| `LATS_MAX_TREE_NODES` | `120` | Hard tree-size ceiling; expansion stops when reached |
+| `LATS_UCT_C` | `1.4` | UCT exploration constant. Low = focus the single best line; high = develop secondary footholds |
+| `LATS_PRUNE_FLOOR` | `0.15` | Value below which a non-terminal branch is pruned |
+| `LATS_REACTIVATE_COOLDOWN` | `4` | Min iterations between an archive and the next activation |
+| `LATS_REACTIVATE_STUCK_TURNS` | `5` | No-state-growth turns that re-trigger LATS without a Deep Think |
+| `LATS_SCORE_THRESHOLD` | `4.0` | Productivity score that re-triggers LATS (just below the Deep Think threshold of 5.0) |
+| `LATS_DIGEST_MAX` | `8` | Max prior-tree digests accumulated and fed to each new tree's seed |
+| `LATS_SUMMARY_MAX_NODES` | `40` | Max nodes rendered in the tree summary carried into the next think prompt |
+| `LATS_RESPECT_GUIDANCE` | `true` | **Reserved** (declared, not yet wired): graft operator guidance as a high-prior seed probe |
+| `LATS_VERIFY_TERMINAL` | `false` | **Reserved** (declared, not yet wired): verify a claimed foothold before declaring terminal success |
+| `LATS_REACTIVE_TRIGGERS` | `false` | **Reserved** (declared, not yet wired): add axis lock-in as an extra activation trigger |
 | `INFORMATIONAL_SYSTEM_PROMPT` | `""` | Custom system prompt injected during informational phase |
 | `EXPL_SYSTEM_PROMPT` | `""` | Custom system prompt injected during exploitation phase |
 | `POST_EXPL_SYSTEM_PROMPT` | `""` | Custom system prompt injected during post-exploitation phase |
@@ -4620,13 +5173,14 @@ The RedAmon Agentic System provides:
 19. **EvoGraph** - Persistent evolutionary attack chain graph in Neo4j tracking every step, finding, decision, and failure. Dual memory architecture (in-memory for speed, Neo4j for persistence) with bridge relationships to the recon graph and cross-session evolutionary learning
 20. **Fireteam Fan-Out** - The root agent can deploy a fireteam of N specialist sub-agents, each running its own ReAct subgraph in parallel via `asyncio.gather()` inside the same event loop. Per-member dangerous-tool confirmations land on independent `asyncio.Event`s so N specialists can pause for approval simultaneously without serializing. Members write attributed `ChainStep` / `ChainFinding` rows to EvoGraph in real time; the collect node merges `target_info` deltas and auto-completes matching TODOs back into the parent. All safety invariants (hard guardrail, soft guardrail, RoE, phase gating, tool confirmation, no recursive deployment) are preserved
 21. **Deep Think (Strategic Reasoning Pre-Step)** - When triggered (first iteration, phase transition, unproductive-streak detection, or LLM self-request via `need_deep_think=true`), an extra LLM call produces a structured `DeepThinkResult` (situation / competing_hypotheses / vectors / approach / priority / risks). The `competing_hypotheses` section is the anti-confirmation-bias mechanism: on unproductive-streak triggers or when chain findings exceed confidence 60, the schema requires ≥2 candidate explanations for the current evidence, each with `supporting_evidence` and a concrete `disambiguating_probe` that would tell the alternatives apart. The result is rendered as markdown, stored in state, and re-injected into every subsequent think prompt so the strategic frame persists. Streamed to the UI as a distinct `deep_think` event with its own timeline card
-22. **Skills System (Built-In, User, Chat)** - Three families of expert playbooks: built-in attack-skill prompt blocks (CVE exploit, brute force, SQL injection, XSS, phishing, DoS), markdown-defined user attack skills under `agentic/skills/` (loaded by `skill_loader.py`, classified as `user_skill:<id>`), and chat skills under `agentic/community-skills/` injected on-demand via the `/skill` command or guidance queue
-23. **Output Analysis (Inline)** - Every think iteration analyzes the previous tool's output inline with its decision, emitting structured findings (`OutputAnalysisInline`) that feed `target_info`, EvoGraph chain-finding writes, and the per-tool `tool_complete` event, no separate analysis LLM call
-24. **Three-Layer Guardrails** - Hard (deterministic regex + ~200-domain set, non-disableable, blocks .gov/.mil/.edu/.int + IGOs), Soft (LLM-based, configurable, blocks tech giants/clouds/social/banks), Scope reminder (prompt-level injection on every think iteration). Hard guardrail is mirrored byte-for-byte in TypeScript for frontend pre-flight
-25. **Rules of Engagement (RoE)** - ~35 settings encoding a full pentest contract (client metadata, time windows, scope exclusions, technique gating, severity caps, sensitive-data handling, compliance frameworks). Enforced both via prompt injection and code-level gates on `get_phase_tools()` and phase transitions
-26. **Stealth Mode** - Highest-priority prompt prefix instructing slow scans, low noise, IDS evasion. Pure prompt-level, context-sensitive judgment is left to the LLM
-27. **Per-Tool Stop** - Operator can cancel a single running tool (with optional `wave_id` / `step_index` disambiguation) without halting the agent; the cancelled tool reports failure and the next think reasons about an alternative
-28. **Token Accounting** - Per-iteration delta + session-cumulative input/output token tallies on `AgentState` and (independently) on each `FireteamMemberState`. Deep Think tokens are folded into the iteration that triggered them
-29. **Knowledge Base Integration** - Federated KB-first retrieval pipeline (curated infosec corpus → web search fallback) with project-level source allowlists, MMR diversity reranking, source-specific ranking boosts
-30. **Report Summarizer** - Separate post-engagement LLM module that turns structured pentest data into 6 narrative report sections (executive summary, scope, risk, findings, attack surface, recommendations)
-31. **Companion Orchestrators (Cypherfix Triage + Codefix)** - Two sibling ReAct agents sharing infrastructure: triage clusters/scores findings; codefix patches source code via a Claude-Code-style GitHub toolkit (glob/grep/read/edit/write/bash/symbols/find_definition/find_references/repo_map). Mutating tools serialized via `SEQUENTIAL_TOOLS`; round-robin API key rotation via `key_rotation.py`
+22. **Exploit-Path Search (LATS)** - An opt-in, bounded, value-guided tree search over *executed* exploit probes, implemented as a single hook inside `think_node` (no new graph node, same single model, only `use_tool`/`plan_tools` actions). Maps the MCTS cycle (Select/Expand/Evaluate/Backpropagate) onto the existing think->execute->think loop across iterations. Activates only when the surface yields >= `LATS_MIN_HYPOTHESES` credible probes (on a Deep Think firing, a productivity-score threshold, or a state-growth stall), scores each probe by proximity to a foothold (productivity verdict + `error_class` + finding confidence), concentrates budget on the highest-value line via UCT, and backs out of WAF/403 dead ends by pruning below `LATS_PRUNE_FLOOR`. Bounded by `LATS_MAX_ROLLOUTS`/`LATS_MAX_DEPTH`/`LATS_MAX_TREE_NODES`; carries the finished tree (best line + pruning lessons) back into the execution trace; suppresses Deep Think while driving; ships behind `LATS_ENABLED=false` + `LATS_SHADOW_MODE=true`. Streamed to the UI as a live `LatsSearchCard`
+23. **Skills System (Built-In, User, Chat)** - Three families of expert playbooks: built-in attack-skill prompt blocks (CVE exploit, brute force, SQL injection, XSS, phishing, DoS), markdown-defined user attack skills under `agentic/skills/` (loaded by `skill_loader.py`, classified as `user_skill:<id>`), and chat skills under `agentic/community-skills/` injected on-demand via the `/skill` command or guidance queue
+24. **Output Analysis (Inline)** - Every think iteration analyzes the previous tool's output inline with its decision, emitting structured findings (`OutputAnalysisInline`) that feed `target_info`, EvoGraph chain-finding writes, and the per-tool `tool_complete` event, no separate analysis LLM call
+25. **Three-Layer Guardrails** - Hard (deterministic regex + ~200-domain set, non-disableable, blocks .gov/.mil/.edu/.int + IGOs), Soft (LLM-based, configurable, blocks tech giants/clouds/social/banks), Scope reminder (prompt-level injection on every think iteration). Hard guardrail is mirrored byte-for-byte in TypeScript for frontend pre-flight
+26. **Rules of Engagement (RoE)** - ~35 settings encoding a full pentest contract (client metadata, time windows, scope exclusions, technique gating, severity caps, sensitive-data handling, compliance frameworks). Enforced both via prompt injection and code-level gates on `get_phase_tools()` and phase transitions
+27. **Stealth Mode** - Highest-priority prompt prefix instructing slow scans, low noise, IDS evasion. Pure prompt-level, context-sensitive judgment is left to the LLM
+28. **Per-Tool Stop** - Operator can cancel a single running tool (with optional `wave_id` / `step_index` disambiguation) without halting the agent; the cancelled tool reports failure and the next think reasons about an alternative
+29. **Token Accounting** - Per-iteration delta + session-cumulative input/output token tallies on `AgentState` and (independently) on each `FireteamMemberState`. Deep Think and LATS expand-call tokens are folded into the iteration that triggered them
+30. **Knowledge Base Integration** - Federated KB-first retrieval pipeline (curated infosec corpus → web search fallback) with project-level source allowlists, MMR diversity reranking, source-specific ranking boosts
+31. **Report Summarizer** - Separate post-engagement LLM module that turns structured pentest data into 6 narrative report sections (executive summary, scope, risk, findings, attack surface, recommendations)
+32. **Companion Orchestrators (Cypherfix Triage + Codefix)** - Two sibling ReAct agents sharing infrastructure: triage clusters/scores findings; codefix patches source code via a Claude-Code-style GitHub toolkit (glob/grep/read/edit/write/bash/symbols/find_definition/find_references/repo_map). Mutating tools serialized via `SEQUENTIAL_TOOLS`; round-robin API key rotation via `key_rotation.py`

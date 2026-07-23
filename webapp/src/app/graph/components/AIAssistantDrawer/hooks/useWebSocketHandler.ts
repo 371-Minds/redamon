@@ -32,6 +32,11 @@ import {
   handleFireteamMemberCompleted,
   handleFireteamCompleted,
 } from './fireteamChatState'
+import {
+  handleLatsStart,
+  handleLatsUpdate,
+  handleLatsComplete,
+} from './latsChatState'
 
 interface WebSocketHandlerDeps {
   // From useChatState
@@ -129,6 +134,9 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
           updated_todo_list: todoListRef.current,
           input_tokens: Math.max(0, Number(message.payload.input_tokens || 0)),
           output_tokens: Math.max(0, Number(message.payload.output_tokens || 0)),
+          productivity_score: message.payload.productivity_score ?? null,
+          productivity_tier: (message.payload.productivity_tier as string) ?? null,
+          stall: message.payload.stall ?? null,
         }
         setChatItems(prev => [...prev, thinkingItem])
         if (!awaitingToolConfirmationRef.current && !awaitingApprovalRef.current && !awaitingQuestionRef.current) {
@@ -436,6 +444,18 @@ export function useWebSocketHandler(deps: WebSocketHandlerDeps) {
         setChatItems(prev => [...prev, deepThinkItem])
         break
       }
+
+      case MessageType.LATS_START:
+        setChatItems(prev => handleLatsStart(prev, message.payload))
+        break
+
+      case MessageType.LATS_TREE_UPDATE:
+        setChatItems(prev => handleLatsUpdate(prev, message.payload))
+        break
+
+      case MessageType.LATS_COMPLETE:
+        setChatItems(prev => handleLatsComplete(prev, message.payload))
+        break
 
       case MessageType.PHASE_UPDATE:
         setCurrentPhase(message.payload.current_phase as Phase)

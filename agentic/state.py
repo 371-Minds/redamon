@@ -110,6 +110,31 @@ def evaluate_skill_switch(new_skill, current_skill, enabled_builtins, enabled_us
     return ("switched", new_skill)
 
 
+def should_auto_transition_on_skill(resolved_skill, current_phase):
+    """Pure decision for Proposal 1 (behavior-triggered phase switch).
+
+    When the agent switches to an OFFENSIVE attack skill while still in the
+    informational phase, the phase should follow what the agent is actually doing
+    and move to exploitation — instead of waiting for a separate manual
+    `transition_phase` action the agent frequently neglects (observed: a run that
+    switched to the SSTI/rce skill repeatedly yet stayed labeled 'informational'
+    for 35 iterations, starving the exploitation-gated tree search).
+
+    Returns True iff:
+      - resolved_skill is a concrete attack class — truthy and NOT a
+        '<term>-unclassified' fallback (switching to "unclassified" is a recon
+        decision, not a commitment to exploit), AND
+      - current_phase is 'informational' (no-op if already exploiting).
+
+    Side-effect-free for unit testing; the caller still applies the config gate
+    (AUTO_TRANSITION_ON_ATTACK_SKILL) and the approval gate
+    (REQUIRE_APPROVAL_FOR_EXPLOITATION).
+    """
+    if not resolved_skill or is_unclassified_path(resolved_skill):
+        return False
+    return current_phase == "informational"
+
+
 # =============================================================================
 # PYDANTIC MODELS FOR STRUCTURED DATA
 # =============================================================================
@@ -396,6 +421,18 @@ class ProductivityVerdict(BaseModel):
     rationale: str = Field(default="", description="One sentence citing specific evidence from the output.")
 
 
+class PerStepAnalysis(BaseModel):
+    """Per-step read of a plan_tools wave, used by LATS to score each child
+    probe independently (see LATS_integration.md §5.3, §6). Optional: when the
+    LLM does not populate it, LATS falls back to the deterministic per-step
+    `error_class` stamped by execute_plan_node."""
+    step_index: int = 0
+    verdict: str = ""            # ProductivityVerdict.verdict for this step
+    finding: str = ""            # short description of any finding at this step
+    confidence: int = 0          # confidence (0-100) of that finding
+    exploit_succeeded: bool = False   # this step reached a foothold (localizes a wave win)
+
+
 class OutputAnalysisInline(BaseModel):
     """Inline output analysis embedded in LLMDecision when tool output is pending."""
     interpretation: str = ""
@@ -406,6 +443,8 @@ class OutputAnalysisInline(BaseModel):
     exploit_details: Optional[dict] = None
     chain_findings: List[ChainFindingExtract] = Field(default_factory=list)
     productivity: ProductivityVerdict = Field(default_factory=ProductivityVerdict)
+    # Optional per-step verdicts for a plan_tools wave (LATS wave scoring, §5.3).
+    per_step: List[PerStepAnalysis] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -812,6 +851,112 @@ class AttackPathClassification(BaseModel):
 # LANGGRAPH STATE
 # =============================================================================
 
+# =============================================================================
+# LATS (Language Agent Tree Search) MODELS
+# Bounded, value-guided tree search over executed exploit probes. See
+# internal/LATS_integration.md. The whole tree rides inside AgentState as a
+# plain dict (_exploit_tree), so the Postgres checkpointer persists it for free.
+# =============================================================================
+
+LatsNodeStatus = Literal[
+    "proposed",    # candidate edge, not yet executed
+    "executing",   # emitted as this iteration's decision, awaiting output
+    "evaluated",   # observation scored, value known
+    "pruned",      # value below floor or dead-end (WAF/403/rate-limited)
+    "terminal",    # exploit_succeeded on this node
+]
+
+
+class ExploitTreeNode(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    parent_id: Optional[str] = None
+    depth: int = 0
+
+    # The edge that produced this node (None only for the synthetic root).
+    tool_name: Optional[str] = None
+    tool_args: Optional[dict] = None
+    probe_rationale: str = ""           # from the hypothesis / expand step
+
+    # Filled after execution + evaluation.
+    observation_summary: str = ""       # compressed tool_output (~200 chars; NOT raw)
+    verdict: str = ""                   # ProductivityVerdict.verdict
+    error_class: str = ""               # from error_class.py annotation
+    duration_ms: int = 0                # from the executed step
+    finding_confidence_delta: int = 0   # confidence of any new ChainFinding at this node
+    exploit_succeeded: bool = False
+    step_id: Optional[str] = None       # ExecutionStep.step_id; links to execution_trace for raw output
+
+    # Search bookkeeping.
+    status: LatsNodeStatus = "proposed"
+    value: float = 0.0                  # backprop-aggregated value (higher = closer to foothold)
+    local_value: float = 0.0            # this node's own evaluation, pre-aggregation
+    visits: int = 0
+    reflection: str = ""                # lesson_learned when pruned/failed
+    children: List[str] = Field(default_factory=list)
+
+
+class ExploitTree(BaseModel):
+    root_id: str
+    nodes: Dict[str, ExploitTreeNode] = Field(default_factory=dict)
+    active_node_id: Optional[str] = None   # parent node whose children are the current wave
+    rollouts: int = 0                      # completed Select->...->Backprop cycles
+    best_terminal_id: Optional[str] = None
+    objective: str = ""                    # the exploitation objective this tree serves
+    attack_path_type: str = ""             # skill/path at seed time; a switch invalidates the tree (§20.6)
+    primary_target: str = ""               # target at seed time; a target change invalidates the tree
+
+    def to_view(self, *, search_id: str, phase: str, shadow_mode: bool,
+                max_rollouts: int, max_depth: int,
+                best_trajectory: Optional[List[str]] = None) -> dict:
+        """UI-facing projection (LatsTreeSnapshot, LATS_integration.md §17.4).
+        Raw tool_output is intentionally excluded (size); the inspector fetches
+        it from execution_trace via step_id. Runtime context not stored on the
+        model (search_id, phase, shadow_mode, budgets, trajectory) is passed in.
+        """
+        try:
+            from project_settings import DANGEROUS_TOOLS
+        except Exception:
+            DANGEROUS_TOOLS = frozenset()
+
+        def _node_view(n: "ExploitTreeNode") -> dict:
+            return {
+                "id": n.id,
+                "parent_id": n.parent_id,
+                "depth": n.depth,
+                # Full rationale: the frontend clamps display (outline rows
+                # ellipsis, best line 3-line clamp + expand), so don't truncate
+                # here or the "best line" gets cut mid-word with no way to see it.
+                "label": (n.probe_rationale or n.tool_name or n.id),
+                "tool_name": n.tool_name,
+                "tool_args": n.tool_args,
+                "status": n.status,
+                "value": n.value,
+                "local_value": n.local_value,
+                "visits": n.visits,
+                "verdict": n.verdict,
+                "error_class": n.error_class,
+                "finding_confidence": n.finding_confidence_delta,
+                "exploit_succeeded": n.exploit_succeeded,
+                "duration_ms": n.duration_ms,
+                "observation": n.observation_summary,
+                "reflection": n.reflection,
+                "is_dangerous": n.tool_name in DANGEROUS_TOOLS if n.tool_name else False,
+                "step_id": n.step_id,
+            }
+
+        return {
+            "search_id": search_id,
+            "objective": self.objective,
+            "phase": phase,
+            "shadow_mode": shadow_mode,
+            "rollouts": self.rollouts,
+            "budget": {"max_rollouts": max_rollouts, "max_depth": max_depth},
+            "active_id": self.active_node_id,
+            "best_trajectory": best_trajectory or [],
+            "nodes": [_node_view(n) for n in self.nodes.values()],
+        }
+
+
 class AgentState(TypedDict):
     """
     LangGraph state for the ReAct agent orchestrator.
@@ -926,6 +1071,11 @@ class AgentState(TypedDict):
     # apart for the 6-step verdict window to catch.
     _deep_think_cooldown_until: int  # iteration number; current_iteration < this → suppress
     _iterations_since_state_grew: int
+    # `_iterations_since_chain_advance` is the DEPTH counter (Proposal 3): think
+    # iterations since the chain last advanced (a confirmed finding / foothold —
+    # NOT mere map-growth). Feeds the churn-aware novelty saturation so pure
+    # enumeration stops pinning the productivity score to green.
+    _iterations_since_chain_advance: int
     # `_diagnostic_progress_streak` counts consecutive stall-counter resets that
     # came from *diagnostic* progress (debugging a failing-but-correct approach)
     # rather than real target-state growth. Capped so diagnostic progress cannot
@@ -965,6 +1115,43 @@ class AgentState(TypedDict):
     # process_fireteam_confirmation_node so each escalation gets its own
     # operator decision. See FIRETEAM.md §20 Q3 ("v1: 3 times").
     _pending_escalations: Optional[list]
+
+    # LATS (Language Agent Tree Search) — bounded exploit-path search.
+    # `_exploit_tree` is ExploitTree.model_dump() (or None when LATS inactive);
+    # it carries all per-node search state, so no other LATS bookkeeping key is
+    # needed. The remaining flags are per-turn signals the LATS hook reads:
+    #   `deep_think_ran_this_turn` — think_node's local deep_think_triggered,
+    #     the LATS activation pre-gate (NOT Deep Think's output, §20.16).
+    #   `guidance_drained_this_turn` — operator guidance was drained this turn,
+    #     so LATS should graft it as a high-prior probe (§21.1).
+    #   `_lats_operator_stop` / `_lats_refocus_target` — typed operator controls
+    #     to stop or refocus a running search (§21.2).
+    # ALL must be declared here or LangGraph strips them on merge (§20.1).
+    _exploit_tree: Optional[dict]
+    deep_think_ran_this_turn: bool
+    guidance_drained_this_turn: bool
+    _lats_operator_stop: bool
+    _lats_refocus_target: Optional[str]
+    # Iteration at which the last LATS search archived — persisted so the Fix B2
+    # re-activation cooldown survives across turns (else lats_active reads it as
+    # None every turn and the cooldown never applies).
+    _lats_last_archive_iter: Optional[int]
+    # Append-only, capped digest of every finished LATS tree (outcome + best line
+    # + ruled-out probes). Persisted so prior-tree knowledge ACCUMULATES for each
+    # subsequent tree, surviving execution_trace's eviction window.
+    _lats_tree_digest: Optional[list]
+
+    # Run-level ledger of the EXECUTED probe dedup-keys of every finished LATS
+    # tree. The digest above is the human-readable soft hint; this is the HARD
+    # cross-tree guarantee — a later tree's expand drops any byte-identical
+    # re-run of a probe a prior tree already tried (§3 cross-tree amnesia fix).
+    _lats_probe_ledger: Optional[list]
+
+    # Debounce counter for the tree-reset guard: how many CONSECUTIVE turns a
+    # reset condition has held. A tree is only torn down once this reaches
+    # LATS_RESET_DEBOUNCE, so transient jitter (a one-turn blank/oscillation in
+    # phase/skill/target) never falsely resets a healthy tree.
+    _lats_reset_streak: Optional[int]
 
 
 # =============================================================================
@@ -1101,6 +1288,7 @@ def create_initial_state(
         # Productivity scoring v2
         "_deep_think_cooldown_until": 0,
         "_iterations_since_state_grew": 0,
+        "_iterations_since_chain_advance": 0,
         "_diagnostic_progress_streak": 0,
         "_previous_priority_order": None,
         "tested_axes": {},

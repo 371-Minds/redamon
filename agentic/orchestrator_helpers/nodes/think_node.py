@@ -21,6 +21,7 @@ from state import (
     format_qa_history,
     format_objective_history,
     evaluate_skill_switch,
+    should_auto_transition_on_skill,
     utc_now,
 )
 import orchestrator_helpers.chain_graph_writer as chain_graph
@@ -36,6 +37,7 @@ from orchestrator_helpers.productivity import (
     build_productivity_audit_section,
     compute_productivity_score,
     detect_state_growth,
+    detect_chain_advance,
     detect_diagnostic_progress,
     update_stall_counters,
     extract_axis,
@@ -219,6 +221,9 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # Think branch ran or which sub-path it took.
     _score_obj = None
     dt_parsed = None
+    # Deep Think's hypotheses + attack vectors, exposed to the LATS seed as
+    # branching material (NOT its recommended plan). None unless Deep Think fires.
+    _lats_dt_hints = None
 
     trigger_reason = None
 
@@ -233,6 +238,11 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     _tier = "green"
     if _score_enabled and _exec_trace:
         try:
+            # Churn-aware score (Proposal 3): pass the chain-advance depth counter so
+            # pure map-growth enumeration cannot pin the score to green. When the
+            # toggle is off, pass 0 (=> novelty_scale 1.0 => legacy behavior).
+            _churn_aware = bool(get_setting('PRODUCTIVITY_CHURN_AWARE', True))
+            _isca = int(state.get("_iterations_since_chain_advance", 0) or 0) if _churn_aware else 0
             _score_obj = compute_productivity_score(
                 execution_trace=_exec_trace,
                 tested_axes=state.get("tested_axes", {}),
@@ -241,6 +251,8 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 max_iterations=state.get("max_iterations", get_setting('MAX_ITERATIONS', 100)),
                 phase=phase,
                 window=_window,
+                iterations_since_chain_advance=_isca,
+                novelty_saturation_grace=int(get_setting('PRODUCTIVITY_NOVELTY_SATURATION_GRACE', 3)),
             )
             _tier = tier_for_score(
                 _score_obj["score"],
@@ -309,6 +321,23 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     # — ALWAYS bypasses cooldown (agent should be able to ask for help)
     if not trigger_reason and state.get("_need_deep_think", False):
         trigger_reason = "Agent self-assessed stagnation — strategic re-evaluation requested"
+
+    # Fix C: while a LATS tree is live AND driving (non-shadow), LATS owns
+    # strategy for these turns — its own tree search IS the re-planning Deep
+    # Think would do. Suppress Deep Think so the failing probes it issues cannot
+    # pin productivity 'critical' and bypass the cooldown into a Deep-Think-
+    # every-turn loop (double meta-reasoning whose output LATS overrides anyway).
+    # Deep Think resumes once LATS archives — now informed by the tree summary
+    # LATS carries into execution_trace. Shadow mode never drives, so it is
+    # unaffected here.
+    from orchestrator_helpers.lats import lats_is_driving
+    _lats_driving = lats_is_driving(state)
+    if _lats_driving and trigger_reason:
+        logger.info(
+            f"[{user_id}/{project_id}/{session_id}] Deep Think suppressed "
+            f"(LATS driving a live tree): '{trigger_reason}'"
+        )
+        trigger_reason = None
 
     if trigger_reason:
         try:
@@ -428,6 +457,19 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 f"{_novelty_warning}"
             )
             deep_think_triggered = True
+            # Expose the hypotheses + attack vectors (NOT the recommended plan) so
+            # the LATS seed can turn them into concrete probe branches this turn.
+            try:
+                _lats_dt_hints = {
+                    "hypotheses": [
+                        {"hypothesis": getattr(h, "hypothesis", ""),
+                         "probe": getattr(h, "disambiguating_probe", "")}
+                        for h in (dt_parsed.competing_hypotheses or [])
+                    ],
+                    "attack_vectors": list(dt_parsed.attack_vectors_identified or []),
+                }
+            except Exception:
+                _lats_dt_hints = None
             logger.info(f"[{user_id}/{project_id}/{session_id}] Deep Think triggered: {trigger_reason}")
 
             # Stream to frontend
@@ -994,6 +1036,34 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
 
     logger.info(f"{'='*60}\n")
 
+    # LATS (exploit-path tree search) hook. Strict no-op unless LATS_ENABLED.
+    # Runs AFTER the fireteam gate and BEFORE the ExecutionStep build so the
+    # router, the confirmation gate, and the RoE gates all inherit any LATS
+    # override automatically. In shadow mode it builds/streams the tree but
+    # returns the decision unchanged. See internal/LATS_integration.md §5.3/§19.
+    if get_setting("LATS_ENABLED", False):
+        from orchestrator_helpers.lats import lats_hook
+        # Expose Deep Think's FIRING (not its output, §20.16), guidance-drain,
+        # and this turn's productivity score as intra-turn signals the hook reads
+        # via state. The score lets lats_active re-engage as the cheaper first
+        # responder just BELOW the Deep Think threshold (Fix B2 score trigger).
+        state["deep_think_ran_this_turn"] = deep_think_triggered
+        state["guidance_drained_this_turn"] = bool(guidance_messages)
+        state["_last_productivity_score"] = _score_obj
+        # Deep Think's hypotheses/vectors for the LATS seed (turn-local; the seed
+        # runs the same turn Deep Think fires, so no cross-turn persistence needed).
+        state["_lats_deep_think_hints"] = _lats_dt_hints
+        decision = await lats_hook(
+            state, decision, llm=llm,
+            streaming_callbacks=streaming_callbacks, session_id=session_id,
+        )
+        # Fold LATS's own expand-call tokens into this turn's counters (and thus
+        # the cumulative total + the streamed KPI), so a LATS-active turn is not
+        # undercounted. Turn-local: cleared after reading, never persisted.
+        _lats_tok = state.pop("_lats_expand_tokens", None) or {}
+        input_tokens_this_turn += int(_lats_tok.get("in", 0) or 0)
+        output_tokens_this_turn += int(_lats_tok.get("out", 0) or 0)
+
     # Create execution step
     step = ExecutionStep(
         iteration=iteration,
@@ -1028,6 +1098,19 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         "_input_tokens_this_turn": input_tokens_this_turn,
         "_output_tokens_this_turn": output_tokens_this_turn,
     }
+
+    # LATS state pass-through (declared keys, or LangGraph strips them, §20.1).
+    # Only written when LATS_ENABLED so the disabled path is a strict no-op.
+    if get_setting("LATS_ENABLED", False):
+        updates["deep_think_ran_this_turn"] = deep_think_triggered
+        updates["guidance_drained_this_turn"] = bool(guidance_messages)
+        updates["_exploit_tree"] = state.get("_exploit_tree")
+        # Persist the archive stamp so the re-activation cooldown (Fix B2)
+        # survives across turns (else it resets to None and never applies).
+        updates["_lats_last_archive_iter"] = state.get("_lats_last_archive_iter")
+        # Persist the accumulated tree digest so prior-tree knowledge survives
+        # across turns and feeds every subsequent LATS tree.
+        updates["_lats_tree_digest"] = state.get("_lats_tree_digest")
 
     logger.info(
         f"[{user_id}/{project_id}/{session_id}] Tokens this turn: "
@@ -1331,6 +1414,13 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
             )
             updates["_iterations_since_state_grew"] = _new_its
             updates["_diagnostic_progress_streak"] = _new_ds
+            # Proposal 3: DEPTH counter — iterations since the chain last advanced
+            # (a confirmed finding / foothold, NOT mere map-growth). Feeds the
+            # churn-aware novelty saturation next think turn.
+            _chain_grew = detect_chain_advance(_before_growth_snapshot, _after_growth_snapshot)
+            updates["_iterations_since_chain_advance"] = (
+                0 if _chain_grew else int(state.get("_iterations_since_chain_advance", 0) or 0) + 1
+            )
 
             # Productivity v2: record the completed step on the axis ledger.
             # `extract_axis` returns None for tool calls that aren't expensive
@@ -1673,6 +1763,11 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         )
         updates["_iterations_since_state_grew"] = _w_its
         updates["_diagnostic_progress_streak"] = _w_ds
+        # Proposal 3: DEPTH counter for the wave path (mirror of the single-tool path).
+        _wave_chain_grew = detect_chain_advance(_before_growth_snapshot, _after_growth_snapshot)
+        updates["_iterations_since_chain_advance"] = (
+            0 if _wave_chain_grew else int(state.get("_iterations_since_chain_advance", 0) or 0) + 1
+        )
 
         # Record an axis attempt per wave step that has an extractable axis.
         # Use the wave-level productivity verdict (all wave steps share it).
@@ -1885,11 +1980,43 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
             )
             updates["attack_path_type"] = resolved
             reason = (skill_switch.reason if skill_switch else "") or ""
-            updates["messages"] = [AIMessage(
-                content=f"Attack skill switched from '{current_skill or 'unclassified'}' to "
-                        f"'{resolved}'" + (f": {reason}" if reason else "") +
-                        ". The specialized workflow for this skill is now active."
-            )]
+            _switch_msg = (
+                f"Attack skill switched from '{current_skill or 'unclassified'}' to "
+                f"'{resolved}'" + (f": {reason}" if reason else "") +
+                ". The specialized workflow for this skill is now active."
+            )
+            # Proposal 1: behavior-triggered phase switch. Switching to an offensive
+            # attack skill while still in recon signals intent to exploit, so move to
+            # the exploitation phase automatically instead of waiting for a manual
+            # transition_phase action the agent tends to neglect. Only auto-FLIP when
+            # approval is not required (the unattended/CTF path); when approval IS
+            # required we leave the phase as-is so the agent's own transition_phase
+            # drives the proper approval routing (switch_skill routes straight back to
+            # think and would otherwise bypass the approval gate).
+            if (get_setting('AUTO_TRANSITION_ON_ATTACK_SKILL', True)
+                    and should_auto_transition_on_skill(resolved, phase)
+                    and not get_setting('REQUIRE_APPROVAL_FOR_EXPLOITATION', True)):
+                logger.info(
+                    f"[{user_id}/{project_id}/{session_id}] Auto-transition to "
+                    f"exploitation on attack skill '{resolved}' (was informational)"
+                )
+                updates["current_phase"] = "exploitation"
+                updates["phase_history"] = state.get("phase_history", []) + [
+                    PhaseHistoryEntry(phase="exploitation").model_dump()
+                ]
+                updates["_just_transitioned_to"] = "exploitation"
+                updates["_redundant_transition_count"] = 0
+                updates["execution_trace"] = _phase_breadcrumb_trace(
+                    state, updates, iteration, "exploitation", redundant=False
+                )
+                updates["todo_list"] = _complete_transition_todos(
+                    updates.get("todo_list") or state.get("todo_list", []), "exploitation"
+                )
+                _switch_msg += (
+                    " Auto-transitioned to the exploitation phase (an offensive skill "
+                    "is now active) — proceed with exploitation."
+                )
+            updates["messages"] = [AIMessage(content=_switch_msg)]
             # Persist the switch to the attack-chain graph (fire-and-forget) so the
             # UI/graph reflect the new class; core behavior does not depend on this.
             chain_graph.fire_update_chain_attack_path(

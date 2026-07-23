@@ -277,6 +277,28 @@ universal SSTI oracle:
     THERE), then request the LATER view that re-renders it -- the injection fires, and your
     proof appears, on the RE-RENDER request (often a GET), not on the step you submitted to.
     Enumerate every view/method that could re-render a stored value.
+- **GATE -- a confirmed sink of ONE class does NOT close the other classes on the SAME
+  input; finish the stored-render matrix before you downgrade.** One input can be several
+  sinks at once. Observing that a value is reflected in a browser-executable context (an
+  HTML/JS reflection -- an XSS sink) does NOT establish that it is "only" XSS: the identical
+  stored value can ALSO be compiled by a server-side template engine, deserialized, or
+  concatenated into a query. It is a recurring, run-losing mistake to let a client-side (or
+  any other) positive TALK YOU OUT OF a server-side-injection hypothesis on the same value --
+  they are not mutually exclusive, and confirming one is not evidence against another. You may
+  NOT reclassify a value as "just XSS / not a template sink" or move off it until the
+  STORED-RENDER MATRIX below has come back inert on EVERY downstream view:
+    1. Seed a positive object-render canary (render a root object the context exposes and read
+       its repr -- NOT an arithmetic-only probe, which proves nothing on sandboxed engines) in
+       the EARLIEST field where the value is stored.
+    2. Then request EVERY downstream view that could re-render that stored value -- the
+       follow-up/confirmation view, any profile/summary/detail page, generated artifacts
+       (emails/PDFs/exports), and a fresh re-GET of the same step -- NOT only the immediate
+       response to the request you submitted on.
+    3. Diff EACH rendered view against a control seed for an evaluation signal.
+  Absence of evaluation on the submission response alone is NOT a negative; on stateful/
+  deferred sinks the render is routinely deferred to a later view. Only after the FULL matrix
+  is inert on every downstream view may you drop the template-injection hypothesis for that
+  input. Record which views you fetched; "it looked like XSS" is not grounds to skip the matrix.
 
 #### 4C. Insecure deserialization (CONDITIONAL on `RCE_DESERIALIZATION_ENABLED`)
 

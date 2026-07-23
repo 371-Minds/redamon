@@ -1,9 +1,11 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { Conversation } from '@/hooks/useConversations'
 import type { TodoItem } from '@/lib/websocket-types'
 import type { ChatItem, Message, FileDownloadItem, Phase } from '../types'
 import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem, FireteamItem } from '../AgentTimeline'
 import type { ActiveSkill } from './useSendHandlers'
+import { foldLatsRestoreMarkers } from './latsChatState'
+import { reconcileTimeline } from './timelineReconcile'
 
 interface ConversationRestorationDeps {
   // From useConversations
@@ -64,6 +66,13 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
 
+  // The running conversation to re-sync once the socket (re)connects. Streamed
+  // events are persisted by a lagging queue on the backend, so the initial
+  // restore of a live session can be stale/empty; after CONNECTED (backend has
+  // flushed its queue by then) we re-read and reconcile. Held in a ref so the
+  // stable socket-connect handler always sees the latest target.
+  const pendingResyncConvRef = useRef<Conversation | null>(null)
+
   // Fetch + auto-refresh conversations when history panel opens
   useEffect(() => {
     if (showHistory && projectId && userId) {
@@ -73,7 +82,11 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     }
   }, [showHistory, projectId, userId, fetchConversations])
 
-  const handleSelectConversation = useCallback(async (conv: Conversation) => {
+  const handleSelectConversation = useCallback(async (conv: Conversation, opts?: { resync?: boolean }) => {
+    // Resync mode re-reads a *running* session already on screen (triggered on
+    // socket connect) and folds the fresh DB timeline back in via reconcile,
+    // instead of switching sessions / resetting interaction state.
+    const isResync = opts?.resync === true
     const full = await loadConversation(conv.id)
     if (!full) return
 
@@ -195,6 +208,9 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
           updated_todo_list: [],
           input_tokens: Math.max(0, Number(data.input_tokens || 0)),
           output_tokens: Math.max(0, Number(data.output_tokens || 0)),
+          productivity_score: data.productivity_score ?? null,
+          productivity_tier: (data.productivity_tier as string) ?? null,
+          stall: data.stall ?? null,
         } as ThinkingItem
       } else if (msg.type === 'tool_start') {
         if (data.wave_id) return null
@@ -392,6 +408,9 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
           iteration: data.iteration || 0,
           phase: data.phase || '',
         } as DeepThinkItem
+      } else if (msg.type === 'lats_start' || msg.type === 'lats_tree_update' || msg.type === 'lats_complete') {
+        // Marker; folded into one LatsSearchItem per search_id in a post-pass.
+        return { _latsEvent: msg.type, payload: data, msg_id: msg.id, timestamp: new Date(msg.createdAt) } as any
       } else if (msg.type === 'plan_complete') {
         return null
       }
@@ -472,6 +491,21 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
         if ((restored[planStartMarkers[k]] as any)._planStartLink) {
           restored.splice(planStartMarkers[k], 1)
         }
+      }
+    }
+
+    // Post-pass: fold LATS event markers into one card per search_id (with
+    // history[]), placed at the first event's position + timestamp (§18.2, C1).
+    {
+      const folded = foldLatsRestoreMarkers(restored)
+      // foldLatsRestoreMarkers returns the SAME array reference when there are
+      // no LATS markers (the common case). Guard against it: clearing `restored`
+      // would also clear `folded` (same array) and leave the whole timeline
+      // empty — this is what blanked the chat when restoring any non-LATS
+      // conversation. Only rewrite when folding actually produced a new array.
+      if (folded !== restored) {
+        restored.length = 0
+        restored.push(...folded)
       }
     }
 
@@ -859,6 +893,20 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     })
 
     // Apply state
+    if (isResync) {
+      // Fold the authoritative DB timeline back in without dropping live events
+      // that arrived over the socket since we started this re-read. Metadata
+      // (phase/iteration/todos) is refreshed too, but session/interaction/skill
+      // state is left untouched so an in-flight run isn't disturbed.
+      setChatItems(prev => reconcileTimeline(restored, prev))
+      setConversationId(conv.id)
+      setCurrentPhase((conv.currentPhase || 'informational') as Phase)
+      setAttackPathType(lastAttackPathType)
+      setIterationCount(conv.iterationCount || 0)
+      setTodoList(lastTodoList)
+      return
+    }
+
     setChatItems(restored)
     setConversationId(conv.id)
     setCurrentPhase((conv.currentPhase || 'informational') as Phase)
@@ -869,6 +917,12 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     setTodoList(lastTodoList)
     shouldAutoScroll.current = true
     setShowHistory(false)
+
+    // Arm a one-shot resync for a running session: the initial read above may be
+    // behind the live stream (backend persist queue lag), so we re-read once the
+    // socket connects. Cleared when selecting an idle session or starting a new
+    // chat.
+    pendingResyncConvRef.current = conv.agentRunning ? conv : null
 
     // Restore active skill from conversation
     if (conv.activeSkillId) {
@@ -926,7 +980,18 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     onSwitchSession?.(conv.sessionId)
   }, [loadConversation, onSwitchSession, userId, setActiveSkill, updateConvMeta])
 
+  // Called when the agent socket (re)connects. If we just restored a running
+  // session, re-read it now that the backend has flushed its persist queue and
+  // reconcile so the timeline is complete. Guarded by session so a resync can't
+  // leak into a different session the user switched to mid-flight.
+  const resyncActiveConversation = useCallback(async (connectedSessionId: string) => {
+    const conv = pendingResyncConvRef.current
+    if (!conv || conv.sessionId !== connectedSessionId) return
+    await handleSelectConversation(conv, { resync: true })
+  }, [handleSelectConversation])
+
   const handleHistoryNewChat = useCallback(() => {
+    pendingResyncConvRef.current = null
     setShowHistory(false)
     handleNewChat()
   }, [handleNewChat])
@@ -935,6 +1000,7 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     await deleteConversation(id)
     onRefetchGraph?.()
     if (id === conversationId) {
+      pendingResyncConvRef.current = null
       handleNewChat()
     }
   }, [deleteConversation, onRefetchGraph, conversationId, handleNewChat])
@@ -945,6 +1011,7 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     showHistory,
     setShowHistory,
     handleSelectConversation,
+    resyncActiveConversation,
     handleHistoryNewChat,
     handleDeleteConversation,
   }
