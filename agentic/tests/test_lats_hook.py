@@ -124,6 +124,9 @@ class TestGateNegatives(unittest.IsolatedAsyncioTestCase):
         await self._assert_inactive(_state(target_info={}, chain_findings_memory=[]))
 
     async def test_already_exploited(self):
+        # A foothold gates LATS off only in pentest mode (LATS_STOP_ON_FOOTHOLD);
+        # on a flag-hunt (default off) it would NOT block. Enable it here.
+        project_settings._settings["LATS_STOP_ON_FOOTHOLD"] = True
         await self._assert_inactive(
             _state(chain_findings_memory=[{"finding_type": "access_gained"}])
         )

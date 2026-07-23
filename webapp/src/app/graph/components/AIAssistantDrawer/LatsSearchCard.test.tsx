@@ -48,8 +48,9 @@ function makeItem(shadow = true): LatsSearchItem {
 describe('LatsSearchCard', () => {
   test('renders node labels and values', () => {
     render(<LatsSearchCard item={makeItem()} />)
-    expect(screen.getByText('/login')).toBeInTheDocument()
-    expect(screen.getByText('forgot-password')).toBeInTheDocument()
+    // '/login' and 'forgot-password' now also appear as best-line breadcrumb steps
+    expect(screen.getAllByText('/login').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('forgot-password').length).toBeGreaterThan(0)
     expect(screen.getByText('default creds')).toBeInTheDocument()
     // values rendered to 2dp
     expect(screen.getAllByText('0.80').length).toBeGreaterThan(0)
@@ -60,6 +61,21 @@ describe('LatsSearchCard', () => {
     const best = screen.getByTestId('lats-best-line')
     expect(best.textContent).toContain('/login')
     expect(best.textContent).toContain('forgot-password')
+  })
+
+  test('renders the full best-line step text without truncation', () => {
+    const longLabel =
+      'The POST /wifi_settings response is 7764 bytes vs 5040 for GET, suggesting it contains a form'
+    const item = makeItem()
+    item.latest = { ...item.latest, best_trajectory: ['root', 'c3'] }
+    item.latest.nodes = item.latest.nodes.map(n =>
+      n.id === 'c3' ? { ...n, label: longLabel } : n,
+    )
+    render(<LatsSearchCard item={item} />)
+    const best = screen.getByTestId('lats-best-line')
+    // whole sentence is present, nothing clipped with an ellipsis
+    expect(best.textContent).toContain(longLabel)
+    expect(best.textContent).not.toContain('…')
   })
 
   test('shows the observe-only badge in shadow mode', () => {

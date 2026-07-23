@@ -184,6 +184,14 @@ At the end of the install (and on every `./redamon.sh up` or `./redamon.sh updat
 
 After creation, open **http://localhost:3000** and sign in with the email and password you just set.
 
+> **No prompt appeared?** On a heavy first boot (especially `--gvm`, or a small VM) the webapp can take a while to come up, so the automatic prompt may be skipped. Create the admin at any time with:
+>
+> ```bash
+> ./redamon.sh create-admin
+> ```
+>
+> It waits for the webapp, then prompts for the same details. It is safe to re-run: reusing an existing admin's email resets that password, a new email adds another admin.
+
 **What the admin can do:**
 - Switch between all users via the user dropdown in the header (including users without a password).
 - Create new users (with or without a password) and assign them `admin` or `standard` roles.
@@ -196,8 +204,11 @@ After creation, open **http://localhost:3000** and sign in with the email and pa
 If you forget the admin password, reset it from the terminal:
 
 ```bash
-./redamon.sh reset-password
+./redamon.sh reset-password   # reset an EXISTING user's password
+./redamon.sh create-admin     # create the first admin, or reset an admin by re-entering its email
 ```
+
+Use `create-admin` when no admin exists yet (it upserts on email); `reset-password` only updates a user that already exists.
 
 ### 3. Configure
 
@@ -237,7 +248,8 @@ All lifecycle management is handled by a single script:
 | `./redamon.sh down` | Stop services (preserves data) |
 | `./redamon.sh status` | Show running services, version, GVM mode, KB state |
 | `./redamon.sh clean` | Remove containers + images, keep data |
-| `./redamon.sh reset-password` | Reset a user's password from the terminal |
+| `./redamon.sh create-admin` | Create the admin login (or reset it) -- use if no prompt appeared at install |
+| `./redamon.sh reset-password` | Reset an existing user's password from the terminal |
 | `./redamon.sh purge` | Remove everything including all data |
 
 

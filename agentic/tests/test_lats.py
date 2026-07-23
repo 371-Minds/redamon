@@ -287,10 +287,17 @@ class TestActivationGate(unittest.TestCase):
         project_settings._settings["LATS_ENABLED"] = True
         self.assertFalse(lats.lats_active(self._state(target_info={}, chain_findings_memory=[])))
 
-    def test_already_exploited_blocks(self):
+    def test_already_exploited_gated_by_setting(self):
+        # Flag-hunt default (LATS_STOP_ON_FOOTHOLD off): a mid-chain foothold must
+        # NOT block LATS — a foothold is a MEANS to the flag, so LATS should still
+        # engage to push the chain through to the objective.
         project_settings._settings = dict(project_settings.DEFAULT_AGENT_SETTINGS)
         project_settings._settings["LATS_ENABLED"] = True
         s = self._state(chain_findings_memory=[{"finding_type": "access_gained"}])
+        self.assertTrue(lats.lats_active(s), "foothold must not block activation on a flag-hunt")
+        # Pentest mode (setting ON): a foothold means the exploit path is found,
+        # so LATS hands back and does not activate.
+        project_settings._settings["LATS_STOP_ON_FOOTHOLD"] = True
         self.assertFalse(lats.lats_active(s))
 
     def test_deep_think_not_fired_blocks(self):
@@ -323,7 +330,11 @@ class TestExpandParsing(unittest.TestCase):
         self.assertEqual([p["tool_name"] for p in probes], ["kali_shell"])
 
     def test_branching_cap(self):
-        items = ", ".join('{"tool_name": "execute_curl", "tool_args": {"args": "-s x"}}' for _ in range(6))
+        # DISTINCT probes so the cap is what bounds the count, not the hard dedup
+        # (identical probes now collapse - see TestProbeDedup).
+        items = ", ".join(
+            f'{{"tool_name": "execute_curl", "tool_args": {{"args": "-s x{i}"}}}}'
+            for i in range(6))
         text = f'{{"probes": [{items}]}}'
         probes = lats._parse_expand_response(text, self.ALLOWED, 3)
         self.assertEqual(len(probes), 3)

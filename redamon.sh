@@ -719,7 +719,12 @@ ensure_db_secrets() {
         "NEO4J_PASSWORD:neo4j_data:changeme123:_rotate_neo4j_password"
     )
 
+    local project; project="$(compose_project_name)"
     local spec var suffix default rotate_fn old new
+    # Vars we could NOT establish because a data volume exists but rotation off
+    # the default failed. Collected here so we can STOP with one actionable
+    # message instead of silently leaving .env without a password (#155).
+    local -a unresolved=()
     for spec in "${specs[@]}"; do
         var="$(echo "$spec" | cut -d: -f1)"
         suffix="$(echo "$spec" | cut -d: -f2)"
@@ -741,11 +746,14 @@ ensure_db_secrets() {
                 echo "${var}=${new}" >> "$env_file"
                 info "Rotated ${var} on the live database and pinned it in .env."
             else
-                # Fail-safe: DO NOT write .env if the ALTER failed (wrong old
-                # password / DB down) — a mismatch would lock out consumers.
+                # Rotation failed: DO NOT write .env (a mismatch would lock out
+                # consumers / split-brain). But we also must NOT leave .env
+                # without the value and press on — the fail-closed compose
+                # `${VAR:?}` guard would then abort a later `up`/`update` with a
+                # cryptic interpolation error (issue #155). Record it and stop
+                # loudly below with remediation steps. The volume is untouched.
                 warn "${var} rotation FAILED (wrong old password, or the database is not up)."
-                warn "  Left .env unchanged (fail-safe; no split-brain)."
-                warn "  To rotate manually: bring the DB up, set a strong ${var} in .env, and ALTER the DB's own password to match, or destroy the ${suffix} volume for a clean re-init if the data is disposable."
+                unresolved+=("${var}=${project}_${suffix}")
             fi
         else
             # Fresh install — generate before the DB volume is created so it
@@ -754,6 +762,41 @@ ensure_db_secrets() {
             info "Generated strong ${var} (fresh install)"
         fi
     done
+
+    # #155: at least one required DB password could not be set because a stale
+    # data volume exists that we could not rotate off the compose default. This
+    # is common on re-clone / re-install over Docker volumes that survive repo
+    # deletion (e.g. WSL2 + Docker Desktop). Stop here with concrete remediation
+    # rather than hand the operator an unstartable stack + a cryptic compose
+    # error. Nothing has been destroyed; the volumes are left exactly as they are.
+    if (( ${#unresolved[@]} > 0 )); then
+        local u vols=() var_names=()
+        for u in "${unresolved[@]}"; do
+            var_names+=("${u%%=*}")
+            vols+=("${u#*=}")
+        done
+        error "Cannot configure the database password(s): ${var_names[*]}"
+        error "A data volume already exists for each, but it was not initialised"
+        error "with RedAmon's default credentials, so the password could not be set"
+        error "automatically. RedAmon will not start without these (STRIDE S13)."
+        echo "" >&2
+        echo "  Leftover volume(s): ${vols[*]}" >&2
+        echo "" >&2
+        echo "  Choose ONE fix, then re-run the same command:" >&2
+        echo "" >&2
+        echo "  A) The data is disposable (fresh setup / leftover from a prior run)." >&2
+        echo "     Remove the stale volume(s) so RedAmon can re-initialise cleanly:" >&2
+        echo "         docker volume rm ${vols[*]}" >&2
+        echo "" >&2
+        echo "  B) You need the data in those volumes: pin each volume's CURRENT" >&2
+        echo "     password explicitly in .env (RedAmon then respects it as-is):" >&2
+        local vn
+        for vn in "${var_names[@]}"; do
+            echo "         echo '${vn}=<the volume's existing password>' >> .env" >&2
+        done
+        echo "" >&2
+        exit 1
+    fi
 }
 
 # S11: minimum admin-password length enforced at creation and reset.
@@ -763,51 +806,108 @@ _password_strong_enough() {
     [[ ${#pw} -ge $MIN_ADMIN_PASSWORD_LEN ]]
 }
 
-ensure_admin() {
-    # Wait for webapp to be healthy
-    local retries=0
+# Poll the webapp health endpoint until it answers. Returns 0 once healthy, 1 if
+# it never came up within the budget. Default ~3 min (90 * 2s): a heavy first
+# boot (--gvm starts the OpenVAS/gvmd feed-sync alongside the webapp and can
+# saturate a small VM's CPU/IO for a while) legitimately needs longer than the
+# old 60s, which was silently skipping admin creation (issue #156).
+_wait_for_webapp() {
+    local retries=0 max="${1:-90}"
     while ! docker compose exec -T webapp wget -q --spider http://127.0.0.1:3000/api/health 2>/dev/null; do
         retries=$((retries + 1))
-        if [[ $retries -ge 30 ]]; then
-            warn "Webapp not ready -- skipping admin check"
-            return
-        fi
+        [[ $retries -ge $max ]] && return 1
         sleep 2
     done
+    return 0
+}
 
+# True (0) if at least one admin (role=admin with a password) exists.
+_admin_exists() {
     local has_admin
     has_admin=$(docker compose exec -T webapp node scripts/check-admin.mjs 2>/dev/null | tr -d '[:space:]')
+    [[ -n "$has_admin" && "$has_admin" != "0" ]]
+}
 
-    if [[ "$has_admin" == "0" || -z "$has_admin" ]]; then
-        echo ""
-        warn "No admin user found. Let's create one."
-        echo ""
-        read -rp "  Admin name: " ADMIN_NAME </dev/tty
-        read -rp "  Admin email: " ADMIN_EMAIL </dev/tty
+# Collect the admin details and upsert via create-admin.mjs. Non-interactive when
+# ADMIN_NAME/ADMIN_EMAIL/ADMIN_PASSWORD are all present in the environment (mirrors
+# the single-host deploy path); otherwise prompts on the controlling terminal.
+# create-admin.mjs upserts on email: a matching email RESETS that admin's
+# password, a new email adds another admin — so re-running is safe.
+_prompt_and_create_admin() {
+    local a_name="${ADMIN_NAME:-}" a_email="${ADMIN_EMAIL:-}" a_pass="${ADMIN_PASSWORD:-}" a_pass2=""
+    if [[ -n "$a_name" && -n "$a_email" && -n "$a_pass" ]]; then
+        info "Using ADMIN_NAME / ADMIN_EMAIL / ADMIN_PASSWORD from the environment (non-interactive)."
+        # S11: enforce the minimum password length here too.
+        if ! _password_strong_enough "$a_pass"; then
+            error "ADMIN_PASSWORD too short (minimum ${MIN_ADMIN_PASSWORD_LEN} characters)."
+            exit 1
+        fi
+    else
+        read -rp "  Admin name: " a_name </dev/tty
+        read -rp "  Admin email: " a_email </dev/tty
         while true; do
-            read -srp "  Admin password: " ADMIN_PASS </dev/tty
+            read -srp "  Admin password: " a_pass </dev/tty
             echo ""
-            read -srp "  Confirm password: " ADMIN_PASS2 </dev/tty
+            read -srp "  Confirm password: " a_pass2 </dev/tty
             echo ""
-            if [[ "$ADMIN_PASS" != "$ADMIN_PASS2" ]]; then
+            if [[ "$a_pass" != "$a_pass2" ]]; then
                 warn "Passwords do not match. Try again."
                 continue
             fi
             # S11: reject a weak admin password (min length) instead of warning.
-            if ! _password_strong_enough "$ADMIN_PASS"; then
+            if ! _password_strong_enough "$a_pass"; then
                 warn "Password too short (minimum ${MIN_ADMIN_PASSWORD_LEN} characters). Try again."
                 continue
             fi
             break
         done
-        docker compose exec -T \
-            -e "ADMIN_NAME=$ADMIN_NAME" \
-            -e "ADMIN_EMAIL=$ADMIN_EMAIL" \
-            -e "ADMIN_PASSWORD=$ADMIN_PASS" \
-            webapp node scripts/create-admin.mjs
-        success "Admin user created."
-        echo ""
     fi
+    docker compose exec -T \
+        -e "ADMIN_NAME=$a_name" \
+        -e "ADMIN_EMAIL=$a_email" \
+        -e "ADMIN_PASSWORD=$a_pass" \
+        webapp node scripts/create-admin.mjs
+    success "Admin user ready."
+    echo ""
+}
+
+ensure_admin() {
+    if ! _wait_for_webapp; then
+        # Do NOT dead-end: point the operator at the standalone recovery command
+        # so a slow first boot never leaves them unable to log in (issue #156).
+        warn "Webapp is not responding yet -- skipping the automatic admin setup."
+        warn "Once it is up (check './redamon.sh status'), create the admin with:"
+        warn "    ./redamon.sh create-admin"
+        return
+    fi
+
+    if ! _admin_exists; then
+        echo ""
+        warn "No admin user found. Let's create one."
+        echo ""
+        _prompt_and_create_admin
+    fi
+}
+
+# Standalone admin (re)creation — the reliable path when the automatic prompt was
+# skipped (slow first boot) or the admin password was lost. Safe to re-run: it
+# upserts on email (matching email resets the password; new email adds an admin).
+cmd_create_admin() {
+    print_banner
+    check_prerequisites
+    if ! _wait_for_webapp 150; then   # ~5 min: this is an explicit, user-driven call
+        error "Webapp is not responding at http://localhost:3000/api/health."
+        error "Start the stack first ('./redamon.sh up'), then re-run './redamon.sh create-admin'."
+        exit 1
+    fi
+    if _admin_exists; then
+        warn "An admin user already exists."
+        warn "Continuing will ADD a new admin, or RESET the password if you reuse an existing admin's email."
+    else
+        info "No admin user found yet — let's create one."
+    fi
+    echo ""
+    _prompt_and_create_admin
 }
 
 cmd_reset_password() {
@@ -2076,6 +2176,8 @@ cmd_help() {
     echo -e "  ${GREEN}clean${NC}            Remove containers and images (keeps data)"
     echo -e "  ${GREEN}purge${NC}            Remove everything including all data"
     echo -e "  ${GREEN}status${NC}           Show running services, version, GVM, and KB state"
+    echo -e "  ${GREEN}create-admin${NC}     Create the admin login (or reset it); use if no prompt appeared at install"
+    echo -e "  ${GREEN}reset-password${NC}   Reset an existing user's password"
     echo -e "  ${GREEN}kb <command>${NC}     Knowledge Base management (build/update/rebuild/stats)"
     echo -e "  ${GREEN}help${NC}             Show this help message"
     echo ""
@@ -2087,6 +2189,7 @@ cmd_help() {
     echo "  ./redamon.sh update           # Update to latest version"
     echo "  ./redamon.sh up               # Start after reboot"
     echo "  ./redamon.sh up dev           # Dev mode with hot-reload (auto-detects GVM)"
+    echo "  ./redamon.sh create-admin     # Create the admin login (or reset it)"
     echo "  ./redamon.sh reset-password   # Reset a user's password"
     echo "  ./redamon.sh kb build lite    # Build Knowledge Base"
     echo "  ./redamon.sh kb update        # Refresh all KB sources"
@@ -2135,6 +2238,7 @@ case "${1:-help}" in
         esac
         ;;
     reset-password) cmd_reset_password ;;
+    create-admin)   cmd_create_admin ;;
     help|--help|-h) cmd_help ;;
     *)
         error "Unknown command: $1"

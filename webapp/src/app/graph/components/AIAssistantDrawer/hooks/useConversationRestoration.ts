@@ -208,6 +208,9 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
           updated_todo_list: [],
           input_tokens: Math.max(0, Number(data.input_tokens || 0)),
           output_tokens: Math.max(0, Number(data.output_tokens || 0)),
+          productivity_score: data.productivity_score ?? null,
+          productivity_tier: (data.productivity_tier as string) ?? null,
+          stall: data.stall ?? null,
         } as ThinkingItem
       } else if (msg.type === 'tool_start') {
         if (data.wave_id) return null

@@ -64,6 +64,33 @@ function fireteam(atMs: number, members: Array<{ input_tokens_used: number; outp
   }))
   return { type: 'fireteam', id: `f${atMs}`, timestamp: new Date(atMs), status: 'success', members: fullMembers } as unknown as ChatItem
 }
+function latsNode(id: string, parent: string | null, depth: number, tool: string | null,
+                  args: Record<string, unknown> | null, value: number, verdict: string) {
+  return {
+    id, parent_id: parent, depth, label: `n-${id}`, tool_name: tool, tool_args: args,
+    status: 'evaluated', value, local_value: value, visits: 1, verdict, error_class: '',
+    finding_confidence: 0, exploit_succeeded: false, duration_ms: 0, observation: '',
+    reflection: '', is_dangerous: false, step_id: null,
+  }
+}
+function latsSearch(atMs: number): ChatItem {
+  return {
+    type: 'lats_search', id: 'search_x', search_id: 'search_x', timestamp: new Date(atMs),
+    objective: 'recover the flag', phase: 'exploitation', shadow_mode: false,
+    status: 'complete', outcome: 'branch_collapsed',
+    latest: {
+      search_id: 'search_x', objective: 'recover the flag', phase: 'exploitation',
+      shadow_mode: false, rollouts: 3, budget: { max_rollouts: 50, max_depth: 6 },
+      active_id: null, best_trajectory: ['a1', 'b2'],
+      nodes: [
+        latsNode('root', null, 0, null, null, 0, ''),
+        latsNode('a1', 'root', 1, 'execute_curl', { args: '-s http://t/xss?name=x' }, 0.3, 'diagnostic_progress'),
+        latsNode('b2', 'a1', 2, 'execute_playwright', { url: 'http://t/#x' }, 0.1, 'no_progress'),
+      ],
+    },
+    history: [],
+  } as unknown as ChatItem
+}
 
 beforeEach(() => { captured = '' })
 
@@ -90,6 +117,17 @@ describe('useDownloadMarkdown header', () => {
   test('includes the full session id for log correlation', async () => {
     await run([userMsg(0), assistantMsg(5000)], 'session_203c6e074e8ba3e0')
     expect(captured).toContain('**Session:** session_203c6e074e8ba3e0')
+  })
+
+  test('renders the LATS exploit-path search card (probes + trajectory) — regression for the dropped tree', async () => {
+    await run([userMsg(0), latsSearch(1000), assistantMsg(5000)])
+    expect(captured).toContain('### LATS Exploit-Path Search')
+    expect(captured).toContain('[COMPLETE — branch_collapsed]')
+    expect(captured).toContain('3 rollouts (max 50)')
+    expect(captured).toContain('2 probes')
+    expect(captured).toContain('execute_curl')
+    expect(captured).toContain('value 0.30, diagnostic_progress')
+    expect(captured).toContain('**Best trajectory:** a1 → b2')
   })
 
   test('omits Tokens line when no token data is present', async () => {

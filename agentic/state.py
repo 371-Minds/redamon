@@ -110,6 +110,31 @@ def evaluate_skill_switch(new_skill, current_skill, enabled_builtins, enabled_us
     return ("switched", new_skill)
 
 
+def should_auto_transition_on_skill(resolved_skill, current_phase):
+    """Pure decision for Proposal 1 (behavior-triggered phase switch).
+
+    When the agent switches to an OFFENSIVE attack skill while still in the
+    informational phase, the phase should follow what the agent is actually doing
+    and move to exploitation — instead of waiting for a separate manual
+    `transition_phase` action the agent frequently neglects (observed: a run that
+    switched to the SSTI/rce skill repeatedly yet stayed labeled 'informational'
+    for 35 iterations, starving the exploitation-gated tree search).
+
+    Returns True iff:
+      - resolved_skill is a concrete attack class — truthy and NOT a
+        '<term>-unclassified' fallback (switching to "unclassified" is a recon
+        decision, not a commitment to exploit), AND
+      - current_phase is 'informational' (no-op if already exploiting).
+
+    Side-effect-free for unit testing; the caller still applies the config gate
+    (AUTO_TRANSITION_ON_ATTACK_SKILL) and the approval gate
+    (REQUIRE_APPROVAL_FOR_EXPLOITATION).
+    """
+    if not resolved_skill or is_unclassified_path(resolved_skill):
+        return False
+    return current_phase == "informational"
+
+
 # =============================================================================
 # PYDANTIC MODELS FOR STRUCTURED DATA
 # =============================================================================
@@ -898,7 +923,10 @@ class ExploitTree(BaseModel):
                 "id": n.id,
                 "parent_id": n.parent_id,
                 "depth": n.depth,
-                "label": (n.probe_rationale or n.tool_name or n.id)[:80],
+                # Full rationale: the frontend clamps display (outline rows
+                # ellipsis, best line 3-line clamp + expand), so don't truncate
+                # here or the "best line" gets cut mid-word with no way to see it.
+                "label": (n.probe_rationale or n.tool_name or n.id),
                 "tool_name": n.tool_name,
                 "tool_args": n.tool_args,
                 "status": n.status,
@@ -1043,6 +1071,11 @@ class AgentState(TypedDict):
     # apart for the 6-step verdict window to catch.
     _deep_think_cooldown_until: int  # iteration number; current_iteration < this → suppress
     _iterations_since_state_grew: int
+    # `_iterations_since_chain_advance` is the DEPTH counter (Proposal 3): think
+    # iterations since the chain last advanced (a confirmed finding / foothold —
+    # NOT mere map-growth). Feeds the churn-aware novelty saturation so pure
+    # enumeration stops pinning the productivity score to green.
+    _iterations_since_chain_advance: int
     # `_diagnostic_progress_streak` counts consecutive stall-counter resets that
     # came from *diagnostic* progress (debugging a failing-but-correct approach)
     # rather than real target-state growth. Capped so diagnostic progress cannot
@@ -1107,6 +1140,18 @@ class AgentState(TypedDict):
     # + ruled-out probes). Persisted so prior-tree knowledge ACCUMULATES for each
     # subsequent tree, surviving execution_trace's eviction window.
     _lats_tree_digest: Optional[list]
+
+    # Run-level ledger of the EXECUTED probe dedup-keys of every finished LATS
+    # tree. The digest above is the human-readable soft hint; this is the HARD
+    # cross-tree guarantee — a later tree's expand drops any byte-identical
+    # re-run of a probe a prior tree already tried (§3 cross-tree amnesia fix).
+    _lats_probe_ledger: Optional[list]
+
+    # Debounce counter for the tree-reset guard: how many CONSECUTIVE turns a
+    # reset condition has held. A tree is only torn down once this reaches
+    # LATS_RESET_DEBOUNCE, so transient jitter (a one-turn blank/oscillation in
+    # phase/skill/target) never falsely resets a healthy tree.
+    _lats_reset_streak: Optional[int]
 
 
 # =============================================================================
@@ -1243,6 +1288,7 @@ def create_initial_state(
         # Productivity scoring v2
         "_deep_think_cooldown_until": 0,
         "_iterations_since_state_grew": 0,
+        "_iterations_since_chain_advance": 0,
         "_diagnostic_progress_streak": 0,
         "_previous_priority_order": None,
         "tested_axes": {},

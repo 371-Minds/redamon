@@ -10,8 +10,8 @@
 
 'use client'
 
-import { useState } from 'react'
-import { GitBranch, Maximize2 } from 'lucide-react'
+import { useState, useRef, useEffect, Fragment } from 'react'
+import { GitBranch, Maximize2, ChevronDown, ChevronUp } from 'lucide-react'
 import styles from './LatsSearchCard.module.css'
 import { LatsTreePanel } from './LatsTreePanel'
 import type { LatsSearchItem } from './AgentTimeline'
@@ -83,6 +83,9 @@ function OutlineNode({
 export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [bestExpanded, setBestExpanded] = useState(false)
+  const [bestOverflows, setBestOverflows] = useState(false)
+  const bestPathRef = useRef<HTMLSpanElement>(null)
   const snap = item.latest
   const byParent = buildChildrenMap(snap.nodes)
   const roots = byParent.get(null) ?? []
@@ -93,6 +96,21 @@ export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
     .map(id => snap.nodes.find(n => n.id === id))
     .filter((n): n is LatsNodeView => !!n)
     .map(n => n.label || n.tool_name || n.id)
+  const bestPathText = bestLabels.join(' › ')
+
+  // Show the whole best line; only reveal the expand arrow when the (clamped)
+  // path is actually taller than its 3-line cap. Skip re-measuring while
+  // expanded so the button stays available to collapse again.
+  useEffect(() => {
+    const el = bestPathRef.current
+    if (!el || bestExpanded) return
+    const measure = () => setBestOverflows(el.scrollHeight - el.clientHeight > 1)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [bestPathText, bestExpanded])
 
   return (
     <div className={styles.card} data-testid="lats-search-card">
@@ -129,7 +147,29 @@ export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
       {bestLabels.length > 0 && (
         <div className={styles.bestLine} data-testid="lats-best-line">
           <span className={styles.bestLineLabel}>best line:</span>
-          <span className={styles.bestLinePath}>{bestLabels.join(' > ')}</span>
+          <span
+            ref={bestPathRef}
+            className={`${styles.bestLinePath} ${bestExpanded ? '' : styles.bestLinePathClamped}`}
+          >
+            {bestLabels.map((label, i) => (
+              <Fragment key={i}>
+                {i > 0 && <span className={styles.bestLineSep} aria-hidden> › </span>}
+                {label}
+              </Fragment>
+            ))}
+          </span>
+          {(bestOverflows || bestExpanded) && (
+            <button
+              type="button"
+              className={styles.bestLineToggle}
+              onClick={() => setBestExpanded(e => !e)}
+              data-testid="lats-best-line-toggle"
+              aria-expanded={bestExpanded}
+            >
+              {bestExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {bestExpanded ? 'show less' : 'show full line'}
+            </button>
+          )}
         </div>
       )}
 
@@ -139,7 +179,7 @@ export function LatsSearchCard({ item, onExpand }: LatsSearchCardProps) {
           onClick={() => (onExpand ? onExpand() : setPanelOpen(true))}
           data-testid="lats-expand-btn"
         >
-          <Maximize2 size={14} /> Expand tree
+          <Maximize2 size={12} /> Expand tree
         </button>
       </div>
 

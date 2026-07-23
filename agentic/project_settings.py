@@ -93,8 +93,21 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'LATS_SUMMARY_MAX_NODES': 40,                 # Fix A: max nodes rendered in the carried-forward tree summary
     'LATS_REACTIVATE_COOLDOWN': 4,                # Fix B2: min iterations between an archive and the next activation
     'LATS_REACTIVATE_STUCK_TURNS': 5,             # Fix B2: no-state-growth turns that re-trigger LATS without Deep Think (halfway to Deep Think's hard stall override of 10; above the reactivate cooldown)
-    'LATS_SCORE_THRESHOLD': 4.0,                  # Fix B2: productivity score that re-triggers LATS (set just below DEEPTHINK 5.0 so LATS is the cheaper first responder)
+    'LATS_SCORE_THRESHOLD': 3.0,                  # Fix B2: productivity score that re-triggers LATS. Kept strictly BELOW PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD (4.0) so LATS stays the cheaper first responder in the [3.0, 4.0) band; the churn-aware score (Proposal 3) makes the score climb during recon-diffusion, so LATS now engages early with budget to spare.
     'LATS_DIGEST_MAX': 8,                         # max prior-tree digests accumulated + fed to each new tree's seed
+    'LATS_PROBE_LEDGER_MAX': 400,                 # max executed probe keys retained in the cross-tree dedup ledger (§3): a later tree HARD-drops a byte-identical re-run of any probe a prior tree already ran
+    'LATS_RESET_DEBOUNCE': 2,                      # a live tree is torn down only after a reset condition (phase/skill/target/objective change) holds this many CONSECUTIVE turns; a one-turn jitter blip (transient blank, oscillation) is ignored. task_complete is exempt (immediate).
+    'LATS_STOP_ON_FOOTHOLD': False,               # when True, a mid-chain foothold finding (exploit_success/access_gained/rce/...) stops LATS — both BLOCKS activation and RESETS a live tree ("exploit path found, hand back"). OFF for flag-hunts, where a foothold is a MEANS, not the objective, so stopping early loses the tree before it reaches the flag.
+    'LATS_LOG_EXPAND_PROMPT': True,               # [TEMP DIAGNOSTIC] dump the real expand prompt to agent.log for the grounding audit; revert to False after
+    # GROUNDING (full-context parity): when on, LATS's expand receives EVERYTHING the
+    # normal think node receives — the rendered attack-chain context (execution trace →
+    # real discovered endpoints/params/observations), full target_info, RoE/scope, the
+    # full built-in skill WORKFLOW + tool docs, the skill menu, and the Agent/Chat skills
+    # catalog — instead of the old compressed situational block that starved it of the
+    # real surface (empty Recon surface → hallucinated endpoints). LATS_CONTEXT_WINDOW caps
+    # the chain-context history (recent iterations) to bound the per-expand token cost.
+    'LATS_FULL_CONTEXT': True,
+    'LATS_CONTEXT_WINDOW': 12,
 
     # Phase Configuration
     'ACTIVATE_POST_EXPL_PHASE': True,
@@ -138,6 +151,13 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'REQUIRE_APPROVAL_FOR_EXPLOITATION': True,
     'REQUIRE_APPROVAL_FOR_POST_EXPLOITATION': True,
     'REQUIRE_TOOL_CONFIRMATION': True,
+    # Behavior-triggered phase switch (Proposal 1): when the agent switches to an
+    # OFFENSIVE attack skill (rce/sqli/xss/ssrf/path_traversal/cve/brute_force) while
+    # still in the informational phase, auto-request the exploitation transition —
+    # the phase should follow what the agent is actually doing, not wait for a
+    # separate manual `transition_phase` action it tends to neglect. Still honors
+    # REQUIRE_APPROVAL_FOR_EXPLOITATION (requests approval instead of flipping when on).
+    'AUTO_TRANSITION_ON_ATTACK_SKILL': True,
 
     # Neo4j
     'CYPHER_MAX_RETRIES': 3,
@@ -194,9 +214,16 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     # justification / block) are triggered by configurable score thresholds.
     'PRODUCTIVITY_SCORE_ENABLED': True,      # master switch; if False, falls back to legacy 3/6
     'PRODUCTIVITY_SCORE_HINT_THRESHOLD': 3.0,
-    'PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD': 5.0,
+    'PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD': 4.0,
     'PRODUCTIVITY_SCORE_REQUIRE_PIVOT_THRESHOLD': 7.0,
     'PRODUCTIVITY_SCORE_BLOCK_THRESHOLD': 9.0,
+    # Churn-aware score (Proposal 3): map-growth (new endpoints/params) is recon
+    # breadth, NOT convergence. Once the run goes NOVELTY_SATURATION_GRACE think
+    # iterations without a CHAIN-advance (a confirmed finding / foothold), the
+    # novelty reward decays so pure enumeration stops pinning the score to green —
+    # letting the tier ladder (hint -> deep think -> pivot) fire on real stall.
+    'PRODUCTIVITY_CHURN_AWARE': True,
+    'PRODUCTIVITY_NOVELTY_SATURATION_GRACE': 3,
     'DEEP_THINK_COOLDOWN_ITERATIONS': 5,     # min iterations between Deep Thinks (override on self-request or critical score)
     'DEEP_THINK_NOVELTY_JACCARD_MAX': 0.6,   # if new priority_order >= this similarity to prior, reject and re-prompt
     'STATE_GROWTH_SOFT_HINT_THRESHOLD': 5,   # iterations since state grew → soft hint

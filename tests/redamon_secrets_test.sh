@@ -2,7 +2,9 @@
 # =============================================================================
 # Test suite for the secret-generation logic in redamon.sh
 #   - ensure_auth_secrets  -> now also emits MCP_AUTH_TOKEN (STRIDE S10)
-#   - ensure_db_secrets     -> fresh-install generation + existing-install warn
+#   - ensure_db_secrets     -> fresh-install generation, live-DB rotation, and
+#                              (issue #155) a hard STOP with remediation when a
+#                              stale data volume can't be rotated off the default
 #                              for POSTGRES_PASSWORD / NEO4J_PASSWORD (STRIDE S13)
 #
 # Pure unit tests: `docker` is stubbed, `.env` lives in a temp dir. No daemon
@@ -73,17 +75,52 @@ assert_true  "log mentions rotating"        "echo \"\$out\" | grep -qi 'Rotating
 assert_true  "log confirms rotated"         "echo \"\$out\" | grep -qi 'Rotated'"
 unset -f docker; rm -rf "$TMP"
 
-# test_ensure_db_secrets_failsafe_on_alter_error (STRIDE S13)
-echo "== ensure_db_secrets: EXISTING volume, ALTER fails -> fail-safe, no .env write =="
+# test_ensure_db_secrets_hardstop_on_alter_error (STRIDE S13 / issue #155)
+# EXISTING volume whose password isn't the default: rotation off the default
+# fails, so we must NOT write .env (split-brain) AND must NOT silently continue
+# (the fail-closed ${VAR:?} guard would abort a later `up` with a cryptic error).
+# Correct behaviour: exit non-zero with actionable remediation, volume untouched.
+echo "== ensure_db_secrets: EXISTING volume, ALTER fails -> HARD STOP (#155) =="
 TMP=$(mktemp -d); SCRIPT_DIR="$TMP"; : > "$TMP/.env"
 # Stub: volume exists (0), DBs running (ps), but the ALTER (docker exec) FAILS (1).
 docker() { case "${1:-}" in volume) return 0;; ps) printf 'redamon-postgres\nredamon-neo4j\n'; return 0;; exec) return 1;; *) return 0;; esac; }
 before=$(md5sum "$TMP/.env" | awk '{print $1}')
-out="$(ensure_db_secrets 2>&1)"
+# `exit 1` fires in the command-substitution subshell only, so the harness lives.
+out="$(ensure_db_secrets 2>&1)"; rc=$?
 after=$(md5sum "$TMP/.env" | awk '{print $1}')
+# The listed volume names use the SANITISED compose project name (same helper
+# the code resolves), not the raw temp-dir basename.
+PROJ="$(compose_project_name)"
+assert_eq    "exits non-zero (does not proceed to a doomed up)" "$rc" "1"
 assert_eq    ".env unchanged when ALTER fails (no split-brain)" "$before" "$after"
-assert_true  "warns rotation FAILED"        "echo \"\$out\" | grep -qi 'rotation FAILED'"
-assert_true  "warns fail-safe / manual"     "echo \"\$out\" | grep -qi 'fail-safe'"
+assert_true  "still warns rotation FAILED"        "echo \"\$out\" | grep -qi 'rotation FAILED'"
+assert_true  "error names both missing vars"      "echo \"\$out\" | grep -q 'POSTGRES_PASSWORD' && echo \"\$out\" | grep -q 'NEO4J_PASSWORD'"
+assert_true  "remediation A: docker volume rm"    "echo \"\$out\" | grep -qi 'docker volume rm'"
+assert_true  "remediation lists the volume names" "echo \"\$out\" | grep -q '${PROJ}_postgres_data' && echo \"\$out\" | grep -q '${PROJ}_neo4j_data'"
+assert_true  "remediation B: pin password in .env" "echo \"\$out\" | grep -qi 'existing password'"
+unset -f docker; rm -rf "$TMP"
+
+# test_ensure_db_secrets_hardstop_mixed (issue #155)
+# One var must fresh-generate (no volume) while the other can't be rotated
+# (volume exists, ALTER fails). The generated one is written, but because the
+# other is unresolved the whole call must still HARD STOP -- a half-set .env is
+# still unstartable.
+echo "== ensure_db_secrets: MIXED (one fresh, one rotate-fail) -> HARD STOP =="
+TMP=$(mktemp -d); SCRIPT_DIR="$TMP"; : > "$TMP/.env"
+# postgres volume EXISTS (rotate path, ALTER fails); neo4j volume ABSENT (fresh).
+docker() {
+  case "${1:-}" in
+    volume) [[ "${3:-}" == *postgres_data ]] && return 0 || return 1 ;;
+    ps) printf 'redamon-postgres\n'; return 0 ;;
+    exec) return 1 ;;   # postgres ALTER fails
+    *) return 0 ;;
+  esac
+}
+out="$(ensure_db_secrets 2>&1)"; rc=$?
+assert_eq    "mixed case still exits non-zero"    "$rc" "1"
+assert_true  "NEO4J_PASSWORD was fresh-generated" "grep -qE '^NEO4J_PASSWORD=[0-9a-f]{48}\$' '$TMP/.env'"
+assert_false "POSTGRES_PASSWORD not written (rotate failed)" "grep -q '^POSTGRES_PASSWORD=' '$TMP/.env'"
+assert_true  "error names only the unresolved var" "echo \"\$out\" | grep -q 'Cannot configure the database password' && echo \"\$out\" | grep -q 'POSTGRES_PASSWORD'"
 unset -f docker; rm -rf "$TMP"
 
 # test_ensure_db_secrets_starts_stopped_db_for_rotation (STRIDE S13 / GAP B)

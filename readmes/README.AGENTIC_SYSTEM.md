@@ -599,7 +599,9 @@ The advantage of having Deep Think as a *separate* call rather than asking the r
 
 Where Deep Think re-strategizes *once* and hands a plan back to the linear loop, **LATS (Language Agent Tree Search)** turns exploitation into an explicit, bounded **tree search over executed probes**. The default `think` loop is a greedy depth-first walk: it commits to one hypothesis and grinds until the productivity engine reactively forces a pivot. A real exploit chain is a tree, from a login endpoint the promising moves fan out (default creds, SQLi, password-reset probe, JWT confusion) and only the branch that keeps yielding signal should grow deep. LATS makes that tree explicit: it fans out competing vectors, scores each *executed* probe by how much closer it got to a foothold (a reflected DB error scores higher than a generic 403), concentrates the iteration budget on the highest-value line via UCT, and **backs out of WAF / 403 dead ends** instead of hammering them.
 
-Architecturally, LATS is not a new graph node. It is a single `lats_hook(...)` call **inside `think_node`** (plus a few state fields) that maps the classic MCTS cycle, Select -> Expand -> Evaluate -> Backpropagate, one-to-one onto the existing `think -> execute -> think` loop, spread across iterations. It runs on the **same single agent model**, only ever emits the existing `use_tool` / `plan_tools` actions, and reuses the primitives already in the codebase: the value function is the productivity score plus `error_class` annotations plus `ChainFinding.confidence`; the detonation gate is the existing tool-confirmation node; durability is free because the whole tree rides inside `AgentState`. It ships behind two off-switches (`LATS_ENABLED=false`, `LATS_SHADOW_MODE=true`) and self-limits: it only turns on when the agent finds at least 2 credible attack paths on a discovered surface, and hands the objective back to the normal loop the moment the branches collapse to one obvious line. Full details: [Exploit-Path Search (LATS) chapter](#exploit-path-search-lats).
+Architecturally, LATS is not a new graph node. It is a single `lats_hook(...)` call **inside `think_node`** (plus a few state fields) that maps the classic MCTS cycle, Select -> Expand -> Evaluate -> Backpropagate, one-to-one onto the existing `think -> execute -> think` loop, spread across iterations. It runs on the **same single agent model**, only ever emits the existing `use_tool` / `plan_tools` actions, and reuses the primitives already in the codebase: the value function is the productivity score plus `error_class` annotations plus `ChainFinding.confidence`; the detonation gate is the existing tool-confirmation node; durability is free because the whole tree rides inside `AgentState`. It ships behind two off-switches (`LATS_ENABLED=false`, `LATS_SHADOW_MODE=true`) and self-limits: it only turns on when the agent finds at least 2 credible attack paths on a discovered surface, and hands the objective back to the normal loop the moment the branches collapse to one obvious line.
+
+The quality of the fan-out depends entirely on **what the expansion step knows about the live target**. Each expand call is grounded in a lean-but-complete slice of the same context the normal `think` node sees: the rendered **attack-chain** (the real endpoints, parameters, and observations the agent has actually discovered, so a probe targets `post.php?id=` instead of a hallucinated path), the **active attack-skill workflow** for the classified vuln class (the technique playbook and payload templates, factored into a shared `build_builtin_skill_workflow()` so LATS gets the method without the ~22K-token tool inventory), the target-info and the dead-ends-already-tried, and the exact **tool-argument schema** so every proposed probe is executable. It deliberately excludes the think-node bookkeeping (full tool docs, skill menu, phase definitions, TODO / Q&A history) that does not change *which* probe is correct, keeping each expand around 13-14K tokens. Controlled by `LATS_FULL_CONTEXT` with a `LATS_CONTEXT_WINDOW`-bounded chain window. Full details: [Exploit-Path Search (LATS) chapter](#exploit-path-search-lats).
 
 ### Productivity Verdict & Unproductive-Streak Loop Detector
 
@@ -618,10 +620,12 @@ Each signal is multiplied by a **dynamic weight** that scales with session age (
 | Tier | Threshold | Action |
 |------|-----------|--------|
 | green | < 3 | None |
-| yellow | 3-5 | Soft hint in next prompt: "consider whether your current hypothesis is still viable" |
-| orange | 5-7 | Fire Deep Think (subject to cooldown + novelty check) |
+| yellow | 3-4 | Soft hint in next prompt: "consider whether your current hypothesis is still viable" |
+| orange | 4-7 | Fire Deep Think (subject to cooldown + novelty check) |
 | red | 7-9 | Demand the agent name a new hypothesis class in its next reasoning |
 | critical | ≥9 | Prompt warns the next expensive call on the dominant axis will be rejected |
+
+> **Churn-aware scoring (`PRODUCTIVITY_CHURN_AWARE`).** Signal 2 (state-growth) treats *any* state growth as progress, including a growing recon map. But map-growth (new endpoints / parameters) is recon **breadth**, not **convergence** on the flag, so a session that keeps discovering novel-but-useless surface used to stay pinned green while genuinely stalling. Churn-awareness distinguishes *attack-chain advance* (a new confirmed finding, credential, or session, tracked by an orchestrator-owned `_iterations_since_chain_advance` depth counter) from mere map-growth. Once the run goes `PRODUCTIVITY_NOVELTY_SATURATION_GRACE` (default 3) think iterations without a chain-advance, two things happen: the novelty reward is progressively **decayed** (`novelty_scale = 1 / (1 + chain_stall)`) so pure enumeration stops crediting the score toward green, and a positive `chain_stall` **badness** term is added so the score actually climbs. The tier ladder (hint → Deep Think → pivot) then fires on real stall instead of being masked by recon diffusion. The Deep Think threshold was lowered to **4.0** (orange) and LATS re-triggers at **3.0**, so the cheaper LATS search engages first in the `[3.0, 4.0)` band before a full Deep Think.
 
 The score and component breakdown are logged on every think turn and persisted onto state (`_last_productivity_score`) for the UI and post-session analysis. A **same-pattern fingerprint audit** still injects the existing recent-fingerprint block when 3+ same-pattern calls are detected; the audit is the LLM-facing render of one of the five score signals. The same pipeline runs in the wave path (one verdict per wave, axis recorded per wave step) and in fireteam member subgraphs. Full details: [Productivity Verdict & Loop Detector chapter](#productivity-verdict--unproductive-streak-loop-detector-1).
 
@@ -969,6 +973,7 @@ The frontend exposes a skill picker. When the operator changes the active skill 
 1. Pushes the formatted content (`[CHAT SKILL: <name>]\n\n<content>`) into the connection's `guidance_queue`.
 2. The next `think` iteration drains the queue and prepends the skill body as a `## USER GUIDANCE` block.
 3. For attack skills (not just chat skills), `attack_path_type` on parent state is also updated so subsequent fireteam deploys snapshot the new value.
+4. **Behavior-triggered phase auto-transition (`AUTO_TRANSITION_ON_ATTACK_SKILL`).** When the resolved skill is a concrete attack skill (not `<term>-unclassified`) and the agent is still in the `informational` phase, the orchestrator promotes it to `exploitation` in the same step, instead of waiting for the agent to discretionarily request a transition. Classifying "this is an RCE / XSS / SQLi engagement" *is* the decision to exploit, so the phase follows the classification. The auto-promotion is gated: it is skipped when `REQUIRE_APPROVAL_FOR_EXPLOITATION` is set (the operator still gets the approval gate), and it never downgrades a phase. This is what lets LATS - which is exploitation-gated - engage early instead of stalling in recon (see the [`should_auto_transition_on_skill`](../agentic/state.py) predicate).
 
 Members of an in-flight fireteam wave keep their deploy-time `attack_path_type` snapshot, skill changes only take effect on the next fan-out.
 
@@ -1916,7 +1921,15 @@ The **re-activation cooldown** (`LATS_REACTIVATE_COOLDOWN`, default 4 iterations
 
 ### The Input to LATS: Situational Context
 
-Every `lats_expand` call, the seed *and* every node extension, is grounded in the same forward-looking situation a normal think step reasons over, assembled by `_situational_context()` and rendered compactly (each part capped so a deep tree's prompt stays bounded):
+Every `lats_expand` call, the seed *and* every node extension, is grounded in the same forward-looking situation a normal think step reasons over, assembled by `_situational_context()` and rendered compactly (each part capped so a deep tree's prompt stays bounded).
+
+When `LATS_FULL_CONTEXT` is on (default), `_situational_context()` **prepends a lean-but-complete grounding block** (`_full_think_context()`) before the LATS-specific deltas below. This is the fix for the original grounding gap: `target_info.endpoints` is frequently empty because the surface the agent actually discovered lives in the **execution trace**, not the structured recon fields, so an expand step reading only `target_info` saw `technologies=[…]` and no endpoints, and hallucinated paths. The prepended block carries:
+
+- **Attack-chain so far** - the rendered execution trace (`format_chain_context`, windowed by `LATS_CONTEXT_WINDOW`): the real endpoints, parameters, and observations the agent has actually hit (e.g. an `LFI via post.php?id` finding with its evidence). This is *the* grounding source, the answer to "where do I probe".
+- **Active attack-skill workflow** - the full technique playbook + payload templates for the classified vuln class, produced by the module-level `build_builtin_skill_workflow()` (split out of `get_phase_tools` so LATS gets the method without the ~22K-token tool-inventory docs). The answer to "how do I probe this class".
+- **target_info, Rules of Engagement (when enabled), and the Agent/Chat skills catalog.**
+
+The arg schema that makes each probe executable is supplied separately in the expand **system** message (`_tool_schema_block`). Deliberately **excluded** from the grounding block (they do not change which probe is correct): the full tool-inventory docs, the switchable skill menu, phase definitions, and TODO / Q&A / objective-history bookkeeping - keeping each expand around 13-14K tokens. The LATS-specific deltas then follow under a `## LATS deltas` header:
 
 - **Recon surface** from `target_info`: primary target, hosts, services, technologies, endpoints, parameters, vulnerabilities.
 - **Confirmed findings** from `chain_findings_memory` (last 8), each as `finding_type: description`.
@@ -2427,19 +2440,26 @@ score =
     + w_state_growth    * iterations_since_state_grew_clipped  (clipped to 10)
     + w_axis_repeats    * max_axis_repeats
     + w_same_pattern    * same_pattern_count
-    - r_new_info        * new_info_events_in_last_5
-    - r_actionable      * actionable_events_in_last_5
+    + w_chain_stall     * chain_stall                            (churn-aware, see below)
+    - r_new_info        * new_info_events_in_last_5   * novelty_scale
+    - r_actionable      * actionable_events_in_last_5 * novelty_scale
+
+    where (PRODUCTIVITY_CHURN_AWARE, default on):
+      chain_stall   = max(0, iterations_since_chain_advance - NOVELTY_SATURATION_GRACE)
+      novelty_scale = 1 / (1 + chain_stall)      # decays the novelty reward as the CHAIN, not the map, stalls
 
 score = max(0.0, score)    # clamped at zero; negative means "very healthy"
 ```
+
+**Churn-awareness** closes a blind spot in the state-growth signal: growing the recon *map* (new endpoints / parameters) counts as state growth, but it is recon **breadth**, not **convergence** on a foothold, so a session that keeps enumerating novel-but-useless surface would stay green while genuinely stalling. `detect_chain_advance()` tracks a separate counter, `_iterations_since_chain_advance`, that resets only on an *attack-chain* advance (a new confirmed finding, credential, or session), not on map-growth. After `PRODUCTIVITY_NOVELTY_SATURATION_GRACE` (default 3) iterations without a chain-advance, `chain_stall` starts adding badness **and** `novelty_scale` decays the novelty reward, so pure enumeration stops pinning the score to green and the tier ladder fires on real stall. With churn-awareness off (or `iterations_since_chain_advance == 0`), `chain_stall` is 0 and the formula reduces to the original five-signal score.
 
 The score is **continuous** and **non-negative**. Reward terms can offset penalty terms; healthy sessions stay near zero. A `tier` label is derived by lookup:
 
 | Score | Tier | Action |
 |---|---|---|
 | 0 - 3 | `green` | No action |
-| 3 - 5 | `yellow` | Inject soft prompt hint: "state has not grown in N iterations, consider whether the current hypothesis is still viable" |
-| 5 - 7 | `orange` | Fire Deep Think (subject to cooldown + novelty check) |
+| 3 - 4 | `yellow` | Inject soft prompt hint: "state has not grown in N iterations, consider whether the current hypothesis is still viable" |
+| 4 - 7 | `orange` | Fire Deep Think (subject to cooldown + novelty check). LATS re-triggers earlier still, at `3.0` |
 | 7 - 9 | `red` | Demand the agent name a different hypothesis class in its next reasoning |
 | ≥ 9 | `critical` | Warn that the next expensive call on the dominant axis will be rejected |
 
@@ -2459,9 +2479,11 @@ Settings:
 |---|---|---|
 | `PRODUCTIVITY_SCORE_ENABLED` | `true` | Master switch. When off, falls back to the legacy 3-of-6 binary counter |
 | `PRODUCTIVITY_SCORE_HINT_THRESHOLD` | `3.0` | Yellow tier (soft hint) |
-| `PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD` | `5.0` | Orange tier (Deep Think) |
+| `PRODUCTIVITY_SCORE_DEEPTHINK_THRESHOLD` | `4.0` | Orange tier (Deep Think). Lowered from 5.0 so Deep Think fires sooner; LATS re-triggers below it at `LATS_SCORE_THRESHOLD=3.0` |
 | `PRODUCTIVITY_SCORE_REQUIRE_PIVOT_THRESHOLD` | `7.0` | Red tier (demand pivot) |
 | `PRODUCTIVITY_SCORE_BLOCK_THRESHOLD` | `9.0` | Critical tier (next call blocked); also bypasses Deep Think cooldown |
+| `PRODUCTIVITY_CHURN_AWARE` | `true` | Distinguish attack-chain advance from recon map-growth: adds `chain_stall` badness + decays the novelty reward once the chain stops advancing |
+| `PRODUCTIVITY_NOVELTY_SATURATION_GRACE` | `3` | Iterations without a chain-advance before churn decay begins |
 
 ### Dynamic Weights (Session Age + Phase)
 

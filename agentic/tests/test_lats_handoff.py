@@ -595,14 +595,15 @@ class TestExpandPromptAssembly(unittest.TestCase):
         self.assertIn("${7*7}", user)
         self.assertIn("EXACTLY", msgs[0]["content"])      # schema regression
 
-    def test_prompt_pushes_for_breadth(self):
+    def test_prompt_width_is_dynamic_not_forced(self):
         st = _state()
         msgs = lats._expand_prompt_messages(st, None, {"execute_curl"}, 6, tree=None)
         system = msgs[0]["content"]
-        self.assertIn("UP TO 6", system)            # dynamic ceiling, not forced
-        self.assertIn("FAVOR BREADTH", system)      # bias toward more
-        self.assertIn("near-duplicate", system)     # no padding
-        self.assertIn("FAN OUT", msgs[1]["content"])  # seed diversity
+        self.assertIn("never more than 6", system)  # ceiling, not a forced count
+        self.assertIn("YOUR decision", system)      # count is the LLM's call now
+        self.assertIn("waste rollouts", system)     # anti-padding rationale
+        self.assertNotIn("aim to use the width", system)  # old forcing phrase removed
+        self.assertIn("FULL WIDTH", msgs[1]["content"])   # root still fans out wide
         # schema guardrails preserved (regression)
         self.assertIn("EXACTLY", system)
 
@@ -726,7 +727,7 @@ class TestReactivation(unittest.TestCase):
 
     def test_no_activation_when_score_below_threshold(self):
         st = _state(deep_think_ran_this_turn=False, _iterations_since_state_grew=1,
-                    _last_productivity_score={"score": 3.9})   # below 4.0
+                    _last_productivity_score={"score": 2.9})   # below LATS_SCORE_THRESHOLD (3.0)
         self.assertFalse(lats.lats_active(st))
 
     def test_score_threshold_sits_below_deep_think(self):

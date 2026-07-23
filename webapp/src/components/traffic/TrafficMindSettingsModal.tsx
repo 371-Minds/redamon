@@ -10,15 +10,23 @@
  * applies to every user and project and the last save wins. Admin-only (the
  * opener gates on isAdmin; the settings route also strips capture writes from
  * non-admins).
+ *
+ * Save model: the whole global config is batched behind ONE Apply button. Every
+ * control mutates local state only; Apply PUTs the changed fields in a single
+ * request, so the orchestrator respawns the proxy AT MOST ONCE per Apply (never
+ * once-per-click). The per-project routing matrix at the bottom is the exception
+ * — it is per-project, does not respawn the proxy, and keeps applying immediately.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Info } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal/Modal'
-import { Toggle, Tooltip, WikiInfoButton, useToast } from '@/components/ui'
+import { Toggle, Tooltip, WikiInfoButton, useToast, useAlertModal } from '@/components/ui'
 import { TrafficMindProjectMatrix } from '@/components/traffic/TrafficMindProjectMatrix'
+import { BODY_POLICIES, type BodyPolicy, type BodyFamily } from '@/lib/captureBodyRules'
 import {
-  BODY_POLICIES, BODY_RULES_RECOMMENDED, type BodyPolicy, type BodyFamily,
-} from '@/lib/captureBodyRules'
+  type CaptureSettings, DEFAULT_CAPTURE, pickCapture, diffCapture, isCaptureDirty,
+  effectiveBodyPolicy, adoptCanonical,
+} from '@/components/traffic/captureSettingsForm'
 import styles from '@/components/settings/Settings.module.css'
 
 // ── Egress-guard toggles (mirror capture_proxy/egress.py). All default true (block).
@@ -70,13 +78,17 @@ const BODY_RULES_MINIMAL: Record<string, BodyPolicy> = {
   text: 'auto', json: 'auto', script: 'meta', image: 'meta', font: 'meta',
   video: 'meta', audio: 'meta', document: 'meta', archive: 'meta', binary: 'meta',
 }
+const BODY_RULES_RECOMMENDED_UI: Record<string, BodyPolicy> = {
+  text: 'auto', json: 'auto', script: 'auto', image: 'meta', font: 'meta',
+  video: 'meta', audio: 'meta', document: 'disk', archive: 'disk', binary: 'disk',
+}
 const BODY_RULES_EVERYTHING: Record<string, BodyPolicy> = {
   text: 'auto', json: 'auto', script: 'auto', image: 'disk', font: 'disk',
   video: 'disk', audio: 'disk', document: 'disk', archive: 'disk', binary: 'disk',
 }
 const BODY_PRESETS: { name: string; rules: Record<string, BodyPolicy> }[] = [
   { name: 'Minimal', rules: BODY_RULES_MINIMAL },
-  { name: 'Recommended', rules: BODY_RULES_RECOMMENDED },
+  { name: 'Recommended', rules: BODY_RULES_RECOMMENDED_UI },
   { name: 'Everything', rules: BODY_RULES_EVERYTHING },
 ]
 const BODY_POLICY_TABLE: { policy: BodyPolicy; kept: string; bytes: string }[] = [
@@ -85,81 +97,10 @@ const BODY_POLICY_TABLE: { policy: BodyPolicy; kept: string; bytes: string }[] =
   { policy: 'disk', kept: 'full bytes offloaded to /bodies/<sha>', bytes: 'kept' },
   { policy: 'meta', kept: 'only size + sha256', bytes: 'dropped' },
 ]
-function effectiveBodyPolicy(rules: Record<string, string> | undefined, fam: BodyFamily): string {
-  return rules?.[fam] ?? BODY_RULES_RECOMMENDED[fam]
-}
 function activeBodyPreset(rules: Record<string, string> | undefined): string | null {
   const hit = BODY_PRESETS.find((p) =>
     BODY_FAMILIES.every((f) => effectiveBodyPolicy(rules, f.key) === p.rules[f.key]))
   return hit ? hit.name : null
-}
-
-// ── Capture settings slice (only what this modal owns).
-interface CaptureSettings {
-  captureProxyEnabled: boolean
-  captureProxyPort: number
-  captureProxyScope: string
-  captureProxyStoreBodies: boolean
-  captureProxyMaxBodyKb: number
-  captureProxyMaxStoreMb: number
-  captureProxyRetentionDays: number
-  captureProxyRedactSecrets: boolean
-  captureProxyPassiveDetect: boolean
-  captureProxyStoreReqBodies: boolean
-  captureProxyStoreRespBodies: boolean
-  captureProxyBodyRules: Record<string, string>
-  captureEgressBlockEmptyHost: boolean
-  captureEgressBlockHardGuardrail: boolean
-  captureEgressFailClosed: boolean
-  captureEgressBlockUnresolvable: boolean
-  captureEgressBlockPrivate: boolean
-  captureEgressBlockLoopback: boolean
-  captureEgressBlockLinkLocal: boolean
-  captureEgressBlockCgnat: boolean
-  captureEgressBlockReserved: boolean
-  captureEgressBlockMulticast: boolean
-  captureEgressBlockUnspecified: boolean
-}
-
-const DEFAULT_CAPTURE: CaptureSettings = {
-  captureProxyEnabled: true, captureProxyPort: 8888, captureProxyScope: 'both',
-  captureProxyStoreBodies: true, captureProxyMaxBodyKb: 64, captureProxyMaxStoreMb: 5,
-  captureProxyRetentionDays: 14, captureProxyRedactSecrets: true, captureProxyPassiveDetect: true,
-  captureProxyStoreReqBodies: true, captureProxyStoreRespBodies: true, captureProxyBodyRules: {},
-  captureEgressBlockEmptyHost: true, captureEgressBlockHardGuardrail: true, captureEgressFailClosed: true,
-  captureEgressBlockUnresolvable: true, captureEgressBlockPrivate: true, captureEgressBlockLoopback: true,
-  captureEgressBlockLinkLocal: true, captureEgressBlockCgnat: true, captureEgressBlockReserved: true,
-  captureEgressBlockMulticast: true, captureEgressBlockUnspecified: true,
-}
-
-function pickCapture(d: Record<string, unknown>): CaptureSettings {
-  const b = (v: unknown, def: boolean) => (v == null ? def : Boolean(v))
-  const n = (v: unknown, def: number) => (typeof v === 'number' ? v : def)
-  return {
-    captureProxyEnabled: b(d.captureProxyEnabled, true),
-    captureProxyPort: n(d.captureProxyPort, 8888),
-    captureProxyScope: (d.captureProxyScope as string) || 'both',
-    captureProxyStoreBodies: b(d.captureProxyStoreBodies, true),
-    captureProxyMaxBodyKb: n(d.captureProxyMaxBodyKb, 64),
-    captureProxyMaxStoreMb: n(d.captureProxyMaxStoreMb, 5),
-    captureProxyRetentionDays: n(d.captureProxyRetentionDays, 14),
-    captureProxyRedactSecrets: b(d.captureProxyRedactSecrets, true),
-    captureProxyPassiveDetect: b(d.captureProxyPassiveDetect, true),
-    captureProxyStoreReqBodies: b(d.captureProxyStoreReqBodies, true),
-    captureProxyStoreRespBodies: b(d.captureProxyStoreRespBodies, true),
-    captureProxyBodyRules: (d.captureProxyBodyRules as Record<string, string>) ?? {},
-    captureEgressBlockEmptyHost: b(d.captureEgressBlockEmptyHost, true),
-    captureEgressBlockHardGuardrail: b(d.captureEgressBlockHardGuardrail, true),
-    captureEgressFailClosed: b(d.captureEgressFailClosed, true),
-    captureEgressBlockUnresolvable: b(d.captureEgressBlockUnresolvable, true),
-    captureEgressBlockPrivate: b(d.captureEgressBlockPrivate, true),
-    captureEgressBlockLoopback: b(d.captureEgressBlockLoopback, true),
-    captureEgressBlockLinkLocal: b(d.captureEgressBlockLinkLocal, true),
-    captureEgressBlockCgnat: b(d.captureEgressBlockCgnat, true),
-    captureEgressBlockReserved: b(d.captureEgressBlockReserved, true),
-    captureEgressBlockMulticast: b(d.captureEgressBlockMulticast, true),
-    captureEgressBlockUnspecified: b(d.captureEgressBlockUnspecified, true),
-  }
 }
 
 const label13 = { display: 'flex', flexDirection: 'column' as const, gap: 4, color: 'var(--text-secondary)', fontSize: 13 }
@@ -169,10 +110,13 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
   isOpen: boolean; onClose: () => void; userId: string | null
 }) {
   const toast = useToast()
+  const alerts = useAlertModal()
   const [s, setS] = useState<CaptureSettings>(DEFAULT_CAPTURE)
-  // Last server-synced truth, per field. Used to (a) skip no-op saves and (b)
-  // revert only the changed field on failure without clobbering other edits.
+  const [saving, setSaving] = useState(false)
+  // Last server-synced truth. Edits diff against this; Apply reconciles to it.
   const saved = useRef<CaptureSettings>({ ...DEFAULT_CAPTURE })
+
+  const dirty = isCaptureDirty(saved.current, s)
 
   const load = useCallback(async () => {
     if (!userId) return
@@ -182,58 +126,66 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
     } catch { /* keep defaults */ }
   }, [userId])
 
+  // Re-sync from the server every time the dialog opens, discarding any stale
+  // unsaved edits from a previous open.
   useEffect(() => { if (isOpen) load() }, [isOpen, load])
 
-  // Every control persists immediately (like the egress toggles): PUT just the
-  // changed field(s). On success adopt the server's canonical value for ONLY
-  // those fields (so a concurrent in-flight change to another field is never
-  // clobbered by this response); on failure revert ONLY those fields. Admin-only
-  // server side, so a non-admin write reverts.
-  const persist = useCallback(async (patch: Partial<CaptureSettings>) => {
+  // Every control funnels through here: mutate local state ONLY. Nothing hits the
+  // network until Apply, so a proxy respawn happens once per Apply, not per edit.
+  const setField = useCallback(<K extends keyof CaptureSettings>(field: K, value: CaptureSettings[K]) => {
+    setS((prev) => ({ ...prev, [field]: value }))
+  }, [])
+
+  // Apply: PUT exactly the changed fields in one request → at most one respawn.
+  // On success adopt the server's canonical values (reflecting any clamping) for
+  // the submitted fields, preserving any field the user re-edited mid-save.
+  const applyChanges = useCallback(async () => {
     if (!userId) return
+    const patch = diffCapture(saved.current, s)
     const keys = Object.keys(patch) as (keyof CaptureSettings)[]
+    if (keys.length === 0) return
+    const submitted = s
+    setSaving(true)
     try {
       const resp = await fetch(`/api/users/${userId}/settings`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
       })
       if (!resp.ok) throw new Error('save failed')
-      const c = pickCapture(await resp.json())
-      const next = { ...saved.current }
-      for (const k of keys) (next[k] as CaptureSettings[typeof k]) = c[k]
-      saved.current = next
-      setS((prev) => { const n = { ...prev }; for (const k of keys) (n[k] as CaptureSettings[typeof k]) = c[k]; return n })
+      const canonical = pickCapture(await resp.json())
+      saved.current = canonical
+      setS((prev) => adoptCanonical(prev, submitted, canonical, keys))
+      toast.success('TrafficMind settings applied')
     } catch {
       toast.error('Not saved — TrafficMind settings are admin-only')
-      setS((prev) => { const n = { ...prev }; for (const k of keys) (n[k] as CaptureSettings[typeof k]) = saved.current[k]; return n })
+    } finally {
+      setSaving(false)
     }
-  }, [userId, toast])
+  }, [userId, s, toast])
 
-  // Discrete controls (toggles / selects / presets): optimistic update + persist now.
-  const apply = useCallback(<K extends keyof CaptureSettings>(field: K, value: CaptureSettings[K]) => {
-    setS((prev) => ({ ...prev, [field]: value }))
-    persist({ [field]: value } as Partial<CaptureSettings>)
-  }, [persist])
+  // Revert every pending edit back to server truth.
+  const revert = useCallback(() => setS(saved.current), [])
 
-  // Number inputs: edit locally on change, persist on blur — but only if the
-  // committed value actually differs from server truth, so a mere focus+blur
-  // (no edit) never triggers a proxy respawn.
-  const setLocal = useCallback(<K extends keyof CaptureSettings>(field: K, value: CaptureSettings[K]) => {
-    setS((prev) => ({ ...prev, [field]: value }))
-  }, [])
-  const commit = <K extends keyof CaptureSettings>(field: K) => {
-    if (s[field] !== saved.current[field]) persist({ [field]: s[field] } as Partial<CaptureSettings>)
-  }
+  // Guard the dialog close: warn before discarding unsaved edits.
+  const requestClose = useCallback(async () => {
+    if (isCaptureDirty(saved.current, s)) {
+      const ok = await alerts.confirm(
+        'You have unsaved TrafficMind changes. Discard them and close?', 'Discard changes?')
+      if (!ok) return
+    }
+    onClose()
+  }, [s, alerts, onClose])
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="large" title="TrafficMind settings">
+    <Modal isOpen={isOpen} onClose={requestClose} size="large" title="TrafficMind settings">
       <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '75vh' }}>
         <div style={{ overflowY: 'auto', paddingRight: 6, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>
               <p style={{ margin: '0 0 6px', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 13px)' }}>
                 Master switch for the TrafficMind capture proxy. Enabling starts the proxy + ingest containers;
-                disabling stops them. Turn capture on/off per project in the matrix below, or from the toggle on
-                the TrafficMind page. <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/TrafficMind" title="Open TrafficMind wiki page" />
+                disabling stops them — the change takes effect when you click <strong>Apply</strong>. Turn capture
+                on/off per project in the matrix below, or from the toggle on the TrafficMind page.{' '}
+                <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/TrafficMind" title="Open TrafficMind wiki page" />
               </p>
               <p style={{ margin: '0', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 13px)' }}>
                 There is a single
@@ -244,7 +196,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
               </p>
             </div>
             <Toggle checked={s.captureProxyEnabled}
-              onChange={(v) => apply('captureProxyEnabled', v)} aria-label="Enable TrafficMind capture" />
+              onChange={(v) => setField('captureProxyEnabled', v)} aria-label="Enable TrafficMind capture" />
           </div>
 
           {s.captureProxyEnabled && (
@@ -252,12 +204,11 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
               <label style={label13}>
                 Listen port
                 <input type="number" className="textInput" value={s.captureProxyPort}
-                  onChange={(e) => setLocal('captureProxyPort', parseInt(e.target.value) || 8888)}
-                  onBlur={() => commit('captureProxyPort')} />
+                  onChange={(e) => setField('captureProxyPort', parseInt(e.target.value) || 8888)} />
               </label>
               <label style={label13}>
                 Scope
-                <select className="select" value={s.captureProxyScope} onChange={(e) => apply('captureProxyScope', e.target.value)}>
+                <select className="select" value={s.captureProxyScope} onChange={(e) => setField('captureProxyScope', e.target.value)}>
                   <option value="both">Recon + Agent</option>
                   <option value="recon">Recon only</option>
                   <option value="agent">Agent only</option>
@@ -271,8 +222,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                   </Tooltip>
                 </span>
                 <input type="number" className="textInput" value={s.captureProxyMaxBodyKb}
-                  onChange={(e) => setLocal('captureProxyMaxBodyKb', parseInt(e.target.value) || 64)}
-                  onBlur={() => commit('captureProxyMaxBodyKb')} />
+                  onChange={(e) => setField('captureProxyMaxBodyKb', parseInt(e.target.value) || 64)} />
               </label>
               <label style={label13}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -282,14 +232,12 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                   </Tooltip>
                 </span>
                 <input type="number" className="textInput" value={s.captureProxyMaxStoreMb}
-                  onChange={(e) => setLocal('captureProxyMaxStoreMb', Math.max(0, parseInt(e.target.value) || 0))}
-                  onBlur={() => commit('captureProxyMaxStoreMb')} />
+                  onChange={(e) => setField('captureProxyMaxStoreMb', Math.max(0, parseInt(e.target.value) || 0))} />
               </label>
               <label style={label13}>
                 Retention (days)
                 <input type="number" className="textInput" value={s.captureProxyRetentionDays}
-                  onChange={(e) => setLocal('captureProxyRetentionDays', parseInt(e.target.value) || 14)}
-                  onBlur={() => commit('captureProxyRetentionDays')} />
+                  onChange={(e) => setField('captureProxyRetentionDays', parseInt(e.target.value) || 14)} />
               </label>
               <div style={row13}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -298,23 +246,23 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                     <Info size={13} style={{ color: 'var(--text-tertiary)', cursor: 'help' }} />
                   </Tooltip>
                 </span>
-                <Toggle checked={s.captureProxyStoreBodies} onChange={(v) => apply('captureProxyStoreBodies', v)} aria-label="Store bodies" />
+                <Toggle checked={s.captureProxyStoreBodies} onChange={(v) => setField('captureProxyStoreBodies', v)} aria-label="Store bodies" />
               </div>
               <div style={row13}>
                 <span>Store request bodies</span>
-                <Toggle checked={s.captureProxyStoreReqBodies} onChange={(v) => apply('captureProxyStoreReqBodies', v)} aria-label="Store request bodies" />
+                <Toggle checked={s.captureProxyStoreReqBodies} onChange={(v) => setField('captureProxyStoreReqBodies', v)} aria-label="Store request bodies" />
               </div>
               <div style={row13}>
                 <span>Store response bodies</span>
-                <Toggle checked={s.captureProxyStoreRespBodies} onChange={(v) => apply('captureProxyStoreRespBodies', v)} aria-label="Store response bodies" />
+                <Toggle checked={s.captureProxyStoreRespBodies} onChange={(v) => setField('captureProxyStoreRespBodies', v)} aria-label="Store response bodies" />
               </div>
               <div style={row13}>
                 <span>Redact secrets</span>
-                <Toggle checked={s.captureProxyRedactSecrets} onChange={(v) => apply('captureProxyRedactSecrets', v)} aria-label="Redact secrets" />
+                <Toggle checked={s.captureProxyRedactSecrets} onChange={(v) => setField('captureProxyRedactSecrets', v)} aria-label="Redact secrets" />
               </div>
               <div style={row13}>
                 <span>Passive detections</span>
-                <Toggle checked={s.captureProxyPassiveDetect} onChange={(v) => apply('captureProxyPassiveDetect', v)} aria-label="Passive detections" />
+                <Toggle checked={s.captureProxyPassiveDetect} onChange={(v) => setField('captureProxyPassiveDetect', v)} aria-label="Passive detections" />
               </div>
             </div>
           )}
@@ -361,7 +309,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                     return (
                       <button key={preset.name} type="button" role="tab" aria-selected={active}
                         className={`${styles.segmentedOption} ${active ? styles.segmentedOptionActive : ''}`}
-                        onClick={() => { if (activeBodyPreset(s.captureProxyBodyRules) !== preset.name) apply('captureProxyBodyRules', { ...preset.rules }) }}>
+                        onClick={() => { if (activeBodyPreset(s.captureProxyBodyRules) !== preset.name) setField('captureProxyBodyRules', { ...preset.rules }) }}>
                         {preset.name}
                       </button>
                     )
@@ -373,7 +321,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
                 {BODY_FAMILIES.map((fam) => {
-                  const current = s.captureProxyBodyRules?.[fam.key] ?? BODY_RULES_RECOMMENDED[fam.key]
+                  const current = effectiveBodyPolicy(s.captureProxyBodyRules, fam.key)
                   return (
                     <div key={fam.key} style={row13}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -383,7 +331,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                         </Tooltip>
                       </span>
                       <select className="select" style={{ maxWidth: 110 }} value={current}
-                        onChange={(e) => apply('captureProxyBodyRules', { ...s.captureProxyBodyRules, [fam.key]: e.target.value })}
+                        onChange={(e) => setField('captureProxyBodyRules', { ...s.captureProxyBodyRules, [fam.key]: e.target.value })}
                         aria-label={`${fam.title} storage policy`}>
                         {BODY_POLICIES.map((p) => <option key={p} value={p}>{p}</option>)}
                       </select>
@@ -403,7 +351,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                 </Tooltip>
               </h4>
               <p style={{ margin: '0 0 12px', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 13px)' }}>
-                Which destinations the proxy refuses. Every toggle is <strong>block</strong> by default; turn one off only to deliberately allow that class (e.g. private IPs to reach an internal / lab target on a private Docker network). These persist immediately.
+                Which destinations the proxy refuses. Every toggle is <strong>block</strong> by default; turn one off only to deliberately allow that class (e.g. private IPs to reach an internal / lab target on a private Docker network).
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
                 {EGRESS_TOGGLES.map((t) => (
@@ -415,7 +363,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
                         <Info size={13} style={{ color: 'var(--text-tertiary)', cursor: 'help' }} />
                       </Tooltip>
                     </span>
-                    <Toggle checked={s[t.key]} onChange={(v) => apply(t.key, v)} aria-label={t.title} />
+                    <Toggle checked={s[t.key]} onChange={(v) => setField(t.key, v)} aria-label={t.title} />
                   </div>
                 ))}
               </div>
@@ -426,8 +374,16 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, borderTop: '1px solid var(--border-default)', paddingTop: 14, marginTop: 6 }}>
-          <span style={{ color: 'var(--text-tertiary)', fontSize: 12, marginRight: 'auto' }}>Every change saves automatically.</span>
-          <button className="secondaryButton" onClick={onClose} type="button">Close</button>
+          <span style={{ marginRight: 'auto', fontSize: 12, color: dirty ? 'var(--warning, #e5a54d)' : 'var(--text-tertiary)' }}>
+            {dirty ? '● Unsaved changes' : 'All changes saved'}
+          </span>
+          {dirty && (
+            <button className="secondaryButton" onClick={revert} type="button" disabled={saving}>Revert</button>
+          )}
+          <button className="secondaryButton" onClick={requestClose} type="button">Close</button>
+          <button className="primaryButton" onClick={applyChanges} type="button" disabled={!dirty || saving}>
+            {saving ? 'Applying…' : 'Apply'}
+          </button>
         </div>
       </div>
     </Modal>

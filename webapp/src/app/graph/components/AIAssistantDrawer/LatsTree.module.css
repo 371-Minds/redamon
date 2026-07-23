@@ -138,16 +138,25 @@
 }
 .inspectorHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
 }
-.inspectorTitle { font-weight: 700; }
+.inspectorTitle {
+  font-weight: 700;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .inspectorClose {
   background: transparent;
   border: none;
   color: var(--text-muted, #94a3b8);
   cursor: pointer;
+  flex-shrink: 0;
 }
 .inspectorSection { margin: 10px 0; }
 .inspectorLabel {

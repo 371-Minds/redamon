@@ -133,11 +133,13 @@ class TestNeverRanChildrenReset(unittest.TestCase):
 
 
 class TestResetTriggers(unittest.TestCase):
-    """_lats_should_reset must fire on every §20.6 invalidation trigger, so a
-    stale tree never drives probes for the wrong objective/skill/target/phase."""
+    """`_reset_reasons` must DETECT every §20.6 invalidation trigger (each
+    empty-guarded so a transient blank never counts), and `_lats_should_reset`
+    must DEBOUNCE it: a genuine change resets only after LATS_RESET_DEBOUNCE
+    consecutive turns; task_complete is immediate."""
 
     def setUp(self):
-        project_settings._settings = None
+        project_settings._settings = dict(project_settings.DEFAULT_AGENT_SETTINGS)
 
     def tearDown(self):
         project_settings._settings = None
@@ -163,30 +165,59 @@ class TestResetTriggers(unittest.TestCase):
         s.update(over)
         return s
 
-    def test_no_reset_when_stable(self):
-        self.assertFalse(lats._lats_should_reset(self._state(), self._tree()))
+    # ---- detection (empty-guarded), via _reset_reasons ----
+    def test_no_reason_when_stable(self):
+        self.assertEqual(lats._reset_reasons(self._state(), self._tree()), [])
 
-    def test_reset_on_task_complete(self):
+    def test_reason_phase_left(self):
+        self.assertIn("phase_left", lats._reset_reasons(self._state(current_phase="informational"), self._tree()))
+
+    def test_reason_objective_change(self):
+        s = self._state(conversation_objectives=[{"objective": "different goal"}])
+        self.assertIn("objective_changed", lats._reset_reasons(s, self._tree()))
+
+    def test_reason_skill_switch(self):
+        s = self._state(attack_path_type="xss")   # switched from sql_injection
+        self.assertIn("skill_switch", lats._reset_reasons(s, self._tree()))
+
+    def test_reason_target_change(self):
+        s = self._state(target_info={"primary_target": "http://other"})
+        self.assertIn("target_change", lats._reset_reasons(s, self._tree()))
+
+    def test_blank_live_values_are_not_reasons(self):
+        # The systemic false-reset: a transient empty live value must NOT count.
+        for over in (dict(current_phase=""),
+                     dict(attack_path_type=""),
+                     dict(conversation_objectives=[], current_objective_index=0),
+                     dict(target_info={"primary_target": ""})):
+            self.assertEqual(lats._reset_reasons(self._state(**over), self._tree()), [],
+                             f"blank live value {over} must not be a reset reason")
+
+    def test_already_exploited_gated_off_by_default(self):
+        s = self._state(chain_findings_memory=[{"finding_type": "access_gained"}])
+        self.assertNotIn("already_exploited", lats._reset_reasons(s, self._tree()))
+        project_settings._settings["LATS_STOP_ON_FOOTHOLD"] = True
+        self.assertIn("already_exploited", lats._reset_reasons(s, self._tree()))
+
+    # ---- decision (debounced), via _lats_should_reset ----
+    def test_task_complete_resets_immediately(self):
         self.assertTrue(lats._lats_should_reset(self._state(task_complete=True), self._tree()))
 
-    def test_reset_on_phase_leaving_allowed(self):
-        self.assertTrue(lats._lats_should_reset(self._state(current_phase="informational"), self._tree()))
+    def test_genuine_change_debounced_then_resets(self):
+        s = self._state(attack_path_type="xss")   # real skill switch, held
+        tree = self._tree()
+        self.assertFalse(lats._lats_should_reset(s, tree), "turn 1: within debounce")
+        self.assertTrue(lats._lats_should_reset(s, tree), "turn 2 (held): reset")
 
-    def test_reset_on_objective_change(self):
-        s = self._state(conversation_objectives=[{"objective": "different goal"}])
-        self.assertTrue(lats._lats_should_reset(s, self._tree()))
-
-    def test_reset_on_skill_switch(self):
-        s = self._state(attack_path_type="xss")   # switched from sql_injection
-        self.assertTrue(lats._lats_should_reset(s, self._tree()))
-
-    def test_reset_on_target_change(self):
-        s = self._state(target_info={"primary_target": "http://other"})
-        self.assertTrue(lats._lats_should_reset(s, self._tree()))
-
-    def test_reset_on_already_exploited(self):
-        s = self._state(chain_findings_memory=[{"finding_type": "access_gained"}])
-        self.assertTrue(lats._lats_should_reset(s, self._tree()))
+    def test_reverting_blip_never_resets(self):
+        tree = self._tree()
+        s = self._state()
+        s["attack_path_type"] = "xss"                        # turn 1: differs
+        self.assertFalse(lats._lats_should_reset(s, tree))   # streak 1
+        s["attack_path_type"] = "sql_injection"              # turn 2: reverted
+        self.assertFalse(lats._lats_should_reset(s, tree))   # streak cleared
+        s["attack_path_type"] = "xss"                        # turn 3: differs again
+        self.assertFalse(lats._lats_should_reset(s, tree))   # streak 1, no reset
 
 
 class TestObjectiveOf(unittest.TestCase):
@@ -200,19 +231,20 @@ class TestObjectiveOf(unittest.TestCase):
         self.assertEqual(lats._objective_of(state), "recover the flag")
 
     def test_objective_change_reset_now_fires(self):
-        project_settings._settings = None
+        project_settings._settings = dict(project_settings.DEFAULT_AGENT_SETTINGS)
         try:
             tree = ExploitTree(root_id="root", nodes={"root": ExploitTreeNode(id="root")},
                                objective="recover the flag", attack_path_type="sql_injection",
                                primary_target="http://t")
-            # objective advanced to a different content -> reset must fire
+            # objective advanced to a different content -> reset condition detected
+            # (the debounced decision then fires after LATS_RESET_DEBOUNCE turns).
             state = {
                 "task_complete": False, "current_phase": "exploitation",
                 "conversation_objectives": [{"content": "different goal"}],
                 "current_objective_index": 0, "attack_path_type": "sql_injection",
                 "target_info": {"primary_target": "http://t"}, "chain_findings_memory": [],
             }
-            self.assertTrue(lats._lats_should_reset(state, tree))
+            self.assertIn("objective_changed", lats._reset_reasons(state, tree))
         finally:
             project_settings._settings = None
 

@@ -805,7 +805,10 @@ def _split_github_url(url: str) -> Optional[Tuple[str, str]]:
     if not m:
         return None
     owner, repo = m.groups()
-    return owner, repo.rstrip(".git")
+    # NB: use removesuffix, NOT rstrip(".git") — rstrip strips any trailing
+    # chars in the set {'.','g','i','t'}, mangling repos like "streamlit" ->
+    # "streaml" or "nuclei" -> "nucle" and 404ing the GitHub API (issue #153).
+    return owner, repo.removesuffix(".git")
 
 
 async def _build_sitemap_github_repo(base_url: str, github_token: str = "") -> Dict[str, Any]:

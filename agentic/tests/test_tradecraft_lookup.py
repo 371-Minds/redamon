@@ -36,6 +36,7 @@ from orchestrator_helpers.tradecraft_lookup import (
     _pick_section,
     _prefer_english,
     _rank_score,
+    _split_github_url,
     _substr_overlap_score,
     _tokens,
     canonicalize_url,
@@ -567,6 +568,90 @@ class TestSitemapNormalization(unittest.TestCase):
     def test_normalize_empty(self):
         from orchestrator_helpers.tradecraft_lookup import _sitemap_entries
         self.assertEqual(_sitemap_entries({}), [])
+
+
+# =========================================================================
+# _split_github_url — owner/repo parsing (regression for issue #153)
+#
+# Bug: repo.rstrip(".git") strips any trailing char in the set {'.','g','i','t'}
+# rather than the ".git" suffix, mangling repos ending in t/i/g/. and 404ing
+# the GitHub API. Fixed by switching to str.removesuffix(".git").
+# =========================================================================
+
+class TestSplitGithubUrl(unittest.TestCase):
+    def test_plain_repo(self):
+        self.assertEqual(
+            _split_github_url("https://github.com/pallets/flask"),
+            ("pallets", "flask"),
+        )
+
+    def test_strips_dot_git_suffix(self):
+        self.assertEqual(
+            _split_github_url("https://github.com/redamon/redamon.git"),
+            ("redamon", "redamon"),
+        )
+
+    def test_repo_ending_in_t_not_truncated(self):
+        # Regression: "streamlit" must NOT become "streaml".
+        self.assertEqual(
+            _split_github_url("https://github.com/streamlit/streamlit"),
+            ("streamlit", "streamlit"),
+        )
+
+    def test_repo_ending_in_i_not_truncated(self):
+        # Regression: "nuclei" must NOT become "nucle".
+        self.assertEqual(
+            _split_github_url("https://github.com/projectdiscovery/nuclei"),
+            ("projectdiscovery", "nuclei"),
+        )
+
+    def test_repo_ending_in_g_not_truncated(self):
+        # Regression: "spring" must NOT become "sprin".
+        self.assertEqual(
+            _split_github_url("https://github.com/spring-projects/spring"),
+            ("spring-projects", "spring"),
+        )
+
+    def test_repo_of_all_stripped_chars_not_emptied(self):
+        # Pathological case: rstrip(".git") would have returned "".
+        self.assertEqual(
+            _split_github_url("https://github.com/git/git"),
+            ("git", "git"),
+        )
+
+    def test_only_dot_git_suffix_stripped_once(self):
+        # "digit.git" -> owner keeps "digit"; suffix removed exactly once.
+        self.assertEqual(
+            _split_github_url("https://github.com/owner/digit.git"),
+            ("owner", "digit"),
+        )
+
+    def test_trailing_slash_and_subpath(self):
+        # Non-greedy repo group stops at the first slash.
+        self.assertEqual(
+            _split_github_url("https://github.com/owner/routing/tree/main"),
+            ("owner", "routing"),
+        )
+        self.assertEqual(
+            _split_github_url("https://github.com/owner/routing/"),
+            ("owner", "routing"),
+        )
+
+    def test_http_scheme_accepted(self):
+        self.assertEqual(
+            _split_github_url("http://github.com/owner/digit"),
+            ("owner", "digit"),
+        )
+
+    def test_non_github_url_returns_none(self):
+        self.assertIsNone(_split_github_url("https://gitlab.com/owner/repo"))
+        self.assertIsNone(_split_github_url("https://example.com/owner/repo"))
+
+    def test_owner_never_truncated(self):
+        # The owner group has no rstrip; ensure it is preserved verbatim.
+        owner, repo = _split_github_url("https://github.com/digit/flask")
+        self.assertEqual(owner, "digit")
+        self.assertEqual(repo, "flask")
 
 
 if __name__ == "__main__":

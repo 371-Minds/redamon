@@ -506,7 +506,10 @@ def lats_active(state: dict) -> bool:
         return False
     if not _surface_exists(state):
         return False
-    if _already_exploited(state):
+    # A mid-chain foothold only stops LATS when explicitly configured. OFF for
+    # flag-hunts (default): a foothold is a MEANS to the flag, so it must NOT
+    # block LATS from engaging to push the chain through to the objective.
+    if get_setting("LATS_STOP_ON_FOOTHOLD", False) and _already_exploited(state):
         return False
     # Re-activation cooldown (does not apply to the first-ever activation, where
     # _lats_last_archive_iter is unset).
@@ -544,27 +547,97 @@ def lats_is_driving(state: dict) -> bool:
     )
 
 
-def _lats_should_reset(state: dict, tree: ExploitTree) -> bool:
-    """Archive-and-restart triggers for a live tree (§20.6). ANY of: task done;
-    phase left the allowed set; objective advanced; skill switched; primary
-    target changed; objective already exploited."""
+def _host_port(t: str):
+    """Split a target string into (host, port). Strips scheme + trailing
+    slash(es) + surrounding whitespace and lowercases; `port` is '' when absent.
+    Only a trailing `:<digits>` is treated as a port (so paths / IPv6 are left
+    on the host side rather than mis-split)."""
+    s = (t or "").strip().lower()
+    for scheme in ("https://", "http://"):
+        if s.startswith(scheme):
+            s = s[len(scheme):]
+            break
+    s = s.rstrip("/")
+    if ":" in s:
+        host, _, port = s.rpartition(":")
+        if host and port.isdigit():
+            return host, port
+    return s, ""
+
+
+def _same_target(a: str, b: str) -> bool:
+    """True if a and b denote the SAME target. Host identity must match; a
+    MISSING port matches any port, because recon adds the port to
+    `primary_target` over the run (`lab-x` becomes `lab-x:8002`) — but two
+    DIFFERENT explicit ports are a real change. Scheme / trailing-slash / case
+    are ignored. This is what stops the residual `target_change` false reset
+    (XBEN-064: scheme/slash; XBEN-066: bare host vs host:8002)."""
+    ha, pa = _host_port(a)
+    hb, pb = _host_port(b)
+    if ha != hb:
+        return False
+    if pa and pb and pa != pb:
+        return False
+    return True
+
+
+def _reset_reasons(state: dict, tree: ExploitTree) -> List[str]:
+    """The §20.6 reset conditions TRUE this turn, each EMPTY-GUARDED: a blank /
+    empty live value is 'unknown, not changed' and never counts — the live
+    phase / skill / objective / target all transiently blank as the agent
+    re-derives them each turn, and comparing a stamped truthy value against a
+    transient '' was the dominant false-reset source. Pure: no state mutation.
+    The debounce + final decision live in `_lats_should_reset`."""
+    reasons: List[str] = []
     if state.get("task_complete"):
-        return True
-    if state.get("current_phase") not in get_setting("LATS_ALLOWED_PHASES", ["exploitation"]):
-        return True
-    if _already_exploited(state):
-        return True
-    # Objective advanced: the tree stamped which objective it serves.
-    if tree.objective and tree.objective != _objective_of(state):
-        return True
-    # Skill switched (switch_skill rebinds attack_path_type without necessarily
-    # changing the objective text) — the old tree's probes are for the wrong skill.
-    if tree.attack_path_type and tree.attack_path_type != (state.get("attack_path_type", "") or ""):
-        return True
-    # Primary target changed.
+        reasons.append("task_complete")
+    # Phase left the allowed set — but an empty phase is a re-derivation gap, not
+    # a genuine exit.
+    phase = state.get("current_phase") or ""
+    if phase and phase not in get_setting("LATS_ALLOWED_PHASES", ["exploitation"]):
+        reasons.append("phase_left")
+    # Foothold-in-hand. OFF by default on flag-hunts (a foothold is a MEANS, not
+    # the objective — resetting here loses the tree before it reaches the flag).
+    if get_setting("LATS_STOP_ON_FOOTHOLD", False) and _already_exploited(state):
+        reasons.append("already_exploited")
+    # Objective advanced — empty live objective is a re-derivation gap.
+    live_obj = (_objective_of(state) or "").strip()
+    if tree.objective and live_obj and tree.objective.strip() != live_obj:
+        reasons.append("objective_changed")
+    # Skill switched — empty live attack_path_type is a transition blank.
+    live_apt = state.get("attack_path_type", "") or ""
+    if tree.attack_path_type and live_apt and tree.attack_path_type != live_apt:
+        reasons.append("skill_switch")
+    # Primary target changed — host identity, port-lenient (see _same_target).
     cur_target = (state.get("target_info", {}) or {}).get("primary_target", "") or ""
-    if tree.primary_target and cur_target and tree.primary_target != cur_target:
+    if tree.primary_target and cur_target and not _same_target(tree.primary_target, cur_target):
+        reasons.append("target_change")
+    return reasons
+
+
+def _lats_should_reset(state: dict, tree: ExploitTree) -> bool:
+    """DEBOUNCED archive-and-restart decision for a live tree (§20.6). A reset
+    condition (empty-guarded, see `_reset_reasons`) must hold for
+    `LATS_RESET_DEBOUNCE` CONSECUTIVE turns before the tree is torn down, so a
+    one-turn jitter blip (a transient blank, a phase dip that reverts, a skill
+    flip-and-revert) never nukes a healthy tree. `task_complete` is exempt
+    (immediate — the run is ending). Mutates `_lats_reset_streak`; call at most
+    once per hook."""
+    reasons = _reset_reasons(state, tree)
+    if not reasons:
+        state["_lats_reset_streak"] = 0
+        return False
+    if "task_complete" in reasons:
+        state["_lats_reset_streak"] = 0
         return True
+    streak = int(state.get("_lats_reset_streak", 0) or 0) + 1
+    need = int(get_setting("LATS_RESET_DEBOUNCE", 2))
+    if streak >= need:
+        state["_lats_reset_streak"] = 0
+        logger.info("[lats] reset after debounce (held %d turns): %s", streak, reasons)
+        return True
+    state["_lats_reset_streak"] = streak
+    logger.debug("[lats] reset condition pending %d/%d: %s", streak, need, reasons)
     return False
 
 
@@ -599,12 +672,45 @@ def _tool_arg_keys(tool_name: str) -> List[str]:
 def _probe_args_valid(tool_name: str, args: dict) -> bool:
     """Deterministic pre-flight arg check. A probe must include the tool's PRIMARY
     key (e.g. `args` for execute_*, `id` for proxy_get, `command` for kali_shell);
-    this catches the LLM inventing url/target/flags/depth keys. Tools with no
-    schema (freeform / unknown) pass through untouched."""
+    this catches the LLM inventing url/target/flags/depth keys. Then a few
+    tool-specific MECHANICAL guards drop invocations that pass the key check but
+    would bounce off the tool at runtime (a wasted rollout) — e.g. ffuf without
+    its required FUZZ keyword. Tools with no schema pass the key check but still
+    get the mechanical guards."""
+    args = args or {}
     keys = _tool_arg_keys(tool_name)
-    if not keys:
-        return True
-    return keys[0] in (args or {})
+    if keys and keys[0] not in args:
+        return False
+    a = str(args.get("args", "") or "")
+    # execute_ffuf REQUIRES the literal FUZZ keyword somewhere in the args, else
+    # it exits immediately with "Encountered error(s)" (12 such failures observed).
+    if tool_name == "execute_ffuf" and "FUZZ" not in a:
+        return False
+    return True
+
+
+# Compact per-tool usage cheatsheet for the expand step. The lean expand context
+# drops the full ~22K tool-inventory docs (which teach valid flags), so the LLM
+# guessed flags and ~13% of probes bounced off the tool layer (ffuf without FUZZ,
+# arjun --get, katana -silent, curl ---, kali_shell for uninstalled tools). These
+# one-liners restore just the flag-correctness guidance, not the bulk.
+_EXPAND_TOOL_HINTS = {
+    "execute_ffuf":   "put the literal FUZZ keyword in the URL (e.g. -u http://h/FUZZ -w <wordlist>); use -mc/-fc to match/filter status, -t for threads. NO -silent (not an ffuf flag).",
+    "execute_arjun":  "params: -u URL, -m GET|POST (NOT --get), -oT/-oJ for output. Does NOT accept -c/--threads/--timeout.",
+    "execute_katana": "crawl: -u URL, -jc (JS), -d <depth>, -o <file>. NO -silent / -kf.",
+    "execute_curl":   "raw curl args only; never a bare `---`, and avoid -x unless a proxy is intended (it can hang on a password prompt). For piping/grep, use execute_code instead.",
+    "execute_code":   "Python (requests/socket/pwntools). Keep it FAST (<60s) — no long brute-force loops or sleeps; execution is killed at 120s.",
+    "kali_shell":     "only tools actually installed in Kali; do NOT assume niche tools exist (e.g. flask-unsign) — use execute_code for those.",
+}
+
+
+def _expand_tool_hints(allowed_tools: set) -> str:
+    """One-line correct-usage hints for the allowed tools that commonly get
+    mis-invoked, so the expand step proposes runnable probes instead of guessing
+    flags. Empty when none of the hinted tools are allowed."""
+    lines = [f"  {name}: {_EXPAND_TOOL_HINTS[name]}"
+             for name in sorted(allowed_tools) if name in _EXPAND_TOOL_HINTS]
+    return "\n".join(lines)
 
 
 def _tool_schema_block(allowed_tools: set) -> str:
@@ -621,11 +727,18 @@ def _tool_schema_block(allowed_tools: set) -> str:
     return "\n".join(lines)
 
 
-def _parse_expand_response(text: str, allowed_tools: set, branching: int) -> List[dict]:
+def _parse_expand_response(text: str, allowed_tools: set, branching: int,
+                           existing_keys: Optional[set] = None) -> List[dict]:
     """Pure parser + validator for a structured expand response. Returns up to
     `branching` probes, each {tool_name, tool_args, rationale}, dropping any probe
     whose tool_name is missing / not phase-allowed, or whose tool_args are the
-    wrong shape for that tool (§20.9, Fix #1)."""
+    wrong shape for that tool (§20.9, Fix #1).
+
+    HARD dedup: any probe whose normalized key is already in `existing_keys` (the
+    probes already in the tree) or was already emitted earlier in THIS response is
+    dropped. The soft "do not repeat" prompt list was capped and advisory; this is
+    the enforced guarantee, so a deep tree can no longer re-run a byte-identical
+    probe just because it scrolled past the prompt's cap."""
     if not text:
         return []
     payload = _extract_json(text)
@@ -634,6 +747,7 @@ def _parse_expand_response(text: str, allowed_tools: set, branching: int) -> Lis
     raw = payload.get("probes") if isinstance(payload, dict) else payload
     if not isinstance(raw, list):
         return []
+    seen: set = set(existing_keys or ())
     probes: List[dict] = []
     for item in raw:
         if not isinstance(item, dict):
@@ -646,10 +760,18 @@ def _parse_expand_response(text: str, allowed_tools: set, branching: int) -> Lis
             continue
         if not _probe_args_valid(tn, args or {}):
             continue                      # malformed args (wrong keys) -> drop pre-flight
+        key = _probe_dedup_key(tn, args or {})
+        if key in seen:
+            continue                      # HARD dedup: already in tree or this batch
+        seen.add(key)
         probes.append({
             "tool_name": tn,
             "tool_args": args or {},
-            "rationale": str(item.get("rationale", "") or "")[:400],
+            # Defensive bound only (guards against a malformed giant LLM string
+            # bloating the streamed snapshot). The UI shows this in full and
+            # prompt renderers re-truncate to ~30-40 chars, so a real rationale
+            # is never cut mid-sentence in the card / inspector title.
+            "rationale": str(item.get("rationale", "") or "")[:1000],
         })
         if len(probes) >= branching:
             break
@@ -707,6 +829,21 @@ def _append_tree_digest(state: dict, tree: "ExploitTree", outcome: str) -> None:
     cap = int(get_setting("LATS_DIGEST_MAX", 8))
     state["_lats_tree_digest"] = hist[-cap:]
 
+    # Run-level probe ledger (§3 cross-tree HARD dedup). The digest above is the
+    # soft, human-readable hint the next tree READS; this is the enforced
+    # guarantee the next tree's expand is FILTERED by, so a later tree can no
+    # longer re-run a byte-identical probe an earlier tree already tried.
+    # Executed-only (status != "proposed") so a prior tree's UNtried frontier
+    # probe stays legitimately explorable; the conservative key means only
+    # identical probes collapse (distinct payloads survive — same as within-tree).
+    ledger = list(state.get("_lats_probe_ledger") or [])
+    for n in tree.nodes.values():
+        if n.parent_id is not None and n.tool_name and n.status != "proposed":
+            ledger.append(_probe_dedup_key(n.tool_name, n.tool_args))
+    lcap = int(get_setting("LATS_PROBE_LEDGER_MAX", 400))
+    # dedup preserving order, keep the most recent lcap keys
+    state["_lats_probe_ledger"] = list(dict.fromkeys(ledger))[-lcap:]
+
 
 def _prior_tree_summaries(state: dict, cap: int = 6) -> str:
     """Accumulated prior-tree knowledge for the next tree. Prefers the dedicated,
@@ -722,9 +859,112 @@ def _prior_tree_summaries(state: dict, cap: int = 6) -> str:
     return "\n---\n".join(sums[-2:]) if sums else ""
 
 
+def _full_think_context(state: dict) -> str:
+    """LEAN GROUNDING CONTEXT: the minimal-but-complete slice of think-node
+    context the expand step needs to propose CORRECT probes — nothing more.
+
+    A probe is "correct" when it (a) hits a REAL target, (b) uses the RIGHT
+    technique for the vuln class, (c) is EXECUTABLE, (d) doesn't repeat a dead
+    end, (e) stays in scope. Each requirement maps to exactly one block below.
+    Deliberately NOT a think-node clone: the full 22k tool-inventory docs, the
+    switchable skill menu, phase definitions, and todo/qa/objective bookkeeping
+    are excluded because none of them change which probe is right (the arg
+    schema — supplied separately via _tool_schema_block in the system message —
+    already makes probes executable; the skill workflow already carries the
+    class technique).
+
+    Blocks (each guarded — a failure in one never breaks expand):
+      1. Attack-chain context — rendered execution trace (real endpoints,
+         params, observations). THE grounding source: WHERE to probe. (a)
+      2. target_info — tech/service context. (a)
+      3. Rules of Engagement / scope guardrail. (e)
+      4. Active built-in skill WORKFLOW — the class's technique + payload
+         templates, split out of get_phase_tools so we get the playbook WITHOUT
+         the 22k tool-inventory bulk. HOW to probe. (b)
+      5. Agent/Chat skills catalog — load-on-demand specialist techniques. (b)
+
+    Lazy imports throughout (lats is imported by think_node — avoids a cycle).
+    """
+    parts: List[str] = []
+    phase = state.get("current_phase", "exploitation") or "exploitation"
+    apt = state.get("attack_path_type", "") or ""
+
+    # 1. Attack-chain context (execution trace → the real discovered surface).
+    #    WHERE to probe — the whole reason for the grounding fix.
+    try:
+        from state import format_chain_context
+        win = int(get_setting("LATS_CONTEXT_WINDOW", 12))
+        cc = format_chain_context(
+            chain_findings=state.get("chain_findings_memory") or [],
+            chain_failures=state.get("chain_failures_memory") or [],
+            chain_decisions=state.get("chain_decisions_memory") or [],
+            execution_trace=state.get("execution_trace") or [],
+            recent_iterations=win,
+        )
+        if cc and cc.strip():
+            parts.append("## Attack-chain so far (what the agent has actually done — probe THESE real endpoints/params)\n" + cc)
+    except Exception as _e:
+        logger.debug("[lats full-ctx] chain_context skipped: %s", _e)
+
+    # 2. target_info (tech/service context)
+    try:
+        ti = state.get("target_info") or {}
+        if ti:
+            parts.append("## Target info\n" + json.dumps(ti)[:2500])
+    except Exception:
+        pass
+
+    # 3. Rules of Engagement / scope guardrail (stay in bounds)
+    try:
+        from prompts.base import build_roe_prompt_section
+        roe = build_roe_prompt_section()
+        if roe and roe.strip():
+            parts.append(roe.strip())
+    except Exception:
+        pass
+
+    # 4. Active built-in skill WORKFLOW ONLY (technique + payload templates for
+    #    the vuln class). Uses the shared module-level builder — same playbook
+    #    the think node gets from get_phase_tools, minus the 22k tool inventory.
+    try:
+        from prompts import build_builtin_skill_workflow
+        from project_settings import get_allowed_tools_for_phase
+        allowed_for_phase = get_allowed_tools_for_phase(phase)
+        wf = build_builtin_skill_workflow(
+            apt,
+            allowed_for_phase,
+            is_statefull=(str(get_setting('POST_EXPL_PHASE_TYPE', 'statefull')) == 'statefull'),
+            execution_trace=state.get("execution_trace") or [],
+        )
+        if wf:
+            parts.append("## Active attack-skill workflow (follow this technique when choosing probes)\n"
+                         + "\n\n".join(wf))
+    except Exception as _e:
+        logger.debug("[lats full-ctx] skill workflow skipped: %s", _e)
+
+    # 5. Agent/Chat skills catalog (load-on-demand markdown skills)
+    try:
+        from orchestrator_helpers.skill_loader import list_skills
+        sk = list_skills() or []
+        if sk:
+            cat = "\n".join(f"- {s.get('id')}: {s.get('description', '')}" for s in sk[:80])
+            parts.append("## Available Agent/Chat skills (load on demand for deeper technique)\n" + cat)
+    except Exception:
+        pass
+
+    return "\n\n".join(parts)
+
+
 def _situational_context(state: dict) -> str:
     """Recon surface + confirmed findings + failed dead-ends + prior LATS trees,
-    rendered compactly. This is the awareness the expand step was missing."""
+    rendered compactly. This is the awareness the expand step was missing.
+
+    When LATS_FULL_CONTEXT is on, PREPEND the lean grounding context (chain
+    context, target_info, RoE, active skill workflow, skills catalog) so the
+    expand step can propose grounded, correct probes — the compressed block
+    below then adds the LATS-specific findings/failures/prior-tree deltas on
+    top."""
+    full = _full_think_context(state) if get_setting("LATS_FULL_CONTEXT", True) else ""
     parts: List[str] = []
     ti = state.get("target_info", {}) or {}
     surface = []
@@ -759,8 +999,13 @@ def _situational_context(state: dict) -> str:
     if prior:
         parts.append("Prior LATS searches this run (build on, do not re-explore):\n" + prior)
 
-    return "\n\n".join(parts) if parts else \
+    compressed = "\n\n".join(parts) if parts else \
         "(no findings yet; propose entry probes from the objective and recon surface)"
+    # Full-context parity (grounding): the full think-node context leads, the
+    # LATS-specific deltas (findings/failures/prior-trees) follow.
+    if full and full.strip():
+        return full + "\n\n## LATS deltas\n" + compressed
+    return compressed
 
 
 def _skill_methodology(state: dict) -> str:
@@ -823,13 +1068,49 @@ def _render_path(tree: "ExploitTree", node: ExploitTreeNode) -> str:
     return " -> ".join(chain) if chain else "(root)"
 
 
-def _existing_probes(tree: "ExploitTree", cap: int = 20) -> str:
+def _probe_dedup_key(tool_name: str, tool_args: Any) -> str:
+    """Stable key for cross-branch / within-batch dedup: tool name + the
+    whitespace-normalized primary argument. Deliberately CONSERVATIVE - it
+    normalizes only whitespace, never case or payload content, so genuinely
+    different probes (a different file to read, param, engine, or bypass char)
+    stay DISTINCT and only byte-identical probes collapse. This is what lets an
+    LFI vector be enumerated exhaustively (etc/passwd, etc/hosts, flag, ...)
+    without those being mistaken for repeats, while `post.php?id=flag` proposed
+    twice is caught."""
+    ta = tool_args or {}
+    if isinstance(ta, dict):
+        raw = (ta.get("args") or ta.get("code") or ta.get("url")
+               or ta.get("command") or json.dumps(ta, sort_keys=True))
+    else:
+        raw = str(ta)
+    norm = " ".join(str(raw).split())
+    return f"{tool_name}{norm}"
+
+
+def _existing_probe_keys(tree: "ExploitTree") -> set:
+    """Every probe already in the tree as dedup keys, UNCAPPED. The soft prompt
+    list (`_existing_probes`) is capped for readability and can miss probes once
+    a tree grows past the cap; this set does not, so the HARD dedup in
+    `_parse_expand_response` still blocks a re-proposal of any earlier probe no
+    matter how deep the tree is."""
+    return {
+        _probe_dedup_key(n.tool_name, n.tool_args)
+        for n in tree.nodes.values()
+        if n.parent_id is not None and n.tool_name
+    }
+
+
+def _existing_probes(tree: "ExploitTree", cap: int = 40) -> str:
     """Compact signatures of probes already in the tree, so expand does not
-    re-propose them (cross-branch dedup)."""
+    re-propose them (cross-branch dedup). Shows the MOST RECENT `cap` probes -
+    on a deep tree (> cap probe-nodes) the freshest branches are the ones an
+    extension is most likely to collide with, and the exhaustive, uncapped
+    guarantee is enforced separately in `_parse_expand_response` via
+    `_existing_probe_keys`, so this list is now just a readability hint."""
     sigs = [f"- {n.tool_name} {str(n.tool_args or {})[:60]}"
             for n in tree.nodes.values()
             if n.parent_id is not None and n.tool_name]
-    return "\n".join(sigs[:cap])
+    return "\n".join(sigs[-cap:])
 
 
 def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
@@ -841,6 +1122,12 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
     objective = _objective_of(state)
     phase = state.get("current_phase", "exploitation")
     tool_schema = _tool_schema_block(allowed_tools) if allowed_tools else "  (any tool)"
+    tool_hints = _expand_tool_hints(allowed_tools) if allowed_tools else ""
+    # Dynamic width: the ROOT uses the full width (fan out across entry vectors);
+    # EXTENSIONS pick a count in [lo, branching] by how branchy the node genuinely
+    # is, so a narrow node is not padded up to the cap (padding = wasted rollouts +
+    # strained, badly-flagged probes).
+    lo = min(branching, max(3, branching // 2))
     situational = _situational_context(state)
     methodology = _skill_methodology(state)
     method_block = (f"\n\nMETHODOLOGY (active attack-path skill — follow this playbook "
@@ -849,10 +1136,10 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
     if node is None or node.tool_name is None:
         seed = _deep_think_seed_block(state)
         branch = f"\n\n{seed}" if seed else ""
-        ask = (f"Assess the situation above and propose up to {branching} DISTINCT "
-               f"entry probes, grounded in the recon surface and findings. Favor "
-               f"breadth here: the root should FAN OUT across the different credible "
-               f"vuln classes / entry points the surface offers, not commit to one.")
+        ask = (f"Assess the situation above and propose {branching} DISTINCT entry "
+               f"probes — USE THE FULL WIDTH at the root, grounded in the recon "
+               f"surface and findings: FAN OUT across the different credible vuln "
+               f"classes / entry points the surface offers, do not commit to one.")
     else:
         path = _render_path(tree, node) if tree is not None else _node_label(node)
         tag = node.verdict or node.error_class or node.status
@@ -862,10 +1149,12 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
             f"  Extending: {node.tool_name} {json.dumps(node.tool_args or {})} [{tag}]\n"
             f"  Observation: {node.observation_summary or '(none)'}"
         )
-        ask = (f"Propose up to {branching} DISTINCT follow-up probes that build on "
-               f"this line — favor several materially-different next moves (pivot if "
-               f"blocked, deepen if it made progress). Fewer is fine only if this "
-               f"line genuinely has few credible, non-overlapping continuations.")
+        ask = (f"Propose between {lo} and {branching} DISTINCT follow-up probes that "
+               f"build on this line. DECIDE THE COUNT by how many materially-different, "
+               f"credible continuations THIS node genuinely offers — pivot if blocked, "
+               f"deepen if it made progress. Do NOT pad to {branching}: {lo} strong, "
+               f"distinct probes beat {branching} with filler. Return fewer than {lo} "
+               f"only if this line is genuinely near-dead.")
 
     existing = _existing_probes(tree) if tree is not None else ""
     dedup = (f"\n\nAlready in the tree — propose DIFFERENT probes, do not repeat:\n{existing}"
@@ -881,14 +1170,15 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
         "tools take a single \"args\" string holding the raw CLI arguments (without "
         "the tool name). Allowed tools and their required tool_args schema:\n"
         f"{tool_schema}\n"
-        f"Propose UP TO {branching} probes, ordered most-promising first. FAVOR "
-        f"BREADTH: when the situation genuinely offers several distinct, materially-"
-        f"different directions (different vuln classes, endpoints, parameters, "
-        f"template/DB engines, or bypass techniques), return more of them rather "
-        f"than collapsing to one or two out of caution — aim to use the width. "
-        f"Return fewer than {branching} ONLY when the step is genuinely narrow and "
-        "there are not that many credible, non-overlapping directions. NEVER pad "
-        "with near-duplicate variations of the same idea. "
+        + (f"Tool usage (get the flags right — malformed probes are wasted):\n{tool_hints}\n"
+           if tool_hints else "")
+        + f"The NUMBER of probes is YOUR decision (never more than {branching}): match "
+        f"it to how many materially-different, credible directions this specific step "
+        f"genuinely offers — different vuln classes, endpoints, parameters, template/DB "
+        f"engines, or bypass techniques. Use the full width when the step truly "
+        f"branches; return fewer when it does not. NEVER pad with near-duplicate "
+        f"variations to hit a number — a few strong, distinct probes beat many filler "
+        f"ones (filler probes just waste rollouts). Order them most-promising first. "
         "Each must be a concrete, executable probe (never a plan or a question). "
         "Ground every probe in the situation below; do not repeat failed dead ends."
     )
@@ -923,6 +1213,18 @@ async def lats_expand(llm: Any, state: dict, node: Optional[ExploitTreeNode],
     branching = int(get_setting("LATS_BRANCHING", 3))
     allowed = _phase_allowed_tools(state)
     messages = _expand_prompt_messages(state, node, allowed, branching, tree=tree)
+    # [TEMP DIAGNOSTIC] dump the REAL expand prompt so we can PROVE what context
+    # LATS actually receives (situational grounding, branch propagation, prior-tree
+    # accumulation) instead of inferring it from code. Remove after the audit.
+    if get_setting("LATS_LOG_EXPAND_PROMPT", False):
+        try:
+            _nid = node.id if node is not None else "ROOT"
+            logger.info("[LATS_EXPAND_PROMPT] node=%s allowed=%d branching=%d\n"
+                        "===SYSTEM===\n%s\n===USER===\n%s\n[/LATS_EXPAND_PROMPT]",
+                        _nid, len(allowed or []), branching,
+                        messages[0].get("content", ""), messages[1].get("content", ""))
+        except Exception:
+            pass
     try:
         resp = await retry_llm_call(llm, messages, label="lats_expand")
     except Exception as exc:
@@ -940,7 +1242,14 @@ async def lats_expand(llm: Any, state: dict, node: Optional[ExploitTreeNode],
     if isinstance(content, list):     # some providers return content blocks
         content = " ".join(str(b.get("text", b)) if isinstance(b, dict) else str(b)
                            for b in content)
-    return _parse_expand_response(str(content or ""), allowed, branching)
+    # HARD dedup keys = this tree's probes (within-tree) UNION the run-level
+    # ledger of every prior tree's executed probes (cross-tree, §3). So expand
+    # drops a byte-identical re-run whether the original was in THIS tree or an
+    # earlier one this run.
+    _tree_keys = _existing_probe_keys(tree) if tree is not None else set()
+    _ledger_keys = set(state.get("_lats_probe_ledger") or ())
+    return _parse_expand_response(str(content or ""), allowed, branching,
+                                  existing_keys=_tree_keys | _ledger_keys)
 
 
 # =============================================================================
@@ -1250,7 +1559,9 @@ def _evaluate_wave(tree: ExploitTree, state: dict, analysis: Any) -> bool:
         credited = child is credited_child
         child.local_value = lats_value(step, analysis, phase=phase, before=before,
                                        after=after, credited=credited)
-        child.observation_summary = _summarize(step.get("tool_output"))
+        # cap=600 so the inspector's OBSERVATION section shows a useful slice
+        # (outline rows ellipsis-clamp it; prompt rendering re-slices to [:80]).
+        child.observation_summary = _summarize(step.get("tool_output"), cap=600)
         child.verdict = _verdict_for(step, analysis)
         child.error_class = step.get("error_class", "") or ""
         child.duration_ms = int(step.get("duration_ms", 0) or 0)
