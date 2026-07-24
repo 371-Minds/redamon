@@ -50,6 +50,24 @@ assert_eq    "TUNNEL_AUTH_TOKEN not duplicated" "$(grep -c '^TUNNEL_AUTH_TOKEN='
 assert_eq    "SCANNER_API_KEY not duplicated" "$(grep -c '^SCANNER_API_KEY=' "$TMP/.env")" "1"
 rm -rf "$TMP"
 
+# test_ensure_auth_secrets_survives_set_e (issue #157)
+# The REAL script runs under `set -euo pipefail`; this harness relaxes it to
+# `set +e` (line ~20), so a `var="$(grep ... )"` that fails on a no-match was
+# invisible here while it silently killed `./redamon.sh install` on any FRESH
+# install right after the auth tokens (the new `.env` has no POSTGRES_DB line,
+# so the TRAFFIC_INGEST_DATABASE_URL grep exited 1 -> pipefail -> set -e abort,
+# before a single container was built). Re-enable `set -e` for this one call to
+# lock the regression: it must reach the end AND emit the ingest DSN.
+echo "== ensure_auth_secrets: fresh .env survives set -euo pipefail (#157) =="
+TMP=$(mktemp -d); SCRIPT_DIR="$TMP"; : > "$TMP/.env"   # fresh, no POSTGRES_DB
+( set -euo pipefail; ensure_auth_secrets ) >/dev/null 2>&1; rc=$?
+assert_eq    "install path does NOT abort under set -e" "$rc" "0"
+assert_true  "TRAFFIC_INGEST_DATABASE_URL still emitted" "grep -qE '^TRAFFIC_INGEST_DATABASE_URL=postgresql://traffic_ingest:[0-9a-f]{64}@postgres:5432/redamon\$' '$TMP/.env'"
+# _env_get must never return non-zero, even on a missing key / missing file.
+( set -e; _env_get NOPE "$TMP/.env" ) >/dev/null 2>&1; assert_eq "_env_get exits 0 on missing key" "$?" "0"
+( set -e; _env_get NOPE "$TMP/does-not-exist" ) >/dev/null 2>&1; assert_eq "_env_get exits 0 on missing file" "$?" "0"
+rm -rf "$TMP"
+
 echo "== ensure_db_secrets: FRESH install (no data volume) =="
 TMP=$(mktemp -d); SCRIPT_DIR="$TMP"
 docker() { return 1; }   # volume inspect always fails -> fresh

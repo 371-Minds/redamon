@@ -65,6 +65,21 @@ success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
+# Read a `KEY=value` line from an env file and print the value (empty if the key
+# or file is absent). CRITICAL: this must NEVER return non-zero. Callers assign
+# its output as `x="$(_env_get ...)"` under `set -euo pipefail`, where a bare
+# `grep` that finds nothing exits 1, `pipefail` propagates it, and `set -e` then
+# aborts the whole script mid-assignment with no error message. That is exactly
+# what made `./redamon.sh install` die silently right after generating the auth
+# tokens on a FRESH install (#157): the new `.env` has no POSTGRES_DB line, so
+# the TRAFFIC_INGEST_DATABASE_URL grep failed and killed the install before a
+# single container was built. The trailing `|| true` pins the exit status to 0.
+_env_get() {
+    local key="$1" file="${2:-$SCRIPT_DIR/.env}"
+    [ -f "$file" ] || return 0
+    grep -E "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2- || true
+}
+
 # ---------------------------------------------------------------------------
 # Adaptive build parallelism (memory-safe Docker builds)
 # ---------------------------------------------------------------------------
@@ -416,8 +431,8 @@ compose_build() {
 # ORCHESTRATOR_API_KEY or the orchestrator is unreachable.
 _capture_start_post() {
     local env_file="$SCRIPT_DIR/.env" okey="" port=""
-    okey="$(grep -E '^ORCHESTRATOR_API_KEY=' "$env_file" 2>/dev/null | head -1 | cut -d= -f2-)"
-    port="$(grep -E '^RECON_ORCH_PORT=' "$env_file" 2>/dev/null | head -1 | cut -d= -f2-)"
+    okey="$(_env_get ORCHESTRATOR_API_KEY "$env_file")"
+    port="$(_env_get RECON_ORCH_PORT "$env_file")"
     port="${port:-8010}"
     [ -z "$okey" ] && return 1
     curl -fsS -X POST "http://127.0.0.1:${port}/capture-proxy/start" \
@@ -588,7 +603,7 @@ ensure_auth_secrets() {
     # dropped. Append-if-absent + hex password (URL/SQL-safe, no encoding needed).
     if ! grep -q '^TRAFFIC_INGEST_DATABASE_URL=' "$env_file" 2>/dev/null; then
         local _ti_db
-        _ti_db="$(grep -E '^POSTGRES_DB=' "$env_file" 2>/dev/null | head -1 | cut -d= -f2-)"
+        _ti_db="$(_env_get POSTGRES_DB "$env_file")"
         _ti_db="${_ti_db:-redamon}"
         echo "TRAFFIC_INGEST_DATABASE_URL=postgresql://traffic_ingest:$(openssl rand -hex 32)@postgres:5432/${_ti_db}" >> "$env_file"
         info "Generated TRAFFIC_INGEST_DATABASE_URL (capture ingest role)"
@@ -608,7 +623,7 @@ compose_project_name() {
     local env_file="$SCRIPT_DIR/.env"
     if [ -f "$env_file" ]; then
         local from_env
-        from_env="$(grep -E '^COMPOSE_PROJECT_NAME=' "$env_file" 2>/dev/null | head -1 | cut -d= -f2-)"
+        from_env="$(_env_get COMPOSE_PROJECT_NAME "$env_file")"
         if [ -n "$from_env" ]; then
             echo "$from_env"
             return
@@ -631,8 +646,8 @@ _data_volume_exists() {
 _rotate_postgres_password() {
     local old="$1" new="$2"
     local user db
-    user="$(grep -E '^POSTGRES_USER=' "$SCRIPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
-    db="$(grep -E '^POSTGRES_DB=' "$SCRIPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+    user="$(_env_get POSTGRES_USER)"
+    db="$(_env_get POSTGRES_DB)"
     user="${user:-redamon}"
     db="${db:-redamon}"
     docker exec -e "PGPASSWORD=${old}" redamon-postgres \
@@ -1292,7 +1307,7 @@ _kb_get_neo4j_count() {
     # `status` / `kb stats` KB count still authenticates on a rotated DB; fall back
     # to the env var, then the fresh-install default.
     local pass
-    pass="$(grep -E '^NEO4J_PASSWORD=' "$SCRIPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+    pass="$(_env_get NEO4J_PASSWORD)"
     pass="${pass:-${NEO4J_PASSWORD:-changeme123}}"
     local user="${NEO4J_USER:-neo4j}"
     local count

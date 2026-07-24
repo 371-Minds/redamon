@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.1] - 2026-07-25
+
+### Fixed
+
+- **Fresh install no longer aborts silently (`#157`, `#158`).** On a first-time install the generated `.env` has no `POSTGRES_DB` line, so an unguarded `var="$(grep '^POSTGRES_DB=' ... )"` inside `ensure_auth_secrets` failed under `set -euo pipefail` (grep exits non-zero -> `pipefail` -> `set -e`), killing `./redamon.sh install` right after the auth tokens were generated, before the database passwords were written. `status`/`up` then failed with `POSTGRES_PASSWORD must be set` from the fail-closed compose guards. This was not OS-specific; the "Arch Linux" and "Kali Linux" reports were the same fresh-install bug. All env reads now go through a helper that can never return non-zero, and a regression test exercises the install path under `set -e`.
+
+---
+
 ## [6.2.0] - 2026-07-23
 
 ### Added
