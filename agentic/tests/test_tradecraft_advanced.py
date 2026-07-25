@@ -285,7 +285,9 @@ class TestMalformedInputs(unittest.TestCase):
             mgr.set_resources([])
             self.assertEqual(len(mgr._resources), 0)
             self.assertEqual(len(mgr._by_slug), 0)
-            self.assertIsNone(mgr.get_tool())
+            # Tool stays permanently registered (presence must not race); it is
+            # callable and returns a graceful "not configured" with no resources.
+            self.assertIsNotNone(mgr.get_tool())
         finally:
             shutil.rmtree(mgr.cache.root, ignore_errors=True)
 

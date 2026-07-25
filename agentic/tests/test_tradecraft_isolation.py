@@ -82,6 +82,22 @@ class TestTradecraftResourcesIsolation(unittest.TestCase):
         self.assertEqual(a, (1, {"sa"}))
         self.assertEqual(b, (2, {"sb1", "sb2"}))
 
+    def test_tool_stays_registered_and_graceful_without_resources(self):
+        # Presence-race fix: the tool is always registered (get_tool never None),
+        # so a concurrent disabled project can't remove it from under an enabled
+        # one; with no resources for THIS session it degrades gracefully.
+        try:
+            from orchestrator_helpers.tradecraft_lookup import TradecraftLookupManager as M
+        except Exception:
+            self.skipTest("orchestrator_helpers stubbed by an earlier test (test_t14)")
+        import asyncio
+        m = M(llm=None, mcp_manager=None)
+        m.set_resources([])
+        self.assertIsNotNone(m.get_tool())
+        out = asyncio.run(m._invoke(resource_id="anything", query="x",
+                                    cve_id=None, section_path=None, force_refresh=False))
+        self.assertIn("not configured", out.lower())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

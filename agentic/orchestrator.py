@@ -318,29 +318,27 @@ class AgentOrchestrator:
             tc_enabled = get_setting('TRADECRAFT_TOOL_ENABLED', True)
             tc_resources = get_setting('TRADECRAFT_RESOURCES', []) or []
             github_token = user_settings.get('githubAccessToken', '')
+            # The tradecraft tool stays permanently registered on the executor
+            # (get_tool no longer swapped per turn, which raced). Per session we
+            # only bind this project's resources + prompt catalog; a disabled
+            # project clears its own resources so the always-registered tool
+            # returns "resource not configured".
             if tc_enabled:
                 self._tradecraft_manager.set_resources(tc_resources)
                 self._tradecraft_manager.set_github_token(github_token)
                 self._tradecraft_manager.llm = self.llm
                 self._tradecraft_manager.section_picker_llm = self._build_section_picker_llm() or self.llm
-                # tier2_threshold_bytes / fetch_timeout / default_ttl are no longer
-                # stamped onto the shared manager here (they raced); they are read
-                # per-session at use-time from the task-isolated TRADECRAFT_* settings
-                # inside TradecraftLookupManager (tradecraft_lookup.py).
-                new_tool = self._tradecraft_manager.get_tool()
-                self.tool_executor.update_tradecraft_tool(new_tool)
-                # Swap the dynamic per-resource catalog into TOOL_REGISTRY
+                # tier2_threshold_bytes / fetch_timeout / default_ttl are read per
+                # session at use-time from the task-isolated TRADECRAFT_* settings.
+                # Swap this session's per-resource catalog into the prompt (overlay).
                 from prompts.tool_registry import swap_tradecraft_entry
                 swap_tradecraft_entry(self._tradecraft_manager.build_registry_entry())
-                if new_tool:
-                    logger.info(
-                        f"Tradecraft Lookup tool registered with "
-                        f"{len(self._tradecraft_manager._resources)} resources"
-                    )
-                else:
-                    logger.info("Tradecraft Lookup tool: zero enabled resources")
+                logger.info(
+                    f"Tradecraft Lookup: {len(self._tradecraft_manager._resources)} resources"
+                )
             else:
-                self.tool_executor.update_tradecraft_tool(None)
+                # Disabled for this project: no resources, no prompt catalog.
+                self._tradecraft_manager.set_resources([])
                 from prompts.tool_registry import pop_tradecraft_entry
                 pop_tradecraft_entry()
 

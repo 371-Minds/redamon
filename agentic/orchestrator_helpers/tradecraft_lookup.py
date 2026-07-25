@@ -1579,9 +1579,11 @@ class TradecraftLookupManager:
     # ---- Tool factory ----
 
     def get_tool(self) -> Optional[Callable]:
-        """Returns the @tool-decorated callable, or None if no enabled resources."""
-        if not self._resources:
-            return None
+        """Returns the @tool-decorated callable. Always returns the tool (kept
+        permanently registered) so its presence never races across concurrent
+        sessions; the closure reads this session's resources at call time and
+        _invoke returns a graceful "resource not configured" when the current
+        session has none (e.g. tradecraft disabled for that project)."""
         manager = self
 
         @tool

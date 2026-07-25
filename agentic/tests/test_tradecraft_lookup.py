@@ -419,9 +419,14 @@ class TestManagerLifecycle(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_get_tool_returns_none_when_no_resources(self):
+    def test_get_tool_returns_callable_even_when_no_resources(self):
+        # The tradecraft tool is now permanently registered so its presence never
+        # races across concurrent sessions; with no resources it stays callable
+        # and _invoke returns a graceful "resource not configured" message.
         self.mgr.set_resources([])
-        self.assertIsNone(self.mgr.get_tool())
+        tool = self.mgr.get_tool()
+        self.assertIsNotNone(tool)
+        self.assertEqual(getattr(tool, "name", None), "tradecraft_lookup")
 
     def test_get_tool_returns_callable_when_one_resource(self):
         self.mgr.set_resources([{
@@ -524,23 +529,26 @@ class TestToolRegistrySwap(unittest.TestCase):
     def test_swap_then_pop_isolated(self):
         from prompts.tool_registry import (
             TOOL_REGISTRY,
+            visible_registry,
             swap_tradecraft_entry,
             pop_tradecraft_entry,
         )
         # Snapshot keys other than tradecraft_lookup
         before_keys = {k: v for k, v in TOOL_REGISTRY.items() if k != "tradecraft_lookup"}
-        # Inject a marker entry
+        # Inject a marker entry (now a per-session overlay, NOT a global mutation)
         swap_tradecraft_entry({
             "purpose": "p",
             "when_to_use": "w",
             "args_format": "a",
             "description": "MARKER_AAAA",
         })
-        self.assertIn("tradecraft_lookup", TOOL_REGISTRY)
-        self.assertEqual(TOOL_REGISTRY["tradecraft_lookup"]["description"], "MARKER_AAAA")
-        # Pop and confirm other entries are intact
-        pop_tradecraft_entry()
+        self.assertIn("tradecraft_lookup", visible_registry())
+        self.assertEqual(visible_registry()["tradecraft_lookup"]["description"], "MARKER_AAAA")
+        # The shared global dict is NEVER mutated by the swap.
         self.assertNotIn("tradecraft_lookup", TOOL_REGISTRY)
+        # Pop and confirm the session view no longer advertises it, global intact
+        pop_tradecraft_entry()
+        self.assertNotIn("tradecraft_lookup", visible_registry())
         for k, v in before_keys.items():
             self.assertEqual(TOOL_REGISTRY.get(k), v, f"entry {k} was mutated by swap")
 
