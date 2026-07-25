@@ -27,6 +27,7 @@ interface DrawerHeaderProps {
   onClose: () => void
   onOpenFileSystem?: () => void
   conversations: Conversation[]
+  conversationsLoading?: boolean
   handleSelectConversation: (conv: Conversation) => void
   handleDeleteConversation: (id: string) => void
   handleHistoryNewChat: () => void
@@ -48,6 +49,7 @@ export function DrawerHeader({
   onClose,
   onOpenFileSystem,
   conversations,
+  conversationsLoading,
   handleSelectConversation,
   handleDeleteConversation,
   handleHistoryNewChat,
@@ -199,6 +201,7 @@ export function DrawerHeader({
       {showHistory && (
         <ConversationHistory
           conversations={conversations}
+          loading={conversationsLoading}
           currentSessionId={sessionId}
           onBack={() => setShowHistory(false)}
           onSelect={handleSelectConversation}

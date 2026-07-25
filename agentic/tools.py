@@ -48,6 +48,7 @@ from agent_context import (  # noqa: E402
     current_session_id,
     current_phase,
     current_graph_view_cypher,
+    current_llm,
     set_tenant_context,
     set_phase_context,
     set_graph_view_context,
@@ -415,7 +416,7 @@ class Neo4jToolManager:
         Returns:
             Generated Cypher query string
         """
-        if self.llm is None:
+        if (current_llm.get() or self.llm) is None:
             raise RuntimeError(
                 "Graph query LLM is not initialized. "
                 "This usually means project settings have not been loaded yet. "
@@ -490,7 +491,10 @@ User Question: {question}
 
 Cypher Query:"""
 
-        response = await self.llm.ainvoke(prompt)
+        # Prefer the per-session LLM (task-isolated) so concurrent projects run
+        # text-to-Cypher on their OWN model; fall back to the manager's llm.
+        llm = current_llm.get() or self.llm
+        response = await llm.ainvoke(prompt)
         from orchestrator_helpers.json_utils import normalize_content
         return self._extract_cypher_from_response(normalize_content(response.content))
 
@@ -2082,7 +2086,7 @@ class PhaseAwareToolExecutor:
         # reachable (§20.2 no-leak). Gated on the per-project capture flag; NEVER
         # added to API-key/OSINT tools (§15.4).
         if (tool_name in _CAPTURE_ROUTED_TOOLS
-                and getattr(self, "_capture_proxy_enabled", False)):
+                and bool(get_setting('CAPTURE_PROXY_ENABLED', False))):
             _redamon_ctx = self._build_redamon_ctx(tool_name)
             if _redamon_ctx:
                 tool_args = {**tool_args, "_redamon_ctx": _redamon_ctx}

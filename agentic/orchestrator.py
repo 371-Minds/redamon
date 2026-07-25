@@ -36,6 +36,7 @@ from orchestrator_helpers import (
     get_config_values,
 )
 from orchestrator_helpers.llm_setup import setup_llm, apply_project_settings
+from agent_context import current_llm
 from orchestrator_helpers.streaming import clear_stale_streaming_state, emit_streaming_events
 from orchestrator_helpers.nodes import (
     initialize_node,
@@ -722,10 +723,10 @@ class AgentOrchestrator:
 
         # Add nodes — async wrappers that pass instance state to extracted functions
         async def _initialize(state, config=None):
-            return await initialize_node(state, config, llm=self.llm, neo4j_creds=neo4j_creds)
+            return await initialize_node(state, config, llm=(current_llm.get() or self.llm), neo4j_creds=neo4j_creds)
 
         async def _think(state, config=None):
-            return await think_node(state, config, llm=self.llm, guidance_queues=self._guidance_queues, neo4j_creds=neo4j_creds, streaming_callbacks=self._streaming_callbacks, graph_view_cyphers=self._graph_view_cyphers)
+            return await think_node(state, config, llm=(current_llm.get() or self.llm), guidance_queues=self._guidance_queues, neo4j_creds=neo4j_creds, streaming_callbacks=self._streaming_callbacks, graph_view_cyphers=self._graph_view_cyphers)
 
         async def _execute_tool(state, config=None):
             return await execute_tool_node(state, config, tool_executor=self.tool_executor, streaming_callbacks=self._streaming_callbacks, session_manager_base=_SESSION_MANAGER_BASE, graph_view_cyphers=self._graph_view_cyphers)
@@ -746,7 +747,7 @@ class AgentOrchestrator:
             return await process_answer_node(state, config)
 
         async def _generate_response(state, config=None):
-            return await generate_response_node(state, config, llm=self.llm, streaming_callbacks=self._streaming_callbacks, neo4j_creds=neo4j_creds)
+            return await generate_response_node(state, config, llm=(current_llm.get() or self.llm), streaming_callbacks=self._streaming_callbacks, neo4j_creds=neo4j_creds)
 
         async def _await_tool_confirmation(state, config=None):
             return await await_tool_confirmation_node(state, config)
@@ -758,7 +759,7 @@ class AgentOrchestrator:
         # Prebuild the member graph once. Reads self.llm at call time via
         # getter (self.llm is None here; populated by _setup_llm later).
         self.fireteam_member_graph = build_fireteam_member_graph(
-            llm_getter=lambda: self.llm,
+            llm_getter=lambda: (current_llm.get() or self.llm),
             tool_executor=self.tool_executor,
             streaming_callbacks=self._streaming_callbacks,
             session_manager_base=_SESSION_MANAGER_BASE,
@@ -778,7 +779,7 @@ class AgentOrchestrator:
         async def _fireteam_collect(state, config=None):
             return await fireteam_collect_node(
                 state, config,
-                llm=self.llm,
+                llm=(current_llm.get() or self.llm),
                 neo4j_creds=neo4j_creds,
                 streaming_callbacks=self._streaming_callbacks,
             )
@@ -1293,7 +1294,10 @@ class AgentOrchestrator:
 
         # Fail fast: if no LLM could be configured, return an error immediately
         # instead of letting the guardrail's fail-closed mask it as "Target Blocked".
-        if self.llm is None:
+        # Mirror EXACTLY the resolution the graph nodes use (current_llm.get() or
+        # self.llm): the per-session LLM is authoritative when set, with the shared
+        # self.llm as fallback.
+        if (current_llm.get() or self.llm) is None:
             msg = "LLM not configured. Please add an API key in Global Settings."
             logger.error(f"[{user_id}/{project_id}/{session_id}] {msg}")
             await streaming_callback.on_error(msg, recoverable=False)

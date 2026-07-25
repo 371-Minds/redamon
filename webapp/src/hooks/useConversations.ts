@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 export interface Conversation {
   id: string
@@ -32,6 +32,13 @@ export function useConversations(projectId: string, userId: string) {
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Drop the previous project's list the instant the project changes, so the
+  // history panel shows a loading spinner (not stale rows) until the new
+  // project's conversations arrive.
+  useEffect(() => {
+    setConversations([])
+  }, [projectId])
+
   const fetchConversations = useCallback(async () => {
     if (!projectId || !userId) return
 
@@ -50,12 +57,16 @@ export function useConversations(projectId: string, userId: string) {
       if (!res.ok) throw new Error('Failed to fetch conversations')
       const data = await res.json()
       setConversations(data)
+      return data as Conversation[]
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err.message)
       }
     } finally {
-      setLoading(false)
+      // Only the most-recent fetch owns the loading flag; a superseded/aborted
+      // fetch must not flip the spinner off while the newer one is still running
+      // (which would flash "No sessions yet" during a project switch).
+      if (abortRef.current === controller) setLoading(false)
     }
   }, [projectId, userId])
 

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.3] - 2026-07-25
+
+### Fixed
+
+- **Concurrent agent sessions cross-contaminated each other's settings, model, and capture routing.** The agent serves all sessions in one event loop but held per-project settings in a module-global singleton and mutated shared LLM / capture fields on the single orchestrator instance, so the last project to start a turn overwrote them for every other session running at the same time. In practice a project with Exploit-Path Search shadow-mode ON forced OBSERVE-ONLY onto concurrent projects that had it OFF (and vice-versa), and two projects on different models could run on each other's LLM. Settings are now bound per asyncio task via `contextvars` (the module global is kept only as a fallback for readers outside a session task), and the session LLM, the capture-proxy gate (`CAPTURE_PROXY_ENABLED`, now read at tool-execution time), and the neo4j text-to-Cypher LLM are all resolved per session. Covered by [agentic/tests/test_settings_llm_isolation.py](agentic/tests/test_settings_llm_isolation.py) (16 unit / integration / concurrency checks, including the race reproduced on the pre-fix code); no regression across the full agent suite.
+- **Exploit-Path Search (LATS) now drives by default when enabled.** The per-project `agentLatsShadowMode` default was flipped from `true` (observe-only) to `false` (drive) across the Prisma schema, the agent defaults, and the AI Agent Behaviour form, so an enabled search issues probes instead of only building the tree. Existing projects keep their stored value.
+- **Web UI: each project now restores its own agent session.** Selecting a different project from the top dropdown used to leave the previous project's conversation on screen (and route new messages to it), because the open session was tracked globally. It is now remembered per project and restored on switch (a fresh chat when the project has none).
+- **Web UI: a pending "Agent Question" no longer follows you into other sessions.** The question / approval / tool-confirmation modal is live drawer state whose only cross-session reset was skipped during a conversation restore, so an unanswered prompt could persist onto every session opened afterwards. Restoring a conversation now clears those modals and their guard refs before re-arming only that conversation's genuinely-pending prompt.
+- **Web UI: session history shows a loading spinner instead of the previous project's list.** Opening history after a project switch briefly showed the old project's sessions until the fetch finished; the list is now cleared on project change and a spinner is shown while the new project's conversations load.
+
+---
+
 ## [6.2.2] - 2026-07-25
 
 ### Security

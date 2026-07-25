@@ -9,6 +9,7 @@ Mirrors the pattern from recon/project_settings.py.
 """
 import os
 import logging
+import contextvars
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -664,12 +665,21 @@ def get_settings() -> dict[str, Any]:
     """
     Get current agent settings.
 
-    Returns cached settings if loaded for a project, otherwise defaults.
-    Use load_project_settings() to fetch settings for a specific project.
+    Resolution order (concurrency-safe):
+      1. The per-task ContextVar `_settings_ctx`, set by load_project_settings()
+         inside each session's own asyncio task. This isolates concurrent
+         sessions for different projects so they never read each other's values.
+      2. The module-global `_settings` (last-loaded snapshot). This is the
+         fallback for readers OUTSIDE a session task - HTTP endpoints
+         (/api/roe/parse, /api/report/summarize), /health, and tests that set
+         `_settings` directly - preserving the pre-ContextVar behavior for them.
+      3. Memory-governed DEFAULT_AGENT_SETTINGS until any project is loaded.
 
-    Returns:
-        Dictionary of settings in SCREAMING_SNAKE_CASE format
+    Use load_project_settings() to fetch settings for a specific project.
     """
+    ctx = _settings_ctx.get()
+    if ctx is not None:
+        return ctx
     global _settings
     if _settings is not None:
         return _settings
@@ -679,7 +689,18 @@ def get_settings() -> dict[str, Any]:
     return apply_memory_governor(DEFAULT_AGENT_SETTINGS.copy())
 
 
-# Singleton settings instance
+# Per-task settings binding: the PRIMARY source. Each concurrent session runs in
+# its own asyncio task; load_project_settings() sets this so a task always reads
+# its OWN project's settings regardless of what other concurrent sessions load.
+# (asyncio copies the context at task creation, so fireteam member sub-tasks
+# spawned after the load inherit the correct snapshot automatically.)
+_settings_ctx: contextvars.ContextVar[Optional[dict[str, Any]]] = contextvars.ContextVar(
+    "agent_settings", default=None
+)
+
+# Module-global FALLBACK (last-loaded snapshot). Used only by readers running
+# outside a session task, and by tests that assign `_settings`/`_current_project_id`
+# directly. Not the primary source while a session task is active.
 _settings: Optional[dict[str, Any]] = None
 _current_project_id: Optional[str] = None
 
@@ -758,20 +779,25 @@ def load_project_settings(project_id: str) -> dict[str, Any]:
 
     if not webapp_url:
         logger.warning("WEBAPP_API_URL not set, using DEFAULT_AGENT_SETTINGS")
-        _settings = DEFAULT_AGENT_SETTINGS.copy()
+        settings = DEFAULT_AGENT_SETTINGS.copy()
     else:
         try:
-            _settings = fetch_agent_settings(project_id, webapp_url)
-            logger.info(f"Loaded {len(_settings)} agent settings from API for project {project_id}")
+            settings = fetch_agent_settings(project_id, webapp_url)
+            logger.info(f"Loaded {len(settings)} agent settings from API for project {project_id}")
         except Exception as e:
             logger.error(f"Failed to fetch agent settings for project {project_id}: {e}")
             logger.warning("Falling back to DEFAULT_AGENT_SETTINGS")
-            _settings = DEFAULT_AGENT_SETTINGS.copy()
+            settings = DEFAULT_AGENT_SETTINGS.copy()
 
-    _current_project_id = project_id
     # Memory governor (Part 3): scale concurrency to RAM available this turn.
-    _settings = apply_memory_governor(_settings)
-    return _settings
+    settings = apply_memory_governor(settings)
+
+    # PRIMARY: bind to this asyncio task so concurrent sessions stay isolated.
+    _settings_ctx.set(settings)
+    # FALLBACK: last-loaded snapshot for out-of-task readers + test compatibility.
+    _settings = settings
+    _current_project_id = project_id
+    return settings
 
 
 def get_setting(key: str, default: Any = None) -> Any:
@@ -796,6 +822,7 @@ def reload_settings(project_id: Optional[str] = None) -> dict[str, Any]:
         return load_project_settings(project_id)
     _settings = None
     _current_project_id = None
+    _settings_ctx.set(None)
     return get_settings()
 
 

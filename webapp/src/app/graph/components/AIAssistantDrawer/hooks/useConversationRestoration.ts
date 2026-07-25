@@ -6,12 +6,13 @@ import type { ThinkingItem, ToolExecutionItem, PlanWaveItem, DeepThinkItem, Fire
 import type { ActiveSkill } from './useSendHandlers'
 import { foldLatsRestoreMarkers } from './latsChatState'
 import { reconcileTimeline } from './timelineReconcile'
+import { saveProjectSession, getProjectSession } from '../sessionMemory'
 
 interface ConversationRestorationDeps {
   // From useConversations
   loadConversation: (id: string) => Promise<any>
   deleteConversation: (id: string) => Promise<void>
-  fetchConversations: () => Promise<void>
+  fetchConversations: () => Promise<Conversation[] | undefined>
   // Props
   onSwitchSession?: (sessionId: string) => void
   onRefetchGraph?: () => void
@@ -87,6 +88,25 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     // socket connect) and folds the fresh DB timeline back in via reconcile,
     // instead of switching sessions / resetting interaction state.
     const isResync = opts?.resync === true
+
+    // Clear any pending interaction modal (question / approval / tool
+    // confirmation) from the PREVIOUSLY-viewed session BEFORE restoring, so a
+    // stale prompt can never carry over into a different conversation. The
+    // per-conversation branches further down re-arm only THIS conversation's
+    // genuinely-pending prompt. Clearing here (not in the [sessionId] effect,
+    // which is skipped during restore) also covers the load-failure early-return
+    // below and resets the awaiting* refs that nothing else clears on a switch.
+    if (!isResync) {
+      setAwaitingApproval(false); setApprovalRequest(null)
+      setAwaitingQuestion(false); setQuestionRequest(null)
+      setAwaitingToolConfirmation(false); setToolConfirmationRequest(null)
+      awaitingApprovalRef.current = false
+      awaitingQuestionRef.current = false
+      awaitingToolConfirmationRef.current = false
+      pendingApprovalToolId.current = null
+      pendingApprovalWaveId.current = null
+    }
+
     const full = await loadConversation(conv.id)
     if (!full) return
 
@@ -909,6 +929,9 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
 
     setChatItems(restored)
     setConversationId(conv.id)
+    // Remember this conversation as the project's active session so switching
+    // projects later restores it (per-project session memory).
+    saveProjectSession(projectId, conv.id)
     setCurrentPhase((conv.currentPhase || 'informational') as Phase)
     setAttackPathType(lastAttackPathType)
     setIterationCount(conv.iterationCount || 0)
@@ -1005,6 +1028,23 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     }
   }, [deleteConversation, onRefetchGraph, conversationId, handleNewChat])
 
+  // Restore the active session for the CURRENT project (called on project
+  // switch). If the project had a session open, re-open it (which also re-points
+  // the live websocket sessionId via onSwitchSession); otherwise start a fresh
+  // empty chat. Prevents the previous project's conversation from leaking in.
+  const restoreForProject = useCallback(async () => {
+    const savedId = getProjectSession(projectId)
+    if (savedId) {
+      const list = await fetchConversations()
+      const match = Array.isArray(list) ? list.find((c) => c.id === savedId) : undefined
+      if (match) {
+        await handleSelectConversation(match)
+        return
+      }
+    }
+    handleNewChat()
+  }, [projectId, fetchConversations, handleSelectConversation, handleNewChat])
+
   return {
     conversationId,
     setConversationId,
@@ -1014,5 +1054,6 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     resyncActiveConversation,
     handleHistoryNewChat,
     handleDeleteConversation,
+    restoreForProject,
   }
 }

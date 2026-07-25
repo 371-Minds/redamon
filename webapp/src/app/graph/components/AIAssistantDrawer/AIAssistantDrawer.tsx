@@ -22,6 +22,7 @@ import { useModelPicker } from './hooks/useModelPicker'
 import { useSettingsModal } from './hooks/useSettingsModal'
 import { useWebSocketHandler } from './hooks/useWebSocketHandler'
 import { useConversationRestoration } from './hooks/useConversationRestoration'
+import { clearProjectSession } from './sessionMemory'
 import { useSendHandlers } from './hooks/useSendHandlers'
 import { useDownloadMarkdown } from './hooks/useDownloadMarkdown'
 
@@ -145,6 +146,7 @@ export function AIAssistantDrawer({
   // ─── Conversation persistence ─────────────────────────────────────────────
   const {
     conversations,
+    loading: conversationsLoading,
     fetchConversations,
     createConversation,
     deleteConversation,
@@ -164,6 +166,7 @@ export function AIAssistantDrawer({
     resyncActiveConversation,
     handleHistoryNewChat,
     handleDeleteConversation,
+    restoreForProject,
   } = useConversationRestoration({
     loadConversation,
     deleteConversation,
@@ -210,8 +213,11 @@ export function AIAssistantDrawer({
     setConversationId(null)
     setShowHistory(false)
     setActiveSkill(null)
+    // Explicit "new chat": forget this project's saved session so a later
+    // switch back starts fresh rather than reopening the abandoned chat.
+    clearProjectSession(projectId)
     onResetSession?.()
-  }, [resetChatState, resetInteractionState, resetScrollState, setConversationId, setShowHistory, setActiveSkill, onResetSession])
+  }, [resetChatState, resetInteractionState, resetScrollState, setConversationId, setShowHistory, setActiveSkill, onResetSession, projectId])
 
   // Keep ref up-to-date
   useEffect(() => { handleNewChatRef.current = handleNewChat }, [handleNewChat])
@@ -321,6 +327,18 @@ export function AIAssistantDrawer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
+  // Per-project session memory: when the current project actually changes,
+  // restore THAT project's last-open session (or a fresh chat), so the previous
+  // project's conversation never leaks in. Skips the initial mount so opening
+  // the drawer for the first time keeps its existing blank behavior.
+  const prevProjectIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevProjectIdRef.current
+    prevProjectIdRef.current = projectId
+    if (prev === null || prev === projectId || !projectId) return
+    restoreForProject()
+  }, [projectId, restoreForProject])
+
   // ─── Drawer width (persisted per-user, drag handle on left edge) ───────────
   const [drawerWidth, setDrawerWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_WIDTH_PX
@@ -400,6 +418,7 @@ export function AIAssistantDrawer({
         onClose={onClose}
         onOpenFileSystem={onOpenFileSystem}
         conversations={conversations}
+        conversationsLoading={conversationsLoading}
         handleSelectConversation={handleSelectConversation}
         handleDeleteConversation={handleDeleteConversation}
         handleHistoryNewChat={handleHistoryNewChat}

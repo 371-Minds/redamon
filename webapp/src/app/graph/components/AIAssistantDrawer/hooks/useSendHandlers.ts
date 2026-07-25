@@ -2,6 +2,7 @@ import { useCallback, useRef, KeyboardEvent } from 'react'
 import type { ApprovalRequestPayload, QuestionRequestPayload, ToolConfirmationRequestPayload } from '@/lib/websocket-types'
 import type { ChatItem, Message, FireteamItem, FireteamMemberPanel } from '../types'
 import type { PlanWaveItem } from '../AgentTimeline'
+import { saveProjectSession } from '../sessionMemory'
 
 interface ChatSkillSummary {
   id: string
@@ -263,6 +264,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
         const conv = await createConversation(sessionId)
         if (conv) {
           setConversationId(conv.id)
+          saveProjectSession(projectId, conv.id)
         }
       }
 
@@ -322,6 +324,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       const conv = await createConversation(sessionId)
       if (conv) {
         setConversationId(conv.id)
+        saveProjectSession(projectId, conv.id)
       }
     }
 

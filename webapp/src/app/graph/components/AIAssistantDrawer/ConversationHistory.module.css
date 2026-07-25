@@ -101,6 +101,18 @@
   font-size: 0.8125rem;
 }
 
+.spinner {
+  margin-bottom: 8px;
+  opacity: 0.7;
+  animation: chSpin 0.8s linear infinite;
+}
+
+@keyframes chSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .item {
   display: flex;
   align-items: flex-start;

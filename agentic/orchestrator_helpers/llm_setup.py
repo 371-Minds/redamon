@@ -7,6 +7,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 
 from project_settings import load_project_settings
+from agent_context import set_llm_context
 from orchestrator_helpers.llm_url_guard import validate_llm_base_url
 
 logger = logging.getLogger(__name__)
@@ -422,14 +423,10 @@ def apply_project_settings(orchestrator, project_id: str) -> None:
     """Load project settings from webapp API and reconfigure LLM if model changed."""
     settings = load_project_settings(project_id)
 
-    # HTTP traffic capture (Phase 1): per-project routing gate for the agent's
-    # target tools. When on, target-facing tool calls carry a signed X-Redamon-Ctx
-    # tag and route through the capture proxy (the kali MCP server does the actual
-    # rerouting; the agent only signs + tags).
-    if orchestrator.tool_executor:
-        orchestrator.tool_executor.set_capture_proxy_enabled(
-            bool(settings.get('CAPTURE_PROXY_ENABLED', False))
-        )
+    # HTTP traffic capture (Phase 1): the per-project routing gate is now read
+    # from the (task-isolated) CAPTURE_PROXY_ENABLED setting at tool-execution
+    # time (tools.py), so concurrent sessions can't clobber a shared flag. No
+    # per-turn mutation of the shared tool_executor is needed here anymore.
 
     new_model = settings.get('OPENAI_MODEL', 'claude-opus-4-6')
 
@@ -482,6 +479,7 @@ def apply_project_settings(orchestrator, project_id: str) -> None:
         except (ValueError, Exception) as e:
             logger.error(f"LLM setup failed for {new_model}: {type(e).__name__}: {e}")
             orchestrator.llm = None
+            set_llm_context(None)
             return
 
         # Update Neo4j tool's LLM for text-to-Cypher queries
@@ -493,3 +491,9 @@ def apply_project_settings(orchestrator, project_id: str) -> None:
     user_settings = settings.get('USER_SETTINGS', {})
     if user_settings:
         orchestrator._user_settings = user_settings
+
+    # Bind THIS session's resolved LLM to the current asyncio task so concurrent
+    # sessions for different projects each read their own model at run time
+    # instead of a shared, race-prone orchestrator.llm. apply_project_settings is
+    # fully synchronous, so this capture is atomic for this task.
+    set_llm_context(orchestrator.llm)

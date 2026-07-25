@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Plus, Trash2, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, MessageSquare, Loader2 } from 'lucide-react'
 import type { Conversation } from '@/hooks/useConversations'
 import styles from './ConversationHistory.module.css'
 
@@ -30,6 +30,7 @@ interface ConversationHistoryProps {
   onSelect: (conversation: Conversation) => void
   onDelete: (id: string) => void
   onNewChat: () => void
+  loading?: boolean
 }
 
 export function ConversationHistory({
@@ -39,6 +40,7 @@ export function ConversationHistory({
   onSelect,
   onDelete,
   onNewChat,
+  loading = false,
 }: ConversationHistoryProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -83,7 +85,12 @@ export function ConversationHistory({
       </div>
 
       <div className={styles.list}>
-        {conversations.length === 0 ? (
+        {loading && conversations.length === 0 ? (
+          <div className={styles.empty}>
+            <Loader2 size={22} className={styles.spinner} />
+            <span>Loading sessions…</span>
+          </div>
+        ) : conversations.length === 0 ? (
           <div className={styles.empty}>
             <MessageSquare size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
             <span>No sessions yet</span>
