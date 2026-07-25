@@ -281,18 +281,18 @@ class AgentOrchestrator:
         # prior precedence. The KB instance stays attached to the web-search
         # manager from construction; the closure gates on KB_ENABLED per session.
 
-        # Shodan
+        # Shodan. The per-project enable/disable is NO LONGER done by swapping the
+        # tool in/out of the shared _all_tools registry (which raced across
+        # concurrent sessions). Shodan stays registered; PhaseAwareToolExecutor
+        # .execute() gates it per-session on the task-isolated SHODAN_ENABLED. Here
+        # we only refresh the (user-global) API key on the shared manager.
         shodan_key = user_settings.get('shodanApiKey', '')
         if self._shodan_manager and self.tool_executor:
-            shodan_enabled = get_setting('SHODAN_ENABLED', True)
-            if shodan_key and shodan_enabled and self._shodan_manager.api_key != shodan_key:
+            if shodan_key and self._shodan_manager.api_key != shodan_key:
                 self._shodan_manager.api_key = shodan_key
                 shodan_tool = self._shodan_manager.get_tool()
                 self.tool_executor.update_shodan_tool(shodan_tool)
                 logger.info("Updated Shodan OSINT tool with user settings key")
-            elif not shodan_enabled:
-                self.tool_executor.update_shodan_tool(None)
-                logger.info("Shodan tool disabled via project settings")
         if shodan_key and self._shodan_manager:
             self._shodan_manager.key_rotator = _build_rotator(shodan_key, 'shodan')
 

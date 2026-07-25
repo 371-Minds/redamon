@@ -13,7 +13,7 @@ Pure unittest (no pytest); runs in the agent container.
 """
 import os
 import types
-import asyncio
+import contextvars
 import unittest
 from unittest.mock import MagicMock
 
@@ -70,21 +70,13 @@ class TestKBQueryOverrides(unittest.TestCase):
 
 class TestKBConfigConcurrencyIsolation(unittest.TestCase):
     """Reproduce the shared-mutation race (BEFORE) and prove the use-time read
-    (AFTER) isolates concurrent sessions, using the exact _kb_knob resolution."""
+    (AFTER) isolates concurrent sessions, using the exact _kb_knob resolution.
 
-    def setUp(self):
-        self._orig = ps.fetch_agent_settings
-        ps._settings = None
-        ps._settings_ctx.set(None)
-
-        def _fetch(project_id, webapp_url):
-            s = dict(ps.DEFAULT_AGENT_SETTINGS)
-            s["KB_TOP_K"] = {"PA": 3, "PB": 15}[project_id]
-            return s
-        ps.fetch_agent_settings = _fetch
+    Each session runs in its own contextvars.Context (as asyncio.create_task
+    copies the context per task). Sets the settings ContextVar directly (does NOT
+    monkeypatch fetch_agent_settings) so the test is robust to suite-ordering."""
 
     def tearDown(self):
-        ps.fetch_agent_settings = self._orig
         ps._settings = None
         ps._settings_ctx.set(None)
 
@@ -95,25 +87,24 @@ class TestKBConfigConcurrencyIsolation(unittest.TestCase):
             v = ps.get_setting(key, None)
             return v if v is not None else getattr(shared_kb, attr, None)
 
-        before, after = {}, {}
-        barrier = asyncio.Barrier(2)
+        def run_session(pid):
+            settings = dict(ps.DEFAULT_AGENT_SETTINGS)
+            settings["KB_TOP_K"] = {"PA": 3, "PB": 15}[pid]
+            ps._settings_ctx.set(settings)                 # task-local (isolated)
+            ps._settings = settings                        # shared global (last writer)
+            shared_kb.top_k = ps.get_setting("KB_TOP_K")   # BEFORE: mutate shared kb
+            return _kb_knob("KB_TOP_K", "top_k")           # AFTER read site
 
-        async def sess(pid, label):
-            ps.load_project_settings(pid)
-            shared_kb.top_k = ps.get_setting("KB_TOP_K")  # BEFORE: mutate shared
-            await barrier.wait()
-            before[label] = shared_kb.top_k                 # BEFORE read site
-            after[label] = _kb_knob("KB_TOP_K", "top_k")    # AFTER read site
+        ctx_a = contextvars.copy_context()
+        ctx_b = contextvars.copy_context()
+        after_a = ctx_a.run(run_session, "PA")
+        after_b = ctx_b.run(run_session, "PB")
 
-        async def main():
-            await asyncio.gather(sess("PA", "A"), sess("PB", "B"))
-
-        asyncio.run(main())
-        # BEFORE: both read the last writer -> contaminated (identical)
-        self.assertEqual(before["A"], before["B"])
-        # AFTER: each reads its own project value -> isolated
-        self.assertEqual(after["A"], 3)
-        self.assertEqual(after["B"], 15)
+        # BEFORE: the shared kb.top_k reflects only the last writer (contaminated).
+        self.assertEqual(shared_kb.top_k, 15)
+        # AFTER: each context read its own project value -> isolated.
+        self.assertEqual(after_a, 3)
+        self.assertEqual(after_b, 15)
 
 
 if __name__ == "__main__":

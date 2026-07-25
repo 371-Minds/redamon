@@ -2104,6 +2104,16 @@ class PhaseAwareToolExecutor:
                 "error": f"Tool '{tool_name}' not found"
             }
 
+        # Per-session gate: Shodan is enabled/disabled per project. Read the
+        # task-isolated SHODAN_ENABLED at execute-time instead of swapping it in/out
+        # of the shared _all_tools registry (which raced across concurrent sessions).
+        if tool_name == "shodan" and not bool(get_setting('SHODAN_ENABLED', True)):
+            return {
+                "success": False,
+                "output": None,
+                "error": "Shodan is disabled for this project (SHODAN_ENABLED=false)."
+            }
+
         # HTTP traffic capture (Phase 1): for target-facing tools, inject a signed,
         # opaque X-Redamon-Ctx tag as a stripped arg the LLM never sees. The kali
         # MCP tool turns it into the proxy flag + header ONLY when the proxy is
