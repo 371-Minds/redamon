@@ -344,23 +344,11 @@ class AgentOrchestrator:
         if shodan_key and self._shodan_manager:
             self._shodan_manager.key_rotator = _build_rotator(shodan_key, 'shodan')
 
-        # WPScan API token (injected silently into execute_wpscan args)
-        wpscan_token = user_settings.get('wpscanApiToken', '')
-        if wpscan_token and self.tool_executor:
-            self.tool_executor.set_wpscan_api_token(wpscan_token)
-            logger.info("WPScan API token configured for vulnerability enrichment")
-
-        # URLScan API key (injected silently into execute_gau config)
-        urlscan_key = user_settings.get('urlscanApiKey', '')
-        if urlscan_key and self.tool_executor:
-            self.tool_executor.set_gau_urlscan_api_key(urlscan_key)
-            logger.info("URLScan API key configured for GAU enrichment")
-
-        # PDCP API key (injected silently as PDCP_API_KEY env var into cve_intel calls)
-        pdcp_key = user_settings.get('pdcpApiKey', '')
-        if pdcp_key and self.tool_executor:
-            self.tool_executor.set_cve_intel_api_key(pdcp_key)
-            logger.info("PDCP API key configured for cve_intel rate-limit upgrade")
+        # WPScan / URLScan / PDCP API keys are no longer stamped onto the shared
+        # tool_executor here (which raced across concurrent sessions). They are
+        # read at tool-execution time from the task-isolated USER_SETTINGS via
+        # get_setting() inside PhaseAwareToolExecutor.execute() (tools.py), so each
+        # session injects its own key.
 
         # Google dork (SerpAPI)
         serp_api_key = user_settings.get('serpApiKey', '')

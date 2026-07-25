@@ -2116,25 +2116,35 @@ class PhaseAwareToolExecutor:
                 # by name (resource_id, query, cve_id, section_path, force_refresh).
                 output = await active_tool.ainvoke(tool_args)
             elif tool_name == "execute_wpscan":
-                # Inject WPScan API token if configured and not already in args
+                # Inject WPScan API token if configured and not already in args.
+                # Read from the task-isolated settings at use-time (not a shared
+                # instance field) so concurrent sessions never cross-contaminate.
                 args = tool_args.get("args", "")
-                if getattr(self, '_wpscan_api_token', '') and '--api-token' not in args:
-                    adjusted = {**tool_args, "args": f"--api-token {self._wpscan_api_token} {args}"}
+                wpscan_token = (get_setting('USER_SETTINGS', {}).get('wpscanApiToken', '')
+                                or getattr(self, '_wpscan_api_token', ''))
+                if wpscan_token and '--api-token' not in args:
+                    adjusted = {**tool_args, "args": f"--api-token {wpscan_token} {args}"}
                 else:
                     adjusted = tool_args
                 output = await active_tool.ainvoke(adjusted)
             elif tool_name == "execute_gau":
-                # Inject URLScan API key if configured (written to ~/.gau.toml by MCP server)
-                if getattr(self, '_gau_urlscan_api_key', ''):
-                    adjusted = {**tool_args, "urlscan_api_key": self._gau_urlscan_api_key}
+                # Inject URLScan API key if configured (written to ~/.gau.toml by MCP
+                # server). Read at use-time from task-isolated settings (no shared field).
+                urlscan_key = (get_setting('USER_SETTINGS', {}).get('urlscanApiKey', '')
+                               or getattr(self, '_gau_urlscan_api_key', ''))
+                if urlscan_key:
+                    adjusted = {**tool_args, "urlscan_api_key": urlscan_key}
                 else:
                     adjusted = tool_args
                 output = await active_tool.ainvoke(adjusted)
             elif tool_name == "cve_intel":
                 # Inject PDCP API key if configured. The MCP wrapper translates
                 # this into a per-call PDCP_API_KEY env var; LLM never sees it.
-                if getattr(self, '_cve_intel_api_key', ''):
-                    adjusted = {**tool_args, "api_key": self._cve_intel_api_key}
+                # Read at use-time from task-isolated settings (no shared field).
+                pdcp_key = (get_setting('USER_SETTINGS', {}).get('pdcpApiKey', '')
+                            or getattr(self, '_cve_intel_api_key', ''))
+                if pdcp_key:
+                    adjusted = {**tool_args, "api_key": pdcp_key}
                 else:
                     adjusted = tool_args
                 output = await active_tool.ainvoke(adjusted)
