@@ -35,7 +35,18 @@ import re
 import socket
 import sqlite3
 import textwrap
+import contextvars
 from project_settings import get_setting
+
+# Per-session tradecraft catalog (concurrency isolation). The parsed resource
+# list and its slug index are bound to the current asyncio task so concurrent
+# projects don't fetch each other's resources. Backed by ContextVars via the
+# _resources/_by_slug properties on the manager; default None falls back to the
+# last-set baseline (single-session / non-task callers behave as before).
+_tc_resources_ctx: contextvars.ContextVar = contextvars.ContextVar(
+    "tc_resources", default=None)
+_tc_by_slug_ctx: contextvars.ContextVar = contextvars.ContextVar(
+    "tc_by_slug", default=None)
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -1472,6 +1483,30 @@ class TradecraftLookupManager:
         self._by_slug: Dict[str, _Resource] = {}
         self._github_token: str = ""
         self._section_sem = asyncio.Semaphore(max(1, section_picker_concurrency))
+
+    # ---- Per-session catalog (ContextVar-backed; isolates concurrent projects) ----
+    # All reads of self._resources / self._by_slug transparently resolve to the
+    # current asyncio task's catalog (set by set_resources in _apply_project_
+    # settings), falling back to the last-set baseline when the task never set one.
+    @property
+    def _resources(self):
+        v = _tc_resources_ctx.get()
+        return v if v is not None else self.__dict__.get("_resources_base", [])
+
+    @_resources.setter
+    def _resources(self, value):
+        self.__dict__["_resources_base"] = value
+        _tc_resources_ctx.set(value)
+
+    @property
+    def _by_slug(self):
+        v = _tc_by_slug_ctx.get()
+        return v if v is not None else self.__dict__.get("_by_slug_base", {})
+
+    @_by_slug.setter
+    def _by_slug(self, value):
+        self.__dict__["_by_slug_base"] = value
+        _tc_by_slug_ctx.set(value)
 
     # ---- Setters called from orchestrator._apply_project_settings ----
 

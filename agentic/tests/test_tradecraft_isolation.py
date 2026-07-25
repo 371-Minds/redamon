@@ -57,5 +57,31 @@ class TestTradecraftScalarIsolation(unittest.TestCase):
         self.assertEqual(after_b, 45)
 
 
+class TestTradecraftResourcesIsolation(unittest.TestCase):
+    """Stage 5b: the parsed tradecraft resource catalog (self._resources /
+    self._by_slug) is per-session (ContextVar-backed), so the tool fetches THIS
+    project's resources, consistent with the per-session prompt catalog."""
+
+    def test_resources_isolated_per_context(self):
+        try:
+            from orchestrator_helpers.tradecraft_lookup import TradecraftLookupManager as M
+        except Exception:
+            self.skipTest("orchestrator_helpers stubbed by an earlier test (test_t14)")
+
+        m = M(llm=None, mcp_manager=None)  # ONE shared manager instance
+
+        def sess(rows):
+            m.set_resources(rows)
+            return (len(m._resources), set(m._by_slug.keys()))
+
+        a = contextvars.copy_context().run(
+            sess, [{"id": "a", "slug": "sa", "name": "n", "url": "http://a"}])
+        b = contextvars.copy_context().run(
+            sess, [{"id": "b1", "slug": "sb1", "name": "n", "url": "http://b"},
+                   {"id": "b2", "slug": "sb2", "name": "n", "url": "http://b2"}])
+        self.assertEqual(a, (1, {"sa"}))
+        self.assertEqual(b, (2, {"sb1", "sb2"}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
