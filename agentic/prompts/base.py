@@ -7,7 +7,7 @@ Common prompts used across all attack paths.
 import os
 from pathlib import Path
 
-from .tool_registry import TOOL_REGISTRY
+from .tool_registry import TOOL_REGISTRY, visible_registry
 from prompt_safety import UNTRUSTED_OUTPUT_GUIDANCE
 
 
@@ -227,9 +227,13 @@ def build_workspace_layout_block(project_id: str) -> str:
 
 
 def _get_visible_tools(allowed_tools):
-    """Get TOOL_REGISTRY entries for allowed tools, preserving registry order."""
+    """Get registry entries for allowed tools, preserving registry order.
+
+    Reads the per-session merged view (visible_registry) so the current project's
+    tradecraft catalog is used, not whatever a concurrent project last wrote.
+    """
     return [
-        (name, info) for name, info in TOOL_REGISTRY.items()
+        (name, info) for name, info in visible_registry().items()
         if name in allowed_tools
     ]
 

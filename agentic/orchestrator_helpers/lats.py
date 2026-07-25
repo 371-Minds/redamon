@@ -662,10 +662,10 @@ def _tool_arg_keys(tool_name: str) -> List[str]:
     args_format (first key = primary/required). Empty list = the tool takes no /
     freeform args, so no key check applies."""
     try:
-        from prompts.tool_registry import TOOL_REGISTRY
+        from prompts.tool_registry import visible_registry
     except Exception:
         return []
-    af = (TOOL_REGISTRY.get(tool_name, {}) or {}).get("args_format", "") or ""
+    af = (visible_registry().get(tool_name, {}) or {}).get("args_format", "") or ""
     return re.findall(r'"([a-zA-Z_][a-zA-Z0-9_]*)"\s*:', af)
 
 
@@ -717,12 +717,13 @@ def _tool_schema_block(allowed_tools: set) -> str:
     """Render each allowed tool's arg schema for the expand prompt so the model
     emits correctly-shaped tool_args."""
     try:
-        from prompts.tool_registry import TOOL_REGISTRY
+        from prompts.tool_registry import visible_registry
+        _reg = visible_registry()
     except Exception:
-        TOOL_REGISTRY = {}
+        _reg = {}
     lines = []
     for name in sorted(allowed_tools):
-        af = (TOOL_REGISTRY.get(name, {}) or {}).get("args_format", "") if TOOL_REGISTRY else ""
+        af = (_reg.get(name, {}) or {}).get("args_format", "") if _reg else ""
         lines.append(f"  {name}: tool_args = {{{af}}}" if af else f"  {name}: tool_args = {{}}")
     return "\n".join(lines)
 

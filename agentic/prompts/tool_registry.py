@@ -6,10 +6,23 @@ Dict insertion order defines tool priority (first = highest).
 """
 
 import threading
+import contextvars
+from typing import Optional
 
 # Tracks which TOOL_REGISTRY keys were injected by the most recent MCP manifest
 # load, so a subsequent load can remove them cleanly before applying the new set.
 _mcp_injected_keys: set = set()
+
+# Per-session tradecraft catalog. The `tradecraft_lookup` registry entry is the
+# per-PROJECT resource catalog rendered into the system prompt, so it must NOT be
+# stored on the shared global dict (concurrent projects raced, leaking one
+# project's catalog into another's prompt). It is bound to the current asyncio
+# task via this ContextVar; prompt builders read the merged view (visible_registry).
+# Default None == no tradecraft entry, and visible_registry() then returns the
+# global dict unchanged (byte-identical to the pre-overlay behaviour).
+_tradecraft_overlay: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
+    "tradecraft_overlay", default=None
+)
 
 # Serialises mutations (apply / remove) so concurrent fireteam reads never
 # observe a half-mutated dict. Reads themselves don't take the lock — they
@@ -930,19 +943,48 @@ TOOL_REGISTRY = {
 # cannot deliver.
 
 def swap_tradecraft_entry(rich_entry: dict) -> None:
-    """Inject the dynamic per-resource catalog into TOOL_REGISTRY.
+    """Bind this session's per-resource tradecraft catalog to the current task.
 
     `rich_entry` must contain keys: purpose, when_to_use, args_format, description.
-    Empty dict -> remove the entry entirely.
+    Empty dict -> no tradecraft entry for this session.
+
+    Per-session (ContextVar) rather than a global mutation, so concurrent
+    projects never leak each other's resource catalog into the prompt.
     """
-    if not rich_entry:
-        TOOL_REGISTRY.pop("tradecraft_lookup", None)
-        return
-    TOOL_REGISTRY["tradecraft_lookup"] = rich_entry
+    _tradecraft_overlay.set(rich_entry or None)
 
 
 def pop_tradecraft_entry() -> None:
-    TOOL_REGISTRY.pop("tradecraft_lookup", None)
+    _tradecraft_overlay.set(None)
+
+
+def visible_registry() -> dict:
+    """The tool registry as the CURRENT session sees it: the shared/global
+    registry (built-ins + startup web_search swap + MCP-injected entries) with
+    this task's `tradecraft_lookup` catalog merged in.
+
+    Returns the global dict object unchanged when no tradecraft overlay is set,
+    so the default path is byte-identical to the pre-overlay behaviour. When an
+    overlay is set, `tradecraft_lookup` is inserted just before the first
+    MCP-injected entry (or appended when there are none) to preserve the
+    historical tool order [built-ins, tradecraft, mcp] and thus prompt-prefix
+    stability.
+    """
+    tc = _tradecraft_overlay.get()
+    if not tc:
+        return TOOL_REGISTRY
+    merged: dict = {}
+    inserted = False
+    for name, info in TOOL_REGISTRY.items():
+        if name == "tradecraft_lookup":
+            continue  # overlay is authoritative; never duplicate a stale global one
+        if not inserted and name in _mcp_injected_keys:
+            merged["tradecraft_lookup"] = tc
+            inserted = True
+        merged[name] = info
+    if not inserted:
+        merged["tradecraft_lookup"] = tc
+    return merged
 
 
 # =========================================================================

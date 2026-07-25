@@ -149,7 +149,11 @@ def _builtin_tool_names() -> Set[str]:
     if _BUILTIN_NAME_CACHE is None:
         try:
             from prompts.tool_registry import TOOL_REGISTRY, _mcp_injected_keys  # type: ignore
-            _BUILTIN_NAME_CACHE = set(TOOL_REGISTRY.keys()) - set(_mcp_injected_keys)
+            # tradecraft_lookup is a built-in that now lives in the per-session
+            # tradecraft overlay (not the global dict), so add it explicitly.
+            _BUILTIN_NAME_CACHE = (
+                (set(TOOL_REGISTRY.keys()) - set(_mcp_injected_keys)) | {"tradecraft_lookup"}
+            )
         except Exception:
             _BUILTIN_NAME_CACHE = set()
     return _BUILTIN_NAME_CACHE
