@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.2] - 2026-07-25
+
+### Security
+
+- **Unauthenticated OS command injection (RCE) in the agent `GET /files` endpoint closed (CWE-78).** The in-chat file-download endpoint ([agentic/api.py](agentic/api.py)) read a file inside kali-sandbox by interpolating the untrusted `path` query parameter into a `bash -c` command run through the `kali_shell` MCP tool, guarded only by `os.path.normpath` plus a `/tmp/` prefix check. Neither strips shell metacharacters, so `path=/tmp/x; <cmd>` executed arbitrary commands as root inside kali-sandbox, and the route carried no authentication of its own. On a default `docker compose` / `redamon.sh install` the agent is published on `0.0.0.0:8090`, so this was remotely reachable; the `deploy/single-host` hardened posture already keeps the agent REST surface off the public origin (nginx proxies only the four `/ws/*` paths), so that posture was not internet-exposed, though the endpoint stayed reachable unauthenticated container-to-container. The `path` is now `shlex.quote`d in both `kali_shell` sinks so it is always a single literal argument (neutralising `;`, `|`, backtick, `$(...)`, `&&`, and also repairing legitimate filenames with spaces/parens that the unquoted form had broken), and the route now requires `require_internal_auth_only`; the webapp `/api/agent/files` proxy forwards `internalKeyHeaders()` so the now-authenticated endpoint keeps working ([webapp/src/app/api/agent/files/route.ts](webapp/src/app/api/agent/files/route.ts)). Responsibly disclosed by threatroute66; tracked as [GHSA-vqf8-hfgc-v5cf](https://github.com/samugit83/redamon/security/advisories/GHSA-vqf8-hfgc-v5cf) (CVE pending assignment).
+- Covered by [agentic/tests/test_files_injection.py](agentic/tests/test_files_injection.py) (21 unit/regression checks: a `shlex.split` argument-boundary proof over 11 injection/edge vectors plus real `TestClient` auth enforcement) and [tests/test_files_injection_live.sh](tests/test_files_injection_live.sh) (6 live end-to-end checks against the running agent + kali-sandbox: 401 unauthenticated, benign and spaced-filename downloads, and three injection classes proven inert via marker files), plus a webapp route test asserting the internal key is forwarded. Both suites are proven to fail on the pre-fix code.
+- Operators updating an existing deployment must rebuild both changed images: `docker compose build agent webapp && docker compose up -d agent webapp`.
+
+---
+
 ## [6.2.1] - 2026-07-25
 
 ### Fixed
