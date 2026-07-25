@@ -743,10 +743,22 @@ class WebSearchToolManager:
             # Per-call include filter takes precedence over the project-level
             # default whitelist (KB_ENABLED_SOURCES). exclude_sources has no
             # project-level default — it's per-call only.
+            # KB config is read per-session at use-time from the task-isolated
+            # settings (get_setting), so concurrent projects never share a mutated
+            # KB instance. Each knob falls back to the KB's own YAML/config
+            # baseline when the project setting is unset (None), preserving the
+            # previous precedence (project value > kb_config.yaml > defaults).
+            kb = manager.knowledge_base
+            kb_on = get_setting('KB_ENABLED', None) is not False
+
+            def _kb_knob(key, attr):
+                v = get_setting(key, None)
+                return v if v is not None else (getattr(kb, attr, None) if kb else None)
+
             effective_include = (
                 include_sources
                 if include_sources is not None
-                else manager.kb_enabled_sources
+                else get_setting('KB_ENABLED_SOURCES', None)
             )
 
             # Clamp top_k to a sane range so a hallucinated `top_k=1000`
@@ -755,16 +767,28 @@ class WebSearchToolManager:
                 top_k = max(1, min(int(top_k), 20))
 
             # 1. Try local KB first (fast, curated)
-            if manager.knowledge_base:
+            if kb and kb_on:
                 try:
-                    kb_results = manager.knowledge_base.query(
+                    _custom_boosts = get_setting('KB_SOURCE_BOOSTS', None)
+                    _boosts = (
+                        {**(getattr(kb, 'source_boosts', None) or {}), **_custom_boosts}
+                        if _custom_boosts else None
+                    )
+                    kb_results = kb.query(
                         query,
-                        top_k=top_k,
+                        top_k=(top_k if top_k is not None else _kb_knob('KB_TOP_K', 'top_k')),
                         include_sources=effective_include,
                         exclude_sources=exclude_sources,
                         min_cvss=min_cvss,
+                        overfetch_factor=_kb_knob('KB_OVERFETCH_FACTOR', 'overfetch_factor'),
+                        mmr_enabled=_kb_knob('KB_MMR_ENABLED', 'mmr_enabled'),
+                        mmr_lambda=_kb_knob('KB_MMR_LAMBDA', 'mmr_lambda'),
+                        source_boosts=_boosts,
                     )
-                    if manager.knowledge_base.is_sufficient(kb_results):
+                    if kb.is_sufficient(
+                        kb_results,
+                        threshold=_kb_knob('KB_SCORE_THRESHOLD', 'score_threshold'),
+                    ):
                         logger.info(f"KB hit: {query[:60]}... ({len(kb_results)} results)")
                         return _format_kb_results(kb_results)
                 except Exception as e:

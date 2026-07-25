@@ -270,64 +270,16 @@ class AgentOrchestrator:
         if tavily_key and self._web_search_manager:
             self._web_search_manager.key_rotator = _build_rotator(tavily_key, 'tavily')
 
-        # Knowledge Base — apply per-project settings.
-        #
-        # Precedence: per-project value (non-None) > kb_config.yaml
-        # (loaded into the KB instance at construction time) > kb_config.py
-        # DEFAULTS. We only mutate live KB attributes when the
-        # project-level setting is non-None, so a None sentinel in
-        # DEFAULT_AGENT_SETTINGS preserves whatever the YAML loaded —
-        # the common case for operators who tune via kb_config.yaml and
-        # never touch the webapp UI.
-        if getattr(self, '_knowledge_base', None) and self._web_search_manager:
-            kb_enabled = get_setting('KB_ENABLED', None)
-            # None → inherit (default True from kb_config.yaml KB_ENABLED).
-            # False → explicit disable. True → explicit enable.
-            if kb_enabled is not False:
-                kb = self._knowledge_base
-
-                score_threshold = get_setting('KB_SCORE_THRESHOLD', None)
-                if score_threshold is not None:
-                    kb.score_threshold = score_threshold
-
-                top_k = get_setting('KB_TOP_K', None)
-                if top_k is not None:
-                    kb.top_k = top_k
-
-                # Ranking knobs (source boost + MMR diversity)
-                mmr_enabled = get_setting('KB_MMR_ENABLED', None)
-                if mmr_enabled is not None:
-                    kb.mmr_enabled = mmr_enabled
-
-                mmr_lambda = get_setting('KB_MMR_LAMBDA', None)
-                if mmr_lambda is not None:
-                    kb.mmr_lambda = mmr_lambda
-
-                overfetch_factor = get_setting('KB_OVERFETCH_FACTOR', None)
-                if overfetch_factor is not None:
-                    kb.overfetch_factor = overfetch_factor
-
-                custom_boosts = get_setting('KB_SOURCE_BOOSTS', None)
-                if custom_boosts:
-                    # Merge user overrides on top of whatever the KB
-                    # already loaded from kb_config.yaml source_boosts.
-                    # This preserves per-source tunings from the YAML
-                    # for sources the webapp override doesn't mention.
-                    existing = getattr(kb, 'source_boosts', None) or {}
-                    kb.source_boosts = {**existing, **custom_boosts}
-
-                self._web_search_manager.knowledge_base = kb
-                self._web_search_manager.kb_enabled_sources = get_setting(
-                    'KB_ENABLED_SOURCES', None
-                )
-            else:
-                # Project explicitly disabled KB — detach from web search
-                self._web_search_manager.knowledge_base = None
-                self._web_search_manager.kb_enabled_sources = None
-            # Rebuild web_search tool to reflect new KB state
-            new_tool = self._web_search_manager.get_tool()
-            if new_tool and self.tool_executor:
-                self.tool_executor.update_web_search_tool(new_tool)
+        # Knowledge Base config (KB_ENABLED, KB_SCORE_THRESHOLD, KB_TOP_K,
+        # KB_MMR_*, KB_OVERFETCH_FACTOR, KB_SOURCE_BOOSTS, KB_ENABLED_SOURCES) is
+        # NO LONGER stamped onto the shared KB / web-search manager here (which
+        # raced across concurrent sessions). It is read per-session at use-time
+        # from the task-isolated settings inside the web_search tool closure
+        # (tools.py), which passes each knob as a per-call override to
+        # PentestKnowledgeBase.query()/is_sufficient(); unset (None) project
+        # values fall back to the KB's own kb_config.yaml baseline, preserving the
+        # prior precedence. The KB instance stays attached to the web-search
+        # manager from construction; the closure gates on KB_ENABLED per session.
 
         # Shodan
         shodan_key = user_settings.get('shodanApiKey', '')

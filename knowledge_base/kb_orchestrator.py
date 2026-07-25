@@ -79,6 +79,10 @@ class PentestKnowledgeBase:
         exclude_sources: Optional[list[str]] = None,
         min_cvss: Optional[float] = None,
         severity: Optional[str] = None,
+        overfetch_factor: Optional[int] = None,
+        mmr_enabled: Optional[bool] = None,
+        mmr_lambda: Optional[float] = None,
+        source_boosts: Optional[dict] = None,
         **filters,
     ) -> list[dict]:
         """
@@ -105,6 +109,13 @@ class PentestKnowledgeBase:
             Returns [] if KB is in no-op state.
         """
         k = top_k or self.top_k
+        # Per-call knob overrides (None -> fall back to the instance/YAML value).
+        # This lets the caller pass task-isolated per-project settings without
+        # mutating the shared KB instance (concurrency isolation).
+        _overfetch = overfetch_factor if overfetch_factor is not None else self.overfetch_factor
+        _mmr_enabled = mmr_enabled if mmr_enabled is not None else self.mmr_enabled
+        _mmr_lambda = mmr_lambda if mmr_lambda is not None else self.mmr_lambda
+        _source_boosts = source_boosts if source_boosts is not None else self.source_boosts
 
         if self.faiss.count() == 0:
             return []
@@ -117,7 +128,7 @@ class PentestKnowledgeBase:
         # 1. Hybrid candidate retrieval
         # ─────────────────────────────────────────────────────────────────
         candidate_pool_size = max(
-            k * self.overfetch_factor,
+            k * _overfetch,
             self.rerank_pool_size if self.rerank_enabled else 0,
         )
         # ─────────────────────────────────────────────────────────────────
@@ -179,7 +190,7 @@ class PentestKnowledgeBase:
             chunk_data["vector_score"] = vector_score_map.get(cid)
             chunk_data["fulltext_score"] = fulltext_score_map.get(cid)
             chunk_data["rrf_score"] = rrf_score_map[cid]
-            boost = self.source_boosts.get(source, 1.0)
+            boost = _source_boosts.get(source, 1.0)
             chunk_data["score"] = rrf_score_map[cid] * boost
             chunk_data["raw_score"] = chunk_data.get("vector_score") or 0.0
             results.append(chunk_data)
@@ -209,7 +220,7 @@ class PentestKnowledgeBase:
                     # of higher). Sigmoid+boost gives 0.168 * 1.20 = 0.201,
                     # which correctly preserves the boost direction.
                     for chunk in reranked:
-                        boost = self.source_boosts.get(chunk.get("source", ""), 1.0)
+                        boost = _source_boosts.get(chunk.get("source", ""), 1.0)
                         rerank_logit = chunk.get("rerank_score", 0.0)
                         rerank_prob = _sigmoid(rerank_logit)
                         chunk["rerank_prob"] = rerank_prob
@@ -222,8 +233,8 @@ class PentestKnowledgeBase:
         # ─────────────────────────────────────────────────────────────────
         # 6. MMR diversity re-ranking (mixes sources, avoids duplicates)
         # ─────────────────────────────────────────────────────────────────
-        if self.mmr_enabled and len(results) > k:
-            results = self._mmr_rerank(results, top_k=k, lambda_=self.mmr_lambda)
+        if _mmr_enabled and len(results) > k:
+            results = self._mmr_rerank(results, top_k=k, lambda_=_mmr_lambda)
         else:
             results = results[:k]
 
