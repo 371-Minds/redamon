@@ -16,6 +16,7 @@ import base64
 import logging
 import os
 import re
+import shlex
 from contextlib import asynccontextmanager
 from typing import Literal, Optional
 
@@ -1815,7 +1816,17 @@ async def test_llm_provider(body: LlmProviderTestRequest):
         elif ptype == "openrouter":
             llm = setup_llm("openrouter/openai/gpt-4o-mini", openrouter_api_key=body.apiKey)
         elif ptype == "deepseek":
-            llm = setup_llm("deepseek/deepseek-chat", deepseek_api_key=body.apiKey)
+            # Discover models instead of hardcoding an alias — DeepSeek retired
+            # deepseek-chat/deepseek-reasoner in favour of deepseek-v4-*.
+            from orchestrator_helpers.model_providers import fetch_deepseek_models
+            available = await fetch_deepseek_models(api_key=body.apiKey)
+            if not available:
+                return JSONResponse(
+                    content={"success": False, "error": "No DeepSeek models available for this API key"},
+                    status_code=400,
+                )
+            pick = next((m for m in available if "flash" in m["id"].lower()), available[0])
+            llm = setup_llm(pick["id"], deepseek_api_key=body.apiKey)
         elif ptype == "gemini":
             from orchestrator_helpers.model_providers import fetch_gemini_models
             available = await fetch_gemini_models(api_key=body.apiKey)
@@ -1946,7 +1957,7 @@ async def test_llm_provider(body: LlmProviderTestRequest):
         )
 
 
-@app.get("/files", tags=["Files"])
+@app.get("/files", tags=["Files"], dependencies=[Depends(require_internal_auth_only)])
 async def download_file(
     path: str = Query(..., description="File path inside kali-sandbox (must be under /tmp/)"),
 ):
@@ -1964,6 +1975,15 @@ async def download_file(
     if not normalized.startswith("/tmp/"):
         return Response(content="Forbidden: path traversal detected", status_code=403)
 
+    # The file is read INSIDE kali-sandbox via kali_shell, which runs the command
+    # through `bash -c`, so `normalized` is interpolated into a shell string.
+    # `os.path.normpath` collapses `.`/`..`/`//` but does NOT strip shell
+    # metacharacters (`;`, `|`, `` ` ``, `$(...)`), so a path like `/tmp/x; id`
+    # would inject a second command. Quote it so it is always a single literal
+    # argument. This is the actual injection fix; the `/tmp/` prefix check above
+    # is not sufficient on its own.
+    safe_path = shlex.quote(normalized)
+
     if not orchestrator or not orchestrator.tool_executor:
         return Response(content="Agent not initialized", status_code=503)
 
@@ -1971,7 +1991,7 @@ async def download_file(
         # Check file exists first
         check_result = await orchestrator.tool_executor.execute(
             "kali_shell",
-            {"command": f"test -f {normalized} && stat -c '%s' {normalized}"},
+            {"command": f"test -f {safe_path} && stat -c '%s' {safe_path}"},
             "informational",
             skip_phase_check=True,
         )
@@ -1981,7 +2001,7 @@ async def download_file(
         # Read file as base64
         b64_result = await orchestrator.tool_executor.execute(
             "kali_shell",
-            {"command": f"base64 -w0 {normalized}"},
+            {"command": f"base64 -w0 {safe_path}"},
             "informational",
             skip_phase_check=True,
         )

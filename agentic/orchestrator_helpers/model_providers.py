@@ -235,8 +235,6 @@ async def fetch_mistral_models(api_key: str = "") -> list[dict]:
 _DEEPSEEK_FALLBACK_MODELS: list[tuple[str, str]] = [
     ("deepseek-v4-pro", "DeepSeek V4 Pro"),
     ("deepseek-v4-flash", "DeepSeek V4 Flash"),
-    ("deepseek-chat", "DeepSeek Chat"),
-    ("deepseek-reasoner", "DeepSeek Reasoner"),
 ]
 
 

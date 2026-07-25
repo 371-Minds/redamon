@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardProject } from '@/lib/access'
+import { internalKeyHeaders } from '@/lib/agentAuth'
 
 const AGENT_API_URL = process.env.AGENT_API_URL || process.env.NEXT_PUBLIC_AGENT_API_URL || 'http://localhost:8080'
 
@@ -26,7 +27,10 @@ export async function GET(request: NextRequest) {
     const agentUrl = projectId
       ? `${AGENT_API_URL}/workspace/download?projectId=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`
       : `${AGENT_API_URL}/files?path=${encodeURIComponent(path)}`
-    const resp = await fetch(agentUrl)
+    // The legacy /files endpoint now requires the internal key (it was an
+    // unauthenticated command-injection surface). /workspace/download ignores
+    // the header today, so sending it on both paths is safe and future-proof.
+    const resp = await fetch(agentUrl, { headers: internalKeyHeaders() })
 
     if (!resp.ok) {
       const text = await resp.text()
