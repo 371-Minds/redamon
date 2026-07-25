@@ -1913,8 +1913,19 @@ cmd_purge() {
     # is gone.
     remove_spawned_containers
     docker compose --profile tools down --volumes --remove-orphans
+    # `compose down --volumes` only removes volumes attached to the services it
+    # actually loaded, so several always survive and a "purge" silently keeps
+    # data: capture_* (the proxy/ingest are orchestrator-spawned, not compose
+    # services), the webapp dev caches (webapp_next_cache / webapp_node_modules
+    # live in docker-compose.dev.yml, unknown to a plain `compose`), and
+    # profile-gated volumes like kb_data. Sweep EVERY remaining <project>_*
+    # volume by name so purge truly leaves nothing behind.
+    local _proj; _proj="$(compose_project_name)"
+    docker volume ls --format '{{.Name}}' 2>/dev/null \
+        | grep -E "^${_proj}_" \
+        | xargs -r docker volume rm >/dev/null 2>&1 || true
     # Belt-and-suspenders: explicitly drop the local-LLM models volume in case it
-    # was created outside the compose lifecycle.
+    # was created outside the compose lifecycle (its name is not <project>_-prefixed).
     docker volume rm "$LOCAL_LLM_VOLUME" >/dev/null 2>&1 || true
     # The CodeFix sandbox network is created at runtime by the orchestrator (no
     # compose service is attached), so `compose down` never removes it.
@@ -1951,12 +1962,16 @@ cmd_purge() {
     )
     if ! rm -f "${kb_files[@]}" 2>/dev/null; then
         warn "Root-owned files detected, elevating with sudo..."
-        sudo rm -f "${kb_files[@]}"
+        # Non-fatal: a sudo-less / non-interactive run must not abort purge here
+        # and leave the later volume/flag cleanup undone. Worst case these stale
+        # FAISS files remain, which only matters if KB is later re-enabled.
+        sudo rm -f "${kb_files[@]}" || warn "Could not remove root-owned KB index files; remove manually: sudo rm -f ${kb_files[*]}"
     fi
 
     info "Removing host-side KB dedup state (manifest + file hashes)..."
     if ! rm -f "$SCRIPT_DIR/knowledge_base/data/cache/.manifest.json" 2>/dev/null; then
-        sudo rm -f "$SCRIPT_DIR/knowledge_base/data/cache/.manifest.json"
+        sudo rm -f "$SCRIPT_DIR/knowledge_base/data/cache/.manifest.json" \
+            || warn "Could not remove root-owned KB manifest; remove manually with sudo."
     fi
     # Wipe every per-source .file_hashes.json without touching the
     # downloaded content alongside it. -print is for operator feedback.
