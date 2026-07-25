@@ -836,10 +836,11 @@ model Project {
   fireteamPropensity                    Int      @default(3)               @map("fireteam_propensity")
 
   // LATS (exploit-path tree search) Settings. Defaults kept consistent with
-  // DEFAULT_AGENT_SETTINGS in agentic/project_settings.py (ships OFF; SHADOW on;
-  // exploitation-only until post-exploitation scoring is tuned, §6.1).
+  // DEFAULT_AGENT_SETTINGS in agentic/project_settings.py (ships ON and DRIVES
+  // by default; SHADOW off; exploitation-only until post-exploitation scoring
+  // is tuned, §6.1).
   agentLatsEnabled                      Boolean  @default(true)            @map("agent_lats_enabled")
-  agentLatsShadowMode                   Boolean  @default(true)            @map("agent_lats_shadow_mode")
+  agentLatsShadowMode                   Boolean  @default(false)           @map("agent_lats_shadow_mode")
   agentLatsPhaseExploitation            Boolean  @default(true)            @map("agent_lats_phase_exploitation")
   agentLatsPhasePostExpl                Boolean  @default(false)           @map("agent_lats_phase_post_expl")
   agentLatsMinHypotheses                Int      @default(2)               @map("agent_lats_min_hypotheses")

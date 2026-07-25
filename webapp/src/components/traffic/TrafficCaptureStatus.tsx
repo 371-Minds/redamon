@@ -41,11 +41,9 @@ export function TrafficCaptureStatus({
         Traffic capture{projectName ? <> for <strong style={{ color: 'var(--text-primary)' }}>{projectName}</strong></> : null}:{' '}
         <strong style={{ color: on ? 'var(--success, #30a46c)' : 'var(--danger, #e5484d)' }}>{on ? 'Enabled' : 'Disabled'}</strong>
       </span>
-      {!on && (
+      {!on && !isAdmin && (
         <span style={{ color: 'var(--text-tertiary)' }}>
-          {isAdmin
-            ? <>Enable it per project in <strong style={{ color: 'var(--text-secondary)' }}>Global Settings &rarr; TrafficMind</strong>.</>
-            : 'Ask an administrator to enable it.'}
+          Ask an administrator to enable it.
         </span>
       )}
     </div>

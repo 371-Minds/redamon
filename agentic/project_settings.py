@@ -76,9 +76,10 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
 
     # LATS (Language Agent Tree Search) — bounded exploit-path search.
     # See internal/LATS_integration.md §8 "Settings summary". Ships ON by
-    # default; SHADOW builds+streams the tree without letting it drive.
+    # default and DRIVES by default; flip SHADOW on to build+stream the tree
+    # without letting it drive (observe-only).
     'LATS_ENABLED': True,                         # master switch
-    'LATS_SHADOW_MODE': True,                     # observe-only: build the tree, do NOT drive decisions
+    'LATS_SHADOW_MODE': False,                    # drive by default; True = observe-only (build the tree, do NOT drive)
     'LATS_ALLOWED_PHASES': ['exploitation'],     # phases where the tree search runs (post_exploitation experimental, §6.1)
     'LATS_MIN_HYPOTHESES': 2,                     # min credible probes lats_expand must yield to activate
     'LATS_BRANCHING': 6,                          # max candidate probes per Expand (tree width)

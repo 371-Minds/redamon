@@ -133,8 +133,8 @@ class TestLatsSettingsDefaults(unittest.TestCase):
     def test_lats_enabled_off_by_default(self):
         self.assertIs(project_settings.get_setting("LATS_ENABLED", None), False)
 
-    def test_lats_shadow_on_by_default(self):
-        self.assertIs(project_settings.get_setting("LATS_SHADOW_MODE", None), True)
+    def test_lats_shadow_off_by_default(self):
+        self.assertIs(project_settings.get_setting("LATS_SHADOW_MODE", None), False)
 
     def test_lats_numeric_defaults(self):
         self.assertEqual(project_settings.get_setting("LATS_MAX_DEPTH"), 6)

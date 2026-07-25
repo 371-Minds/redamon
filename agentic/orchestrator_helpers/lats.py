@@ -542,7 +542,7 @@ def lats_is_driving(state: dict) -> bool:
     Think cooldown into a fire-every-turn loop. Shadow mode never drives."""
     return (
         bool(get_setting("LATS_ENABLED", False))
-        and not bool(get_setting("LATS_SHADOW_MODE", True))
+        and not bool(get_setting("LATS_SHADOW_MODE", False))
         and bool(state.get("_exploit_tree"))
     )
 
@@ -1712,7 +1712,7 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
                     streaming_callbacks: Any = None, session_id: Optional[str] = None) -> Any:
     if not get_setting("LATS_ENABLED", False):
         return decision
-    shadow = bool(get_setting("LATS_SHADOW_MODE", True))
+    shadow = bool(get_setting("LATS_SHADOW_MODE", False))
 
     # ---- ENTER (no tree) or STAY (tree live) ----
     tree_dict = state.get("_exploit_tree")
@@ -1734,6 +1734,13 @@ async def lats_hook(state: dict, decision: Any, *, llm: Any,
             return decision                              # archived; fresh tree may start next turn
 
     if newly_created:
+        logger.info(
+            "[lats][MODE] search created: LATS_ENABLED=%s LATS_SHADOW_MODE=%s -> %s "
+            "(session=%s)",
+            get_setting("LATS_ENABLED"), shadow,
+            "OBSERVE-ONLY (agent drives)" if shadow else "DRIVE (LATS issues probes)",
+            session_id,
+        )
         await _emit(streaming_callbacks, session_id, "on_lats_start",
                     _search_id(session_id, tree), tree.objective,
                     state.get("current_phase", "") or "",

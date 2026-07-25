@@ -385,7 +385,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
           {/* Exploit-Path Search (LATS) */}
           {(() => {
             const latsEnabled = (data as any).agentLatsEnabled ?? true
-            const shadowMode = (data as any).agentLatsShadowMode ?? true
+            const shadowMode = (data as any).agentLatsShadowMode ?? false
             const phaseExpl = (data as any).agentLatsPhaseExploitation ?? true
             const phasePostExpl = (data as any).agentLatsPhasePostExpl ?? false
             const maxRollouts = (data as any).agentLatsMaxRollouts ?? 50
