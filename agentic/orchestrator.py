@@ -321,18 +321,12 @@ class AgentOrchestrator:
             if tc_enabled:
                 self._tradecraft_manager.set_resources(tc_resources)
                 self._tradecraft_manager.set_github_token(github_token)
-                # Refresh tunable knobs from settings each load
                 self._tradecraft_manager.llm = self.llm
                 self._tradecraft_manager.section_picker_llm = self._build_section_picker_llm() or self.llm
-                self._tradecraft_manager.tier2_threshold_bytes = get_setting(
-                    'TRADECRAFT_TIER2_THRESHOLD_BYTES', 800
-                )
-                self._tradecraft_manager.fetch_timeout = get_setting(
-                    'TRADECRAFT_FETCH_TIMEOUT', 30
-                )
-                self._tradecraft_manager.default_ttl = get_setting(
-                    'TRADECRAFT_DEFAULT_TTL_SEC', 86400
-                )
+                # tier2_threshold_bytes / fetch_timeout / default_ttl are no longer
+                # stamped onto the shared manager here (they raced); they are read
+                # per-session at use-time from the task-isolated TRADECRAFT_* settings
+                # inside TradecraftLookupManager (tradecraft_lookup.py).
                 new_tool = self._tradecraft_manager.get_tool()
                 self.tool_executor.update_tradecraft_tool(new_tool)
                 # Swap the dynamic per-resource catalog into TOOL_REGISTRY

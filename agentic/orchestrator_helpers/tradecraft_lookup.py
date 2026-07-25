@@ -35,6 +35,7 @@ import re
 import socket
 import sqlite3
 import textwrap
+from project_settings import get_setting
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -1745,7 +1746,9 @@ class TradecraftLookupManager:
         if force_refresh:
             self.cache.invalidate(r.url)
         fetched = await fetch_tier1(
-            r.url, timeout=self.fetch_timeout, github_token=token
+            r.url,
+            timeout=get_setting('TRADECRAFT_FETCH_TIMEOUT', self.fetch_timeout),
+            github_token=token,
         )
         if "application/pdf" not in (fetched.content_type or ""):
             return f"PDF '{r.slug}': URL no longer returns a PDF (got {fetched.content_type!r})."
@@ -1787,7 +1790,8 @@ class TradecraftLookupManager:
                 f"Available: {', '.join(sorted(self._by_slug.keys())) or '(none)'}."
             )
         token = r.github_token_override or self._github_token
-        ttl = r.cache_ttl_sec or DEFAULT_TTLS_BY_TYPE.get(r.resource_type, self.default_ttl)
+        ttl = r.cache_ttl_sec or DEFAULT_TTLS_BY_TYPE.get(
+            r.resource_type, get_setting('TRADECRAFT_DEFAULT_TTL_SEC', self.default_ttl))
         cache_status = "miss"
         tier = 1
 
@@ -1909,8 +1913,9 @@ class TradecraftLookupManager:
                 target_url,
                 mcp_manager=self.mcp_manager,
                 github_token=token,
-                timeout=self.fetch_timeout,
-                tier2_threshold_bytes=self.tier2_threshold_bytes,
+                timeout=get_setting('TRADECRAFT_FETCH_TIMEOUT', self.fetch_timeout),
+                tier2_threshold_bytes=get_setting(
+                    'TRADECRAFT_TIER2_THRESHOLD_BYTES', self.tier2_threshold_bytes),
             )
             tier = fetched.tier
             if not fetched.text:
