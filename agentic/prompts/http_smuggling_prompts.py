@@ -1,0 +1,68 @@
+"""
+HTTP Request Smuggling (desync) attack-skill workflow.
+
+General, black-box methodology for the `http_request_smuggling` attack_path_type.
+Injected into the think prompt (and LATS expansion) when the class is active. No
+target-specific content: this is standard desync technique that applies to any
+multi-tier HTTP deployment.
+"""
+
+# NOTE: no em dashes in this prompt text (agent-facing) per project style.
+
+HTTP_SMUGGLING_TOOLS = """
+## MANDATORY HTTP REQUEST SMUGGLING WORKFLOW
+
+HTTP request smuggling (desync) exploits a DISAGREEMENT between a FRONT tier
+(reverse proxy / load balancer / CDN / cache) and the BACK-END app about where
+one request ends and the next begins. A request that both tiers should see as one
+is split, so a smuggled prefix is prepended to the NEXT request on that
+connection. This lets you reach endpoints the front tier blocks, poison another
+user's request, or bypass access controls enforced only at the front.
+
+CRITICAL TOOLING: smuggling needs BYTE-EXACT control of the raw request (a
+precise `Content-Length`, literal CRLFs, exact chunk sizes, deliberately
+malformed headers). `execute_curl` and `execute_httpx` normalize the request and
+will NOT reproduce a desync. Use `execute_code` with a raw socket (Python
+`socket` / `http.client` with manual bytes) or `kali_shell` with a raw-request
+tool. Send over ONE reused keep-alive connection so you can observe how the
+smuggled bytes affect the FOLLOWING response.
+
+### Step 1: Confirm a front/back-end chain exists (grounding, no payloads)
+Only proceed if recon shows a multi-tier HTTP path: a proxy/cache/LB in front of
+a distinct app server. Signals: `Via`, `X-Cache`, `Server` / `X-*` headers that
+change between paths, hop-by-hop header handling differences, a front tier that
+answers some paths itself, or a path the front returns 401/403/redirect for that
+a back-end would likely serve. If there is a single server with nothing in front,
+this is NOT smuggling -> switch to the matching skill.
+
+### Step 2: Detect the desync (safe timing/differential probes first)
+Fingerprint which tier trusts which length header, using timing before anything
+weaponized:
+- CL.TE: front honors `Content-Length`, back honors `Transfer-Encoding: chunked`.
+  Send a chunked body terminated early with a Content-Length that hides trailing
+  bytes; a back-end reading TE waits for the next chunk and the response HANGS.
+- TE.CL: the inverse (back honors Content-Length).
+- TE.TE: both support chunked but one is fooled by an OBFUSCATED Transfer-Encoding
+  header (`Transfer-Encoding: xchunked`, leading space/tab, duplicated TE header,
+  odd casing, `\\r\\n` tricks) so only one tier applies it.
+Confirm with a timing signal (one variant delays, its mirror does not), then a
+differential (a smuggled request visibly changes the NEXT response). A single
+byte (a stray space in the TE header, an off-by-one Content-Length) is often the
+whole difference. Vary the framing systematically.
+
+### Step 3: Weaponize toward the objective
+Once a desync is confirmed, smuggle a request whose method/path targets what the
+front tier denies but the back-end trusts:
+- Smuggle a request for a front-blocked or internal-only path so it arrives at the
+  back-end as if it came from the front tier.
+- Leave a partial request queued so a victim's next request is APPENDED to your
+  smuggled prefix (request/response queue poisoning), capturing their data or
+  forcing an action as them.
+- On the SAME connection, follow with a normal request to READ the smuggled
+  response.
+
+### Step 4: Confirm impact
+Success = you retrieved content or triggered an action that the front tier blocks
+for a direct request, proving the boundary disagreement is exploitable. Cite the
+exact framing variant that desynced and the response that proves it.
+"""

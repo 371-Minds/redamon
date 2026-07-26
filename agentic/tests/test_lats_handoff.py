@@ -400,8 +400,10 @@ class TestCumulativeTreeDigest(unittest.TestCase):
         digest = st["_lats_tree_digest"]
         self.assertEqual(len(digest), 1)
         self.assertIn("exhausted", digest[0])
-        self.assertIn("execute_curl", digest[0])       # best line
-        self.assertIn("execute_ffuf", digest[0])       # ruled out
+        self.assertIn("execute_curl", digest[0])       # best line (per-tree narrative)
+        # Ruled-out knowledge now lives in the merged, semantic _lats_dead store
+        # (class@target), not the per-tree line — see test_lats_cross_tree_digest.
+        self.assertIn("_lats_dead", st)
 
     def test_digest_ACCUMULATES_across_multiple_trees(self):
         st = _state()

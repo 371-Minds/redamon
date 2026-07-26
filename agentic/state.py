@@ -431,6 +431,13 @@ class PerStepAnalysis(BaseModel):
     finding: str = ""            # short description of any finding at this step
     confidence: int = 0          # confidence (0-100) of that finding
     exploit_succeeded: bool = False   # this step reached a foothold (localizes a wave win)
+    # W4: app-semantic response class (24-class taxonomy) the LLM assigns to THIS
+    # probe's response. LATS maps it to a per-node value + actionable reflection.
+    # "inconclusive" (or omitted) => LATS falls back to legacy verdict/error_class
+    # scoring. Free-form validation is done in lats._response_class_for (a label
+    # outside the 24 is treated as inconclusive), so this stays a str for forward-
+    # compatibility rather than a hard Literal that would reject new labels.
+    response_class: str = ""
 
 
 class OutputAnalysisInline(BaseModel):
@@ -881,6 +888,7 @@ class ExploitTreeNode(BaseModel):
     observation_summary: str = ""       # compressed tool_output (~200 chars; NOT raw)
     verdict: str = ""                   # ProductivityVerdict.verdict
     error_class: str = ""               # from error_class.py annotation
+    response_class: str = ""            # W4: response-semantics discriminator (lead|input_filter|waf_wall|auth_wall|dead_endpoint|benign_app)
     duration_ms: int = 0                # from the executed step
     finding_confidence_delta: int = 0   # confidence of any new ChainFinding at this node
     exploit_succeeded: bool = False
@@ -935,6 +943,7 @@ class ExploitTree(BaseModel):
                 "visits": n.visits,
                 "verdict": n.verdict,
                 "error_class": n.error_class,
+                "response_class": n.response_class,
                 "finding_confidence": n.finding_confidence_delta,
                 "exploit_succeeded": n.exploit_succeeded,
                 "duration_ms": n.duration_ms,
@@ -1136,10 +1145,17 @@ class AgentState(TypedDict):
     # re-activation cooldown survives across turns (else lats_active reads it as
     # None every turn and the cooldown never applies).
     _lats_last_archive_iter: Optional[int]
-    # Append-only, capped digest of every finished LATS tree (outcome + best line
-    # + ruled-out probes). Persisted so prior-tree knowledge ACCUMULATES for each
-    # subsequent tree, surviving execution_trace's eviction window.
+    # Append-only, capped digest of every finished LATS tree (outcome + best line).
+    # Persisted so prior-tree knowledge ACCUMULATES for each subsequent tree,
+    # surviving execution_trace's eviction window.
     _lats_tree_digest: Optional[list]
+
+    # Run-level, deduped SEMANTIC cross-tree memory (W7): the confirmed LEADS to
+    # build on and the confirmed-DEAD `class @ target` pairs never to re-attempt,
+    # MERGED across every finished tree (not N repetitive per-tree blobs). Rendered
+    # into each new tree's expansion so the search compounds instead of restarting.
+    _lats_leads: Optional[list]
+    _lats_dead: Optional[list]
 
     # Run-level ledger of the EXECUTED probe dedup-keys of every finished LATS
     # tree. The digest above is the human-readable soft hint; this is the HARD

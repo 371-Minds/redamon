@@ -89,6 +89,7 @@ export interface LatsNodeView {
   visits: number
   verdict: string
   error_class: string
+  response_class: string
   finding_confidence: number
   exploit_succeeded: boolean
   duration_ms: number

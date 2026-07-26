@@ -12,6 +12,7 @@ from .base import (
     REACT_SYSTEM_PROMPT,
     PENDING_OUTPUT_ANALYSIS_SECTION,
     PENDING_PLAN_OUTPUTS_SECTION,
+    RESPONSE_CLASS_TAXONOMY_BLOCK,
     PHASE_TRANSITION_MESSAGE,
     USER_QUESTION_MESSAGE,
     FINAL_REPORT_PROMPT,
@@ -108,6 +109,9 @@ from .path_traversal_prompts import (
     PATH_TRAVERSAL_ARCHIVE_EXTRACTION,
     PATH_TRAVERSAL_PAYLOAD_REFERENCE,
 )
+
+# Re-export from HTTP request smuggling prompts
+from .http_smuggling_prompts import HTTP_SMUGGLING_TOOLS
 
 # Re-export from unclassified attack path prompts
 from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
@@ -360,6 +364,11 @@ def build_builtin_skill_workflow(
             and "execute_curl" in allowed_tools):
         parts.append(ACCESS_CONTROL_TOOLS)
         return parts
+    elif (attack_path_type == "http_request_smuggling"
+            and "http_request_smuggling" in enabled_builtins
+            and "execute_code" in allowed_tools):
+        parts.append(HTTP_SMUGGLING_TOOLS)
+        return parts
     return parts
 
 
@@ -569,6 +578,7 @@ __all__ = [
     "REACT_SYSTEM_PROMPT",
     "PENDING_OUTPUT_ANALYSIS_SECTION",
     "PENDING_PLAN_OUTPUTS_SECTION",
+    "RESPONSE_CLASS_TAXONOMY_BLOCK",
     "PHASE_TRANSITION_MESSAGE",
     "USER_QUESTION_MESSAGE",
     "FINAL_REPORT_PROMPT",
@@ -627,6 +637,7 @@ __all__ = [
     # Unclassified attack path
     "UNCLASSIFIED_EXPLOIT_TOOLS",
     "ACCESS_CONTROL_TOOLS",
+    "HTTP_SMUGGLING_TOOLS",
     # Post-exploitation
     "POST_EXPLOITATION_TOOLS_STATEFULL",
     "POST_EXPLOITATION_TOOLS_STATELESS",

@@ -32,6 +32,14 @@ This skill covers the SIX classic RCE primitives:
 5. Media + document pipelines -- ImageMagick, Ghostscript, ExifTool, LaTeX, ffmpeg
 6. SSRF-to-RCE chains -- gopher://, FastCGI, Redis, internal admin UIs
 
+**TOOLING (avoids self-inflicted failures):** SSTI / eval / injection payloads are
+full of shell- and URL-hostile characters (`{{ }} $ ' " ; | ( ) < >` and template
+braces). Send them with `execute_code` (Python `requests`, exact string) rather
+than raw `execute_curl`, so the payload reaches the app INTACT instead of being
+mangled by shell quoting or URL parsing. If you do use curl, single-quote the URL
+and rely on the wrapper's globbing-off; but `execute_code` is the reliable path
+for brace/quote-heavy payloads.
+
 ---
 
 ## PRE-CONFIGURED SETTINGS (from project settings)

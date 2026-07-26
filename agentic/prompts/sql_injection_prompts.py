@@ -120,6 +120,16 @@ as you learn. The point is only that **extraction is one primitive, not the defa
   functionality (uploads, import/export, admin actions, second-order sinks). Do not commit to
   blind extraction until you have reason to believe the objective is actually a DB row.
 
+**Blind-oracle stability (verify before AND during extraction).** A boolean or time
+oracle is only valid if its TRUE/FALSE signal stays STABLE across the dozens of
+requests extraction needs. Confirm it on a known-true AND a known-false condition
+first. If the session is cookie-bound, the cookie can EXPIRE mid-run and INVERT the
+signal, corrupting output (garbage like all-1s, length-1, or all identical chars).
+Re-establish and pin the session per batch, and prefer a SESSION-INDEPENDENT oracle
+(an error-based toggle, e.g. a conditional that flips the HTTP status code) when the
+cookie-bound one proves noisy. The instant a known-true condition stops returning
+true, STOP and re-verify the oracle before trusting any extracted character.
+
 **B. Is the injectable surface a LOGIN / AUTH form with a content/boolean oracle?**
 If yes, the value of the injection is the ACCESS it unlocks, not the DB contents. FIRST test it
 as an **authentication bypass**, and if a session is granted, PIVOT immediately to the

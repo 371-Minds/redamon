@@ -54,6 +54,7 @@ from prompts import (
     REACT_SYSTEM_PROMPT,
     PENDING_OUTPUT_ANALYSIS_SECTION,
     PENDING_PLAN_OUTPUTS_SECTION,
+    RESPONSE_CLASS_TAXONOMY_BLOCK,
     DEEP_THINK_PROMPT,
     DEEP_THINK_SECTION,
     DEEP_THINK_SELF_REQUEST_INSTRUCTION,
@@ -774,6 +775,8 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
             n_tools=len(plan_steps),
             tool_outputs_section="\n\n".join(tool_outputs_parts),
         )
+        # W4: always ask for per_step response_class (LATS classifies every probe).
+        plan_section = plan_section + RESPONSE_CLASS_TAXONOMY_BLOCK
         system_prompt = system_prompt + "\n" + plan_section
         logger.info(f"[{user_id}/{project_id}/{session_id}] Injected plan output analysis section for {len(plan_steps)} tools")
 
@@ -1108,9 +1111,12 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         # Persist the archive stamp so the re-activation cooldown (Fix B2)
         # survives across turns (else it resets to None and never applies).
         updates["_lats_last_archive_iter"] = state.get("_lats_last_archive_iter")
-        # Persist the accumulated tree digest so prior-tree knowledge survives
-        # across turns and feeds every subsequent LATS tree.
+        # Persist the accumulated tree digest + the merged cross-tree leads/dead
+        # knowledge so prior-tree knowledge survives across turns and feeds every
+        # subsequent LATS tree.
         updates["_lats_tree_digest"] = state.get("_lats_tree_digest")
+        updates["_lats_leads"] = state.get("_lats_leads")
+        updates["_lats_dead"] = state.get("_lats_dead")
 
     logger.info(
         f"[{user_id}/{project_id}/{session_id}] Tokens this turn: "

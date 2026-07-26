@@ -52,6 +52,13 @@ _XSS_SECTION = """### xss — Cross-Site Scripting (XSS)
 - Keywords: XSS, cross-site scripting, reflected XSS, stored XSS, DOM XSS, blind XSS, dalfox, payload encoding, CSP bypass, innerHTML, event handler, script injection
 """
 
+_HTTP_SMUGGLING_SECTION = """### http_request_smuggling — HTTP Request Smuggling / Desync
+- Desynchronize a FRONT tier (reverse proxy / load balancer / CDN / cache) and the BACK-END app so a smuggled request is interpreted differently by each — reaching endpoints the front tier blocks, poisoning another user's request, or bypassing front-enforced access controls
+- Includes: CL.TE, TE.CL, TE.TE (obfuscated Transfer-Encoding), CL.0 / request-queue poisoning, cache poisoning via smuggling
+- Key distinction: the flaw is in how a CHAIN of HTTP processors (a proxy/cache in FRONT of a distinct app server) disagree on where one request ends — not a single app parameter (SQLi/XSS) or a URL fetcher (SSRF)
+- Keywords: request smuggling, HTTP desync, CL.TE, TE.CL, Transfer-Encoding, Content-Length, chunked, front-end/back-end, reverse proxy, load balancer, request queue poisoning, connection reuse
+"""
+
 _SSRF_SECTION = """### ssrf — Server-Side Request Forgery (SSRF)
 - SSRF testing against web applications: forcing the server to make requests to internal services, cloud metadata endpoints, or arbitrary destinations the attacker cannot reach directly
 - Includes: classic / blind / semi-blind SSRF, cloud metadata pivots (AWS IMDS, GCP/Azure metadata), protocol smuggling (gopher, file, dict), DNS rebinding, URL parser confusion, redirect chains, internal port scanning via SSRF, RCE chains via Redis/FastCGI/Docker
@@ -113,6 +120,7 @@ _BUILTIN_SKILL_MAP = {
     'rce': (_RCE_SECTION, 'h', 'rce'),
     'path_traversal': (_PATH_TRAVERSAL_SECTION, 'i', 'path_traversal'),
     'access_control': (_ACCESS_CONTROL_SECTION, 'j', 'access_control'),
+    'http_request_smuggling': (_HTTP_SMUGGLING_SECTION, 'k', 'http_request_smuggling'),
 }
 
 # Classification instructions for built-in skills (no priority — best match wins)
@@ -166,6 +174,11 @@ _CLASSIFICATION_INSTRUCTIONS = {
       - Would the bypass come from changing the REQUEST SHAPE — a different HTTP method/verb, a path/resource form, a trusted header, a client-supplied role/flag/id, a token claim, or the type/presence of a submitted credential field — rather than injecting a payload?
       - Does it mention access control, authorization/authentication bypass, IDOR/BOLA, privilege escalation, forced browsing, method/verb tampering, hidden fields, mass assignment, JWT tampering, CORS, or business-logic abuse?
       - Boundary: if the goal is specifically SQLi / XSS / SSRF / RCE / file read / credential guessing, use THAT skill instead — access_control is for defeating the access DECISION itself.""",
+    'http_request_smuggling': """   - **http_request_smuggling**:
+      - Does recon reveal a MULTI-TIER HTTP path — a reverse proxy, load balancer, CDN, or cache in FRONT of a distinct back-end app server (differing `Server`/`Via`/`X-Cache`/`X-*` proxy headers, hop-by-hop header differences, or a front tier that answers before the app)?
+      - Is there a resource the FRONT tier blocks (401/403/redirect) that the back-end would serve if the request reached it directly — a front-enforced access control worth bypassing from behind?
+      - Do the two tiers appear to disagree on request framing — does the server react differently to a `Transfer-Encoding: chunked` + `Content-Length` combination, an obfuscated TE header, or trailing/pipelined bytes than a single server would?
+      - Boundary: if there is only ONE HTTP server with no proxy/cache in front, or the goal is a single-parameter injection, use the matching skill instead. This skill defeats the request-boundary AGREEMENT between chained HTTP processors.""",
 }
 
 
@@ -184,7 +197,8 @@ _CLASSIFICATION_INSTRUCTIONS = {
 def build_skill_menu(enabled_builtins: set[str], enabled_user_skills: list[dict]) -> str:
     """Full per-skill selection text (step-1 sections + criteria) for every turn."""
     order = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit',
-             'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control']
+             'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control',
+             'http_request_smuggling']
     parts = [
         "## ATTACK SKILL SELECTION — re-evaluate EVERY turn\n"
         "Below is the full catalog of enabled attack classes, with the SAME description and "

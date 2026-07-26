@@ -558,6 +558,22 @@ oracle -- works even when output is not echoed):
 ?file=php://filter/convert.iconv.UTF8.UTF7|convert.base64-encode/resource=...
 ```
 
+### When a fixed path PREFIX blocks wrappers -> pivot to code execution
+
+If the app prepends a fixed prefix to your input (e.g. `include("dir/".$input)`),
+a stream wrapper CANNOT sit at the START of the string, so `php://filter` / `data://`
+will not fire. And simply including a PHP target then EXECUTES it rather than
+revealing its source, so a file that does not echo shows you nothing. To read such a
+file's CONTENT you must gain CODE EXECUTION and print it yourself:
+- **Log poisoning:** inject PHP into a log the app writes (a `User-Agent` or `Referer`
+  header lands in `access.log` / `error.log`), then include that log through the LFI
+  so your injected code runs; have it read and echo the target file.
+- Alternative poisonable sinks to include: `/proc/self/environ`, `/proc/self/fd/N`,
+  PHP session files (`/tmp/sess_<id>`), or a file you uploaded via a legitimate
+  endpoint.
+- A single `system($_GET["c"])` that prints the target file is enough for proof; do
+  not drop a persistent shell without explicit operator approval.
+
 ### `data://` -- inline payload
 
 When `allow_url_include` is on, `data://` lets you supply the included content

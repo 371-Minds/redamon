@@ -364,6 +364,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
             'rce': True,
             'path_traversal': True,
             'access_control': True,
+            'http_request_smuggling': True,
         },
         'user': {},
     },

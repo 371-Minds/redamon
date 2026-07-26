@@ -116,33 +116,193 @@ def _new_finding_confidence(step: dict, analysis: Any, credited: bool = True) ->
     return best
 
 
-def _lats_value_web(step: dict, analysis: Any, credited: bool = True) -> float:
-    """Web-exploitation value: error_class carries the signal (§6)."""
+# =============================================================================
+# W4 — RESPONSE-CLASS ENGINE (LLM-classified). The error_class bucket
+# (status/timing only) and the 6-value verdict enum collapse many distinct
+# outcomes — a bypassable input filter, a WAF wall, an auth wall, a leaked SQL
+# error, a genuinely dead endpoint — into one flat `application_4xx`/`blocked`
+# penalty, so bypassable vectors get pruned as if dead. `response_class` is a
+# richer, app-semantic label the THINK-LLM emits per step (PerStepAnalysis.
+# response_class) from the 24-class taxonomy below; each class carries a target
+# value (detection-confidence x proximity-to-foothold, grounded in oracle
+# strength: in-band/OOB > error > differential > timing > passive) and an
+# actionable reflection. There is NO deterministic body classifier — the LLM,
+# which already reads every response to produce output_analysis, is the sole
+# classifier. Transport/tool/parse-time failures stay on error_class (a
+# mechanical status/timing fact, not app semantics) and score neutral 0.15.
+# Every probe is classified; the legacy verdict/error_class formula survives only
+# as the per-probe fallback when the LLM abstains (no valid class on that probe).
+# =============================================================================
+
+# Class -> target local_value (0..1). Higher = closer to a foothold / more worth
+# pursuing. Above LATS_PRUNE_FLOOR (0.15) => the branch survives; below => pruned.
+# By construction every "keep working this vector" class sits above the floor and
+# every "abandon" class below it, so no prune-exemption special-case is needed.
+_RC_SCORES = {
+    # Tier A — confirmed foothold (weaponize)
+    "exploit_confirmed":      0.95,
+    # Tier B — strong lead, near-confirmed (build oracle / escalate)
+    "oob_callback":           0.85,
+    "error_leak":             0.72,
+    "outbound_fetch":         0.68,
+    "boolean_differential":   0.66,
+    "info_disclosure":        0.64,
+    "time_differential":      0.60,
+    # Tier C — weak progress / attack surface (refine payload)
+    "reflected_unsanitized":  0.50,
+    "partial_filter_bypass":  0.48,
+    # Tier F — server fault / opportunity (lean in)
+    "server_error_5xx":       0.42,
+    # Tier D — bypassable block (mutate / evade, keep alive)
+    "encoding_normalization": 0.35,
+    "filter_blacklist":       0.34,
+    "waf_block":              0.26,
+    # Tier E — precondition / change-and-retry
+    "privilege_required":     0.30,
+    "wrong_method":           0.27,
+    "wrong_content_type":     0.25,
+    "auth_required":          0.22,
+    "rate_limited":           0.20,
+    "size_limit":             0.18,
+    # Tier G — hard block / vector closed (pivot away)
+    "filter_whitelist":       0.10,
+    "geo_legal_block":        0.05,
+    # Tier I — dead / no signal (abandon)
+    "benign_no_signal":       0.06,
+    "dead_endpoint":          0.03,
+    "duplicate":              0.00,
+}
+RESPONSE_CLASSES = frozenset(_RC_SCORES)   # the 24 valid labels
+
+# Actionable one-line lesson per class — the MOVE it implies. Fed to the next
+# expand's context and the cross-tree digest, and (for the sequential agent) the
+# next-move prompt hint. Set whenever a class is recognized, not only on prune.
+_RC_REFLECTIONS = {
+    "exploit_confirmed":      "vuln CONFIRMED here; weaponize and escalate this vector",
+    "oob_callback":           "out-of-band callback fired; blind vuln confirmed, build an OOB exfil channel",
+    "error_leak":             "interpreter/error leaked; fingerprint the engine and weaponize from the error",
+    "outbound_fetch":         "server fetched our URL (SSRF); pivot to internal targets / cloud metadata",
+    "boolean_differential":   "stable true/false differential; build a boolean extraction oracle",
+    "info_disclosure":        "internal info leaked; pivot using the disclosed path/version/host",
+    "time_differential":      "timing tracked the injected delay; corroborate over N, then time-based extraction",
+    "reflected_unsanitized":  "input reflected RAW; escalate to execution in this context (not yet proven)",
+    "partial_filter_bypass":  "some characters survived the filter; context-escape with the surviving charset",
+    "server_error_5xx":       "our input broke the backend (5xx); refine the injection, harvest any leaked trace",
+    "encoding_normalization": "payload was normalized, not rejected; try an encoding-differential (double-encode)",
+    "filter_blacklist":       "specific token blocked (blacklist); SAME vector viable with encoding / mutation",
+    "waf_block":              "WAF blocked the request; try vendor-specific evasion once, else pivot the vector",
+    "privilege_required":     "authenticated but forbidden (authz); try IDOR / privesc / 403-bypass tricks",
+    "wrong_method":           "endpoint exists, wrong method; retry with an allowed verb",
+    "wrong_content_type":     "endpoint wants a different Content-Type; resend it (enables XXE / type-confusion)",
+    "auth_required":          "needs credentials; obtain/replay a session before retrying this vector",
+    "rate_limited":           "throttled; back off / rotate identity, do NOT abandon the vector",
+    "size_limit":             "payload too large; shorten / relocate it, or oversize past WAF inspection",
+    "filter_whitelist":       "strict whitelist; only parser-confusion tricks may pass, else abandon this param",
+    "geo_legal_block":        "geo/legal block; change egress or abandon",
+    "benign_no_signal":       "endpoint live but no signal; try a different attack or move on",
+    "dead_endpoint":          "endpoint absent (404 / soft-404); abandon and pivot",
+    "duplicate":              "identical to a prior probe; do not repeat",
+}
+
+# Reflection-conditioned expansion: when LATS grows children FROM a node, the
+# node's response_class dictates what the next wave must contain. This turns a
+# kept-alive lead (W4) into the specific follow-up that converts it, instead of a
+# generic "pivot if blocked" fan-out. Keyed by the survivable classes (those at or
+# above the prune floor, i.e. the ones that actually get expanded); a class absent
+# here (a pruned/dead class, or an unclassified node) falls back to the generic ask.
+_RC_EXPAND_DIRECTIVES = {
+    "exploit_confirmed":      "This probe CONFIRMED the vuln. Propose probes that WEAPONIZE and escalate it (extract data / gain a shell / reach the flag), not new vectors.",
+    "oob_callback":           "A blind out-of-band callback fired. Propose probes that exfiltrate data through the OOB channel and confirm impact.",
+    "error_leak":             "The response leaked an interpreter/DB error. Propose EXTRACTION payloads that weaponize the leaked engine (e.g. UNION / extractvalue for SQL, class-traversal for a template) on the SAME parameter.",
+    "outbound_fetch":         "The server fetched our URL (SSRF). Propose probes that pivot to internal targets / cloud metadata / internal port scans through this sink.",
+    "boolean_differential":   "The true/false responses differ (a boolean oracle). Propose the boolean-extraction sequence that reads data one character at a time on the SAME parameter.",
+    "info_disclosure":        "The response leaked internal detail (path / version / host / source). Propose probes that USE the disclosed detail to reach the next stage.",
+    "time_differential":      "The response delay tracked an injected sleep. Propose probes that corroborate the timing, then extract data via time-based inference on the SAME parameter.",
+    "reflected_unsanitized":  "Our input was reflected RAW. Propose probes that ESCALATE the reflection to execution in this exact context (attribute / JS-string / HTML) on the SAME parameter.",
+    "partial_filter_bypass":  "Some characters survived the filter. Propose probes that context-escape using ONLY the surviving character set on the SAME parameter.",
+    "server_error_5xx":       "Our input caused a backend 5xx (it reached real logic). Propose probes that refine the SAME injection to turn the crash into controlled output; harvest any leaked trace.",
+    "encoding_normalization": "The payload was normalized/decoded, not rejected. Propose ENCODING-DIFFERENTIAL probes (double-encode, overlong UTF-8, mixed case) that survive the validator but decode at the sink, on the SAME parameter.",
+    "filter_blacklist":       "A specific token was blocked (a bypassable blacklist). Propose ENCODED / MUTATED variants of the SAME payload on the SAME parameter (case, comments, nesting, alternate syntax, encoding). Do NOT pivot to a different vector.",
+    "waf_block":              "A WAF blocked the request. Propose EVASION variants of the SAME payload (encoding, casing, chunking, parameter pollution); pivot only if evasion clearly fails.",
+    "privilege_required":     "Authenticated but forbidden (authz). Propose ACCESS-CONTROL bypass probes: IDOR (change the object id), forced browse, verb/header tricks (X-Original-URL, X-Forwarded-For), role/JWT tampering.",
+    "wrong_method":           "The endpoint exists but rejects this HTTP method. Propose the SAME probe with the allowed method(s) (see the Allow header) or verb tampering.",
+    "wrong_content_type":     "The endpoint wants a different Content-Type. Propose the SAME probe re-sent with the right Content-Type (json / xml / multipart); this may enable XXE or type-confusion.",
+    "auth_required":          "The vector needs credentials first. Propose probes that acquire/replay a session (default creds, token, auth bypass), then retry this vector.",
+    "rate_limited":           "We are being throttled (not the payload's fault). Propose the SAME line at a slower pace / rotated identity; do NOT abandon the vector.",
+    "size_limit":             "The payload was too large. Propose SHORTER / chunked variants of the SAME payload, or relocate it to an unlimited field.",
+}
+
+
+def _response_class_for(step: dict, analysis: Any) -> str:
+    """The THINK-LLM's response_class for this step, localized via
+    PerStepAnalysis.response_class (keyed by _step_index) or stamped on the step.
+    LLM-only — there is no code classifier. Returns "" when the label is absent or
+    not one of the 24 valid classes (e.g. "inconclusive"), so scoring falls back to
+    the legacy value and an unclassified response never changes behavior."""
+    if step is None:
+        return ""
+    idx = step.get("_step_index")
+    for ps in (_attr(analysis, "per_step", []) or []):
+        if _attr(ps, "step_index", -1) == idx:
+            rc = _attr(ps, "response_class", "") or ""
+            if rc in RESPONSE_CLASSES:
+                return rc
+    rc = (step.get("response_class") or "")
+    return rc if rc in RESPONSE_CLASSES else ""
+
+
+def _legacy_deadend_delta(verdict: str, ec: str) -> float:
+    """The pre-W4 dead-end penalties. Used only as the graceful fallback when the
+    LLM abstained on this probe (no recognized response_class), so legacy behavior is
+    exactly preserved."""
+    d = 0.0
+    if verdict in ("blocked", "duplicate", "no_progress"):
+        d -= 0.3
+    if ec == "application_4xx":               # 403 / WAF / semantic rejection
+        d -= 0.2
+    return d
+
+
+def _legacy_web_value(step: dict, analysis: Any, credited: bool = True) -> float:
+    """The pre-W4 web value formula (no response-class). This is the toggle-OFF
+    path AND the ranking used for aggregate credit attribution (`_credited_child`),
+    so W4's keep-alive boosts can NEVER change which child is credited a foothold
+    or perturb legacy scoring — the parity guarantee lives here."""
     ec = step.get("error_class", "") if step else ""
     verdict = _verdict_for(step, analysis)
-
     # (0) Diagnostic failure: the probe never reached the app (bad quoting, DNS,
     #     tool crash, parse-time 5xx). NEUTRAL, so UCT retries rather than
     #     abandoning a possibly-live vector. Small floor: not pruned, not deep.
     if is_diagnostic_failure(ec):
         return 0.15
-
     v = 0.0
-    # (a) New durable evidence.
-    v += 0.5 * (_new_finding_confidence(step, analysis, credited) / 100.0)
-    # (b) Response informativeness.
-    if verdict in ("new_info", "diagnostic_progress"):
+    v += 0.5 * (_new_finding_confidence(step, analysis, credited) / 100.0)  # (a) evidence
+    if verdict in ("new_info", "diagnostic_progress"):                       # (b) informative
         v += 0.3
     if ec == "application_5xx_normal":       # DB / business-logic path reached
         v += 0.2
     if verdict == "confirmation":
         v += 0.1
-    # (c) Penalties for real dead-ends (probe reached the app, was rejected).
-    if verdict in ("blocked", "duplicate", "no_progress"):
-        v -= 0.3
-    if ec == "application_4xx":               # 403 / WAF / semantic rejection
-        v -= 0.2
+    v += _legacy_deadend_delta(verdict, ec)                                  # (c) dead-ends
     return max(0.0, v)
+
+
+def _lats_value_web(step: dict, analysis: Any, credited: bool = True) -> float:
+    """Web-exploitation value. The THINK-LLM classifies every probe, so its
+    recognized response_class IS the value (the class already encodes detection-
+    confidence x proximity-to-foothold). A transport / parse-time failure is a
+    mechanical fact, so error_class short-circuits to the neutral 0.15 floor BEFORE
+    the class is consulted (a class can never rescue a probe that never reached the
+    app). The legacy verdict/error_class formula is used ONLY as the per-probe
+    fallback when the LLM abstained (no valid class on this probe)."""
+    ec = step.get("error_class", "") if step else ""
+    if is_diagnostic_failure(ec):
+        return 0.15                            # Tier H (infra) — owned by error_class
+
+    rc = _response_class_for(step, analysis)
+    if rc in _RC_SCORES:
+        return _RC_SCORES[rc]
+    return _legacy_web_value(step, analysis, credited)   # LLM abstained -> legacy fallback
 
 
 def _privilege_increased(before: dict, after: dict) -> bool:
@@ -447,7 +607,9 @@ def _summarize(tool_output: Optional[str], cap: int = 200) -> str:
 
 
 def _reflect(step: dict, analysis: Any) -> str:
-    """One-line lesson for a pruned/failed node. Deterministic."""
+    """Legacy one-line lesson for a pruned node when NO response_class is
+    available (engine off, or the LLM returned an unrecognized/inconclusive
+    label). When a class IS present, _evaluate_wave uses _RC_REFLECTIONS instead."""
     ec = step.get("error_class", "") if step else ""
     verdict = _verdict_for(step, analysis)
     if ec == "application_4xx":
@@ -807,28 +969,99 @@ def _extract_json(text: str) -> Optional[Any]:
 # recommended plan, which would linearize the tree. All compact/capped so a deep
 # tree's expand prompt stays bounded.
 
+# Cross-tree memory (W7): which response classes are worth CARRYING between trees.
+# LEADS = a live/progressing vector the next tree should BUILD ON. DEAD = a class
+# confirmed negative on that target — the next tree must NOT re-attempt it. Every
+# other class (auth_required, waf_block, wrong_method, ... — a transient
+# precondition, not a verdict on the vector) is deliberately NOT carried, and a
+# diagnostic/unclassified node is NEVER carried (it never reached the app, so it
+# proves nothing — this is the rule that stops a curl-error probe from wrongly
+# "ruling out" a live vector).
+_LEAD_CLASSES = frozenset({
+    "exploit_confirmed", "oob_callback", "error_leak", "outbound_fetch",
+    "boolean_differential", "info_disclosure", "time_differential",
+    "reflected_unsanitized", "partial_filter_bypass", "server_error_5xx",
+    "filter_blacklist", "encoding_normalization",
+})
+_DEAD_CLASSES = frozenset({
+    "dead_endpoint", "filter_whitelist", "benign_no_signal", "geo_legal_block", "duplicate",
+})
+
+
+def _target_sig(node: ExploitTreeNode) -> str:
+    """Short, READABLE 'what was targeted' from tool_args (endpoint + first param),
+    so a cross-tree digest entry says `error_leak @ /total_loan_payments?principal`
+    instead of a bare tool name. Falls back to the tool name; never raises."""
+    ta = node.tool_args or {}
+    if isinstance(ta, dict):
+        raw = str(ta.get("args") or ta.get("url") or ta.get("command") or ta.get("code") or "")
+    else:
+        raw = str(ta)
+    m = re.search(r"(/[\w./%~-]+)(\?[\w%.\[\]-]+=?)?", raw)   # path + first param key
+    sig = (m.group(0) if m else raw).strip()
+    sig = " ".join(sig.split())[:60]
+    return sig or (node.tool_name or "?")
+
+
+def _tree_leads_and_dead(tree: "ExploitTree"):
+    """Extract the SEMANTIC knowledge a finished tree earned: confirmed LEADS (with
+    the node's actionable reflection) and confirmed-DEAD class@target pairs. Deduped
+    within the tree by (response_class, target). Excludes proposed/diagnostic/
+    unclassified nodes so nothing that never reached the app is recorded."""
+    leads: dict = {}   # (cls, sig) -> reflection
+    dead: dict = {}    # (cls, sig) -> None
+    for n in tree.nodes.values():
+        if n.parent_id is None or n.status == "proposed":
+            continue
+        rc = n.response_class or ""
+        if not rc or is_diagnostic_failure(n.error_class or ""):
+            continue
+        key = (rc, _target_sig(n))
+        if rc in _LEAD_CLASSES:
+            leads.setdefault(key, (n.reflection or ""))
+        elif rc in _DEAD_CLASSES:
+            dead.setdefault(key, None)
+    lead_lines = [f"{rc} @ {sig}" + (f" ({why})" if why else "")
+                  for (rc, sig), why in leads.items()]
+    dead_lines = [f"{rc} @ {sig}" for (rc, sig) in dead]
+    return lead_lines, dead_lines
+
+
 def _tree_digest_entry(tree: "ExploitTree", outcome: str) -> str:
-    """One compact, cumulative line per finished tree: outcome, the best line,
-    and what it ruled out. Kept short so many trees can accumulate without
-    bloating the expand prompt."""
-    best = " -> ".join(_trajectory_labels(tree)) or "n/a"
-    pruned = [n.tool_name for n in tree.nodes.values()
-              if n.status == "pruned" and n.tool_name][:5]
+    """One compact per-tree narrative line: outcome + where the best line ended up,
+    rendered SEMANTICALLY (the leaf's class @ target) rather than as tool names. The
+    reusable leads/ruled-out knowledge lives in the merged _lats_leads/_lats_dead
+    stores, not here."""
     succeeded = any(n.exploit_succeeded for n in tree.nodes.values())
     tag = "FOOTHOLD" if succeeded else outcome
-    ruled = ", ".join(pruned) if pruned else "none"
-    return f"[{tag}] objective={ (tree.objective or '')[:60] } | best: {best} | ruled out: {ruled}"
+    leaf = tree.nodes.get(tree.best_terminal_id) if tree.best_terminal_id else None
+    if leaf is not None and leaf.tool_name:
+        best = f"{leaf.response_class or leaf.verdict or leaf.status} @ {_target_sig(leaf)}"
+    else:
+        best = " -> ".join(_trajectory_labels(tree)) or "n/a"
+    return f"[{tag}] obj={(tree.objective or '')[:50]} | best: {best}"
 
 
 def _append_tree_digest(state: dict, tree: "ExploitTree", outcome: str) -> None:
-    """Append a compact digest of a finished tree to a DEDICATED, persistent,
-    append-only store (survives execution_trace eviction), so every subsequent
-    LATS tree sees the full accumulated history — not just the last one."""
+    """Persist a finished tree's knowledge so every subsequent LATS tree inherits it
+    (survives execution_trace eviction). Three append-only stores:
+      1. _lats_tree_digest  — one narrative line per tree (outcome + best line).
+      2. _lats_leads/_lats_dead — the SEMANTIC class@target knowledge, MERGED and
+         deduped across ALL trees, so tree N sees a single clean union of every
+         prior tree's confirmed leads and confirmed-dead classes (not N repetitive
+         per-tree blobs).
+      3. _lats_probe_ledger — HARD byte-identical dedup keys (unchanged)."""
     entry = _tree_digest_entry(tree, outcome)
     hist = list(state.get("_lats_tree_digest") or [])
     hist.append(entry)
     cap = int(get_setting("LATS_DIGEST_MAX", 8))
     state["_lats_tree_digest"] = hist[-cap:]
+
+    # Merge this tree's leads/dead into the run-level, deduped knowledge stores.
+    lead_lines, dead_lines = _tree_leads_and_dead(tree)
+    kcap = cap * 4   # bound the merged lists even across many trees
+    state["_lats_leads"] = list(dict.fromkeys((state.get("_lats_leads") or []) + lead_lines))[-kcap:]
+    state["_lats_dead"] = list(dict.fromkeys((state.get("_lats_dead") or []) + dead_lines))[-kcap:]
 
     # Run-level probe ledger (§3 cross-tree HARD dedup). The digest above is the
     # soft, human-readable hint the next tree READS; this is the enforced
@@ -847,12 +1080,23 @@ def _append_tree_digest(state: dict, tree: "ExploitTree", outcome: str) -> None:
 
 
 def _prior_tree_summaries(state: dict, cap: int = 6) -> str:
-    """Accumulated prior-tree knowledge for the next tree. Prefers the dedicated,
-    persistent digest (all recent trees, eviction-proof); falls back to scraping
+    """Accumulated prior-tree knowledge for the next tree: the run-level, deduped
+    CONFIRMED LEADS (build on these) and RULED-OUT class@target pairs (do NOT
+    re-attempt), plus a short per-tree narrative. Falls back to scraping
     execution_trace's carried-forward summaries for backward compatibility."""
     hist = state.get("_lats_tree_digest") or []
-    if hist:
-        return "\n".join(f"- {e}" for e in hist[-cap:])
+    leads = state.get("_lats_leads") or []
+    dead = state.get("_lats_dead") or []
+    if hist or leads or dead:
+        parts: List[str] = []
+        if leads:
+            parts.append("CONFIRMED LEADS (build on these): " + "; ".join(leads[-12:]))
+        if dead:
+            parts.append("RULED OUT (dead class@target — do NOT re-attempt): "
+                         + "; ".join(dead[-16:]))
+        if hist:
+            parts.append("Per-tree: " + " | ".join(hist[-cap:]))
+        return "\n".join(parts)
     trace = state.get("execution_trace") or []
     sums = [str(s.get("tool_output", ""))[:900]
             for s in trace
@@ -1061,7 +1305,7 @@ def _render_path(tree: "ExploitTree", node: ExploitTreeNode) -> str:
         if n is None:
             break
         if n.parent_id is not None:               # skip synthetic root
-            tag = n.verdict or n.error_class or n.status
+            tag = n.response_class or n.verdict or n.error_class or n.status
             obs = (" | " + n.observation_summary[:80]) if n.observation_summary else ""
             chain.append(f"{_node_label(n)} [{tag}]{obs}")
         nid = n.parent_id
@@ -1143,19 +1387,32 @@ def _expand_prompt_messages(state: dict, node: Optional[ExploitTreeNode],
                f"classes / entry points the surface offers, do not commit to one.")
     else:
         path = _render_path(tree, node) if tree is not None else _node_label(node)
-        tag = node.verdict or node.error_class or node.status
+        rc = node.response_class or ""
+        tag = rc or node.verdict or node.error_class or node.status
+        lesson = f"\n  Lesson: {node.reflection}" if node.reflection else ""
         branch = (
             f"\n\nCurrent branch you are extending:\n"
             f"  Path: {path}\n"
             f"  Extending: {node.tool_name} {json.dumps(node.tool_args or {})} [{tag}]\n"
             f"  Observation: {node.observation_summary or '(none)'}"
+            f"{lesson}"
         )
-        ask = (f"Propose between {lo} and {branching} DISTINCT follow-up probes that "
-               f"build on this line. DECIDE THE COUNT by how many materially-different, "
-               f"credible continuations THIS node genuinely offers — pivot if blocked, "
-               f"deepen if it made progress. Do NOT pad to {branching}: {lo} strong, "
-               f"distinct probes beat {branching} with filler. Return fewer than {lo} "
-               f"only if this line is genuinely near-dead.")
+        # Reflection-conditioned expansion: when the node carries a recognized
+        # response_class, its directive dictates what THIS wave must contain (the
+        # move that converts the lead), replacing the generic "pivot if blocked".
+        directive = _RC_EXPAND_DIRECTIVES.get(rc)
+        if directive:
+            ask = (f"This node was classified `{rc}`. {directive}\n\n"
+                   f"Propose between {lo} and {branching} such probes, most-promising "
+                   f"first. Do NOT pad to {branching}: {lo} strong, distinct probes beat "
+                   f"{branching} with filler.")
+        else:
+            ask = (f"Propose between {lo} and {branching} DISTINCT follow-up probes that "
+                   f"build on this line. DECIDE THE COUNT by how many materially-different, "
+                   f"credible continuations THIS node genuinely offers — pivot if blocked, "
+                   f"deepen if it made progress. Do NOT pad to {branching}: {lo} strong, "
+                   f"distinct probes beat {branching} with filler. Return fewer than {lo} "
+                   f"only if this line is genuinely near-dead.")
 
     existing = _existing_probes(tree) if tree is not None else ""
     dedup = (f"\n\nAlready in the tree — propose DIFFERENT probes, do not repeat:\n{existing}"
@@ -1565,15 +1822,25 @@ def _evaluate_wave(tree: ExploitTree, state: dict, analysis: Any) -> bool:
         child.observation_summary = _summarize(step.get("tool_output"), cap=600)
         child.verdict = _verdict_for(step, analysis)
         child.error_class = step.get("error_class", "") or ""
+        # W4: stamp the LLM-emitted response_class (always classified).
+        rc = _response_class_for(step, analysis)
+        child.response_class = rc
         child.duration_ms = int(step.get("duration_ms", 0) or 0)
         child.step_id = step.get("step_id")
         child.finding_confidence_delta = _new_finding_confidence(step, analysis, credited)
         child.exploit_succeeded = _exploit_succeeded(step, analysis, credited)
         child.status = "terminal" if child.exploit_succeeded else "evaluated"
         lats_backprop(tree, child.id, child.local_value)
+        # W4: when a class is recognized, its actionable reflection carries the MOVE
+        # to the next expand / cross-tree digest (kept or pruned). The class score
+        # already decides prune vs keep (bypassable classes sit above the floor, dead
+        # ones below), so NO prune-exemption special-case is needed.
+        if rc in _RC_REFLECTIONS:
+            child.reflection = _RC_REFLECTIONS[rc]
         if not child.exploit_succeeded and child.local_value < prune_floor:
             child.status = "pruned"
-            child.reflection = _reflect(step, analysis)
+            if not child.reflection:            # legacy fallback when no class
+                child.reflection = _reflect(step, analysis)
     return True
 
 
@@ -1588,9 +1855,12 @@ def _credited_child(executed, analysis):
     if per_step:
         return None                     # per_step localizes; no blanket credit
     # No per-step attribution: credit the strongest child so exactly one can win.
+    # Rank on the LEGACY value (never the W4 response-class value): a kept-alive
+    # input_filter's +0.20 boost is "worth continuing", NOT evidence it caused the
+    # foothold, so it must not outrank a genuinely-informative sibling for credit.
     def _base(cs):
         c, s = cs
-        return _lats_value_web(s, analysis, credited=False)
+        return _legacy_web_value(s, analysis, credited=False)
     return max(executed, key=_base)[0]
 
 

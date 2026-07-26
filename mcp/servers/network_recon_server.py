@@ -104,6 +104,21 @@ _hydra_command: str = ""
 _hydra_start_time: float = 0
 
 
+def _globoff_args(cmd_args: list) -> list:
+    """Prepend curl's --globoff (-g) unless the caller already set it.
+
+    curl treats `{ } [ ]` as URL-glob metacharacters by default (for ranges/sets
+    like `page[1-10]` or `{a,b,c}`). Pentest payloads are full of those chars, so an
+    SSTI/template/array probe like `{{7*7}}`, `${7*7}`, or `id[0]=` makes curl
+    reject the URL with error 3 (CURLE_URL_MALFORMAT) BEFORE any request is sent -
+    the probe never leaves the harness. We never want curl's URL globbing here, so
+    force it off. Prepended (applies globally); idempotent if the caller passed -g.
+    """
+    if any(a in ("-g", "--globoff") for a in cmd_args):
+        return cmd_args
+    return ["-g"] + cmd_args
+
+
 @mcp.tool()
 def execute_curl(args: str, _redamon_ctx: str = "") -> str:
     """
@@ -160,7 +175,9 @@ def execute_curl(args: str, _redamon_ctx: str = "") -> str:
         - "-s -i 'http://10.0.0.5/index.php?page=../../../etc/passwd'"
     """
     try:
-        cmd_args = shlex.split(args)
+        # --globoff so brace/bracket payloads ({{7*7}}, id[0]=) reach the target
+        # instead of dying at curl's URL globber (error 3) before any request.
+        cmd_args = _globoff_args(shlex.split(args))
         # HTTP traffic capture (Phase 1): route through the capture proxy when a
         # tag is present + the proxy is reachable. -x + -H added together, ONLY in
         # this branch (§20.2 no-leak); the LLM never sees _redamon_ctx.

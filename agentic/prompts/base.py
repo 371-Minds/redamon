@@ -508,6 +508,16 @@ def build_attack_path_behavior(attack_path_type):
             "context-aware payloads, Playwright dialog-handler proof, dalfox WAF evasion if filtered, "
             "then action='complete' after PoC capture."
         )
+    elif attack_path_type == "http_request_smuggling":
+        return (
+            "In informational phase: confirm a FRONT/back-end HTTP chain exists (a proxy, cache, or "
+            "load balancer in front of a distinct app server) and note any path the front tier blocks "
+            "that a back-end would serve, then act. In exploitation: follow the smuggling workflow. "
+            "**Tooling is not optional here: use execute_code with a raw socket (byte-exact "
+            "Content-Length, literal CRLF, exact chunk sizes) over ONE reused connection; "
+            "execute_curl/execute_httpx normalize the request and cannot reproduce a desync.** Detect "
+            "the desync with safe timing/differential probes before weaponizing."
+        )
     elif attack_path_type.startswith("user_skill:"):
         return (
             "Follow the attack skill workflow guidance provided in the Available Tools section.\n"
@@ -1130,6 +1140,71 @@ new to cite, the verdict is `duplicate` or `no_progress` — `confirmation` is d
 
 IMPORTANT: `extracted_info` field names must be EXACTLY: `primary_target`, `ports`, `services`, `technologies`, `vulnerabilities`, `credentials`, `sessions`. These are used for graph linking — wrong names will break connections.
 Then decide your next action as usual.
+"""
+
+
+# =============================================================================
+# W4 — RESPONSE-CLASS TAXONOMY BLOCK. Appended (NOT .format-ed — the {{7*7}}
+# examples must render literally) to the plan-wave analysis section on every wave.
+# Asks the model to emit a per_step array with a response_class from the 24-class
+# taxonomy. LATS maps each class to a per-node value + next-move; the sequential
+# loop uses it as a next-move hint.
+# =============================================================================
+
+RESPONSE_CLASS_TAXONOMY_BLOCK = """
+
+### Per-Step Response Classification (REQUIRED)
+
+Add a `per_step` array to `output_analysis`: ONE entry per tool result above,
+each with `step_index` (0-based, matching the order shown), the per-step
+`verdict`, any `finding` + `confidence` (0-100), `exploit_succeeded`, and a
+`response_class` (the single label below that best describes THAT probe's
+response). Pick the STRONGEST signal if several apply. A reflection of your input
+is NOT `exploit_confirmed` until the payload is proven executed/evaluated.
+For `boolean_differential` / `dead_endpoint` / `waf_block` you MUST compare
+against a known baseline (a benign control request); if you have none, use
+`inconclusive`.
+
+```json
+"per_step": [
+  {"step_index": 0, "verdict": "blocked", "finding": "SSTI blacklist on {}[]_.", "confidence": 60, "exploit_succeeded": false, "response_class": "filter_blacklist"}
+]
+```
+
+response_class values (choose exactly one per step):
+
+CONFIRMED / STRONG LEAD
+  exploit_confirmed    - payload executed / file or data returned inline ({{7*7}}->49, /etc/passwd content, another user's data)
+  oob_callback         - blind payload triggered a DNS/HTTP hit on our OAST domain
+  error_leak           - SQL/template/deserialization error or stack trace leaked
+  outbound_fetch       - server fetched our URL / followed our redirect (SSRF)
+  boolean_differential - true vs false input gave a stable, reproducible difference (needs baseline)
+  info_disclosure      - leaked internal path / version / IP / source / .git / .env
+  time_differential    - response delay tracked an injected sleep (corroborate over N)
+SURFACE (not yet a vuln)
+  reflected_unsanitized- our input echoed back RAW; execution not yet proven
+SERVER FAULT
+  server_error_5xx     - our input caused a 500/504 (reached backend logic)
+BYPASSABLE BLOCK (keep the vector, change the payload)
+  filter_blacklist     - a specific token was blocked/stripped; a mutation would pass
+  partial_filter_bypass- some chars survived the filter, some were stripped
+  encoding_normalization- payload accepted but normalized/decoded, not rejected
+  waf_block            - branded WAF/edge block (ref-ID, vendor header), payload-triggered
+PRECONDITION (satisfy something, then retry)
+  privilege_required   - 403 AFTER authenticating (authorization, not creds)
+  wrong_method         - 405; endpoint exists, wrong HTTP verb
+  wrong_content_type   - 415; endpoint wants a specific Content-Type
+  auth_required        - 401 / redirect to login; needs credentials
+  rate_limited         - 429 / throttled; slow down, do not abandon
+  size_limit           - 413/414/431; payload too large
+HARD BLOCK / DEAD (abandon the vector)
+  filter_whitelist     - every deviation rejected identically; only parser tricks may pass
+  geo_legal_block      - 451 / geo block
+  benign_no_signal     - reachable 200 but no reflection / effect / difference
+  dead_endpoint        - 404/410 or soft-404 matching the known-negative baseline
+  duplicate            - identical to a prior probe
+OTHERWISE
+  inconclusive         - transport/tool error, or no baseline to decide a differential
 """
 
 

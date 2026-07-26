@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.4] - 2026-07-27
+
+### Added
+
+- **HTTP Request Smuggling attack skill.** A new built-in `http_request_smuggling` class (general CL.TE / TE.CL / TE.TE desync methodology with raw-socket tooling) so the agent can detect and exploit front/back-end request-boundary disagreements. Enabled by default; classification, workflow, and behaviour wired end-to-end and covered by [agentic/tests/test_http_smuggling_skill.py](agentic/tests/test_http_smuggling_skill.py) (including a fairness guard that the skill carries no target-specific hints).
+
+### Changed
+
+- **Exploit-Path Search (LATS) scores each probe by an LLM-assigned response class (24-class taxonomy).** Replaces the coarse `verdict` + `error_class` scoring: a bypassable input filter (e.g. an SSTI blacklist) is now kept alive instead of pruned like a dead endpoint, and each class carries an actionable reflection. Reflection-conditioned expansion then makes the next wave act on that class (mutate the payload, extract from a leaked error, ...) instead of a generic pivot. Covered by [agentic/tests/test_lats_response_class.py](agentic/tests/test_lats_response_class.py).
+- **LATS trees now compound knowledge across a run.** A finished tree passes forward its confirmed LEADS and confirmed-dead `class @ target` pairs (with the one-line lesson), merged and deduped across every prior tree, so a later tree stops re-deriving dead ends instead of inheriting bare tool names. A diagnostic/tooling failure is never recorded as ruled-out. Covered by [agentic/tests/test_lats_cross_tree_digest.py](agentic/tests/test_lats_cross_tree_digest.py).
+- **SQLi and LFI skills sharpened (general methodology).** Blind-oracle stability discipline for boolean/time extraction (re-verify and re-establish a session-bound oracle before trusting extracted characters), and a fixed-path-prefix to code-execution (log-poisoning) pivot for when PHP stream wrappers cannot reach a target file.
+
+### Fixed
+
+- **`execute_curl` disables curl URL globbing (`--globoff`).** curl treats `{ } [ ]` in a URL as glob metacharacters and rejected the request with error 3 (URL malformed) before it ever left the harness, silently killing SSTI/template/array payloads; they now reach the target. Covered by [mcp/tests/test_curl_globoff.py](mcp/tests/test_curl_globoff.py).
+
+---
+
 ## [6.2.3] - 2026-07-25
 
 ### Fixed
