@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.5] - 2026-07-28
+
+### Fixed
+
+- **Terminal and AI Agent hung on "Connecting…" when RedAmon was opened over the LAN (issue #159).** A plain `docker compose up` deploy (no reverse proxy) reached by IP/hostname built the WebSocket URL from the page origin (`ws://<host>:3000/ws/*`), but port 3000 runs no WebSocket server, so both sockets hung forever — only `localhost` worked. The server now injects a runtime routing hint so the browser dials the agent's published port (`ws://<host>:8090/ws/*`) with zero config, while reverse-proxied and single-host deploys keep same-origin routing untouched. Tunable at runtime (no rebuild) via `AGENT_WS_MODE` / `AGENT_WS_PUBLIC_URL`. Covered by [webapp/src/hooks/agentWsUrl.test.ts](webapp/src/hooks/agentWsUrl.test.ts).
+- **Metasploit MCP progress server spammed the kali-sandbox log with `BrokenPipeError` double-tracebacks.** A client polling the progress/session endpoint and disconnecting mid-response left the response writers (`_send_json` and the 404/204 paths) writing to a dead socket, then the error handler wrote a 500 to the same socket and faulted again. All response writes now swallow client-disconnect errors. Covered by [mcp/servers/tests/test_metasploit_progress.py](mcp/servers/tests/test_metasploit_progress.py).
+
+### Changed
+
+- **TrafficMind capture-proxy config is now DB-driven and hot-reloaded — no more env drift.** The egress guard and body-storage policy were baked into the proxy's env at container spawn, so a bring-up could silently diverge from the saved settings (a stale env kept blocking private lab targets even with the UI toggle off). The DB is now the single source of truth: the orchestrator materialises the settings to a shared file the credential-free proxy hot-reloads within seconds — changes apply live with no restart, any start path converges to the DB, and egress/body edits no longer recreate the proxy. Fail-safe throughout (a missing/invalid config blocks all egress). Covered by [capture_proxy/tests/test_capture_config.py](capture_proxy/tests/test_capture_config.py) and [recon_orchestrator/tests/test_capture_config_reconcile.py](recon_orchestrator/tests/test_capture_config_reconcile.py).
+- **LFI and SSTI skills sharpened (general methodology).** Path-traversal gained a mandatory include-vs-stream sink discriminator and log-poisoning payload hygiene (read the target as data, quote-safe payload, corrupted-log pivot); the RCE/SSTI skill gained a constraint-driven filter-bypass menu for character-restricted template sinks.
+
+---
+
 ## [6.2.4] - 2026-07-27
 
 ### Added

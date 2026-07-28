@@ -405,6 +405,10 @@ services:
       # (via mount auto-detection) to bind per-job worktrees into the CodeFix build
       # sandbox it spawns (T6/E10).
       - cypherfix-work:/app/codefix-work
+      # DB -> file reconciler: the orchestrator materialises the global TrafficMind
+      # capture config (source of truth = DB) into this shared volume so the
+      # credential-free proxy can hot-reload it. Same volume the proxy mounts at /spool.
+      - capture_spool:/spool
     environment:
       # Host paths are auto-detected from container mounts (no hardcoded paths needed)
       RECON_IMAGE: redamon-recon:latest
@@ -855,6 +859,16 @@ services:
       ORCHESTRATOR_API_KEY: ${ORCHESTRATOR_API_KEY:-changeme}
       AGENT_API_URL: http://agent:8080
       AGENT_WS_URL: ws://agent:8080/ws/agent
+      # Browser -> agent WebSocket routing (issue #159). This default deploy has NO
+      # reverse proxy, so tell the UI to dial the agent's PUBLISHED port on whatever
+      # host the browser used -> LAN/remote access ("http://<host>:3000") connects the
+      # Terminal + AI Agent with no config. Read at request time by app/layout.tsx, so
+      # changing it is edit-.env + `docker compose up -d webapp` (no rebuild).
+      # Behind a reverse proxy instead, set AGENT_WS_PUBLIC_URL=wss://<host>/ws/agent
+      # (or unset AGENT_WS_MODE) to keep same-origin routing.
+      AGENT_WS_MODE: "${AGENT_WS_MODE:-agent-port}"
+      AGENT_WS_PORT: "${AGENT_PORT:-8090}"
+      AGENT_WS_PUBLIC_URL: "${AGENT_WS_PUBLIC_URL:-}"
       # Recon container connects via host network, needs host-accessible webapp URL
       WEBAPP_URL: http://localhost:${WEBAPP_PORT:-3000}
       # Output paths (must match volume mounts below)
@@ -922,31 +936,17 @@ services:
     environment:
       CAPTURE_SPOOL_DIR: /spool
       CAPTURE_BODIES_DIR: /bodies
-      CAPTURE_PROXY_MAX_BODY_KB: "${CAPTURE_PROXY_MAX_BODY_KB:-64}"
-      CAPTURE_PROXY_STORE_BODIES: "${CAPTURE_PROXY_STORE_BODIES:-true}"
-      CAPTURE_STORE_REQ_BODIES: "${CAPTURE_STORE_REQ_BODIES:-true}"
-      CAPTURE_STORE_RESP_BODIES: "${CAPTURE_STORE_RESP_BODIES:-true}"
-      CAPTURE_MAX_STORE_MB: "${CAPTURE_MAX_STORE_MB:-5}"
-      CAPTURE_BODY_RULES: "${CAPTURE_BODY_RULES:-}"
-      # Extra RedAmon service IPs the proxy must never reach (defense in depth on
-      # top of the RFC1918/loopback denylist; pentest-net placement already blocks).
-      # ALWAYS enforced; never gated by the CAPTURE_EGRESS_* toggles below.
+      # The egress-guard + body-storage policy are NO LONGER env-configured here.
+      # They are the single source of truth in the DB (Global Settings > TrafficMind),
+      # materialised to /spool/.capture-config.json by the orchestrator's reconciler
+      # and HOT-RELOADED by the proxy. Until that file first appears, the proxy fails
+      # CLOSED (every egress class blocked) — a stale/compose env can no longer drift
+      # the running policy.
+      #
+      # Extra RedAmon service IPs the proxy must never reach: a SECURITY invariant,
+      # NOT a DB-tunable knob (never gated by the egress toggles), so it stays on the
+      # env and is always enforced.
       CAPTURE_BLOCKED_IPS: "${CAPTURE_BLOCKED_IPS:-}"
-      # Egress-guard toggles (Global Settings > TrafficMind). All default true
-      # (block); the out-of-the-box guard. The orchestrator-spawned proxy gets
-      # these injected per the UI toggles; these entries only shape the static
-      # `--profile capture` proxy. Set a var false to ALLOW that destination class.
-      CAPTURE_EGRESS_BLOCK_EMPTY_HOST: "${CAPTURE_EGRESS_BLOCK_EMPTY_HOST:-true}"
-      CAPTURE_EGRESS_BLOCK_HARD_GUARDRAIL: "${CAPTURE_EGRESS_BLOCK_HARD_GUARDRAIL:-true}"
-      CAPTURE_EGRESS_FAIL_CLOSED: "${CAPTURE_EGRESS_FAIL_CLOSED:-true}"
-      CAPTURE_EGRESS_BLOCK_UNRESOLVABLE: "${CAPTURE_EGRESS_BLOCK_UNRESOLVABLE:-true}"
-      CAPTURE_EGRESS_BLOCK_PRIVATE: "${CAPTURE_EGRESS_BLOCK_PRIVATE:-true}"
-      CAPTURE_EGRESS_BLOCK_LOOPBACK: "${CAPTURE_EGRESS_BLOCK_LOOPBACK:-true}"
-      CAPTURE_EGRESS_BLOCK_LINK_LOCAL: "${CAPTURE_EGRESS_BLOCK_LINK_LOCAL:-true}"
-      CAPTURE_EGRESS_BLOCK_CGNAT: "${CAPTURE_EGRESS_BLOCK_CGNAT:-true}"
-      CAPTURE_EGRESS_BLOCK_RESERVED: "${CAPTURE_EGRESS_BLOCK_RESERVED:-true}"
-      CAPTURE_EGRESS_BLOCK_MULTICAST: "${CAPTURE_EGRESS_BLOCK_MULTICAST:-true}"
-      CAPTURE_EGRESS_BLOCK_UNSPECIFIED: "${CAPTURE_EGRESS_BLOCK_UNSPECIFIED:-true}"
     # Target-facing plane ONLY. No redamon-network -> structurally cannot reach
     # Postgres/Neo4j/agent/webapp/orchestrator. Holds NO DB creds, NO signing key.
     networks:

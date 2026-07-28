@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { buildAgentWsUrl } from './agentWsUrl'
+import { buildAgentWsUrl, resolveWsHint } from './agentWsUrl'
 
 /**
  * Regression suite for the browser -> agent WebSocket URL builder. This exercises
@@ -114,6 +114,112 @@ describe('buildAgentWsUrl -- browser auto-detect, proxied deploy uses same origi
     for (const p of PATHS) {
       expect(buildAgentWsUrl(p)).not.toContain(':8090')
     }
+  })
+})
+
+describe('buildAgentWsUrl -- runtime routing hint (issue #159: no-reverse-proxy deploy)', () => {
+  function stubWindow(loc: { protocol: string; hostname: string; port: string }, hint: unknown) {
+    vi.stubGlobal('window', { location: loc, __REDAMON_WS__: hint })
+  }
+
+  test('agent-port hint over a LAN IP dials the agent port on the browser host (THE FIX)', () => {
+    stubWindow({ protocol: 'http:', hostname: '192.168.1.157', port: '3000' }, { port: '8090' })
+    expect(buildAgentWsUrl('/ws/kali-terminal')).toBe('ws://192.168.1.157:8090/ws/kali-terminal')
+    expect(buildAgentWsUrl('/ws/agent')).toBe('ws://192.168.1.157:8090/ws/agent')
+  })
+
+  test('agent-port hint on localhost still uses :8090', () => {
+    stubWindow({ protocol: 'http:', hostname: 'localhost', port: '3000' }, { port: '8090' })
+    expect(buildAgentWsUrl('/ws/agent')).toBe('ws://localhost:8090/ws/agent')
+  })
+
+  test('agent-port hint over https -> wss on that port', () => {
+    stubWindow({ protocol: 'https:', hostname: 'box.lan', port: '3000' }, { port: '8090' })
+    expect(buildAgentWsUrl('/ws/agent')).toBe('wss://box.lan:8090/ws/agent')
+  })
+
+  test('a custom agent port is honoured', () => {
+    stubWindow({ protocol: 'http:', hostname: '10.0.0.5', port: '3000' }, { port: '9000' })
+    expect(buildAgentWsUrl('/ws/agent')).toBe('ws://10.0.0.5:9000/ws/agent')
+  })
+
+  test('full-URL hint swaps the /ws/agent suffix', () => {
+    stubWindow({ protocol: 'http:', hostname: '10.0.0.5', port: '3000' }, { url: 'wss://redamon.lan/ws/agent' })
+    expect(buildAgentWsUrl('/ws/kali-terminal')).toBe('wss://redamon.lan/ws/kali-terminal')
+  })
+
+  test('NEXT_PUBLIC_AGENT_WS_URL still wins over the runtime hint (single-host untouched)', () => {
+    process.env[ENV_KEY] = 'wss://prod.example.com/ws/agent'
+    stubWindow({ protocol: 'https:', hostname: 'prod.example.com', port: '' }, { port: '8090' })
+    expect(buildAgentWsUrl('/ws/agent')).toBe('wss://prod.example.com/ws/agent')
+  })
+
+  test('NO hint -> same-origin behavior preserved, incl. a proxy on a non-standard port', () => {
+    // Proxied deploys don't set the hint (or they set NEXT_PUBLIC_*). Must stay
+    // same-origin so nginx on :8443 keeps routing /ws/* — the case the port
+    // heuristic would have broken.
+    stubWindow({ protocol: 'https:', hostname: 'redamon.example.com', port: '8443' }, undefined)
+    expect(buildAgentWsUrl('/ws/agent')).toBe('wss://redamon.example.com:8443/ws/agent')
+    expect(buildAgentWsUrl('/ws/agent')).not.toContain(':8090')
+  })
+})
+
+describe('buildAgentWsUrl -- base URL without the /ws/agent suffix (robustness)', () => {
+  test('NEXT_PUBLIC base without /ws/agent still appends the path (never drops it)', () => {
+    process.env[ENV_KEY] = 'wss://redamon.example.com'
+    expect(buildAgentWsUrl('/ws/kali-terminal')).toBe('wss://redamon.example.com/ws/kali-terminal')
+    expect(buildAgentWsUrl('/ws/agent')).toBe('wss://redamon.example.com/ws/agent')
+  })
+
+  test('trailing slash on the base is not doubled', () => {
+    process.env[ENV_KEY] = 'wss://redamon.example.com/'
+    expect(buildAgentWsUrl('/ws/agent')).toBe('wss://redamon.example.com/ws/agent')
+  })
+
+  test('runtime url hint WITHOUT the suffix appends the path (AGENT_WS_PUBLIC_URL footgun)', () => {
+    vi.stubGlobal('window', {
+      location: { protocol: 'http:', hostname: '10.0.0.5', port: '3000' },
+      __REDAMON_WS__: { url: 'ws://10.0.0.5:8090' },
+    })
+    expect(buildAgentWsUrl('/ws/kali-terminal')).toBe('ws://10.0.0.5:8090/ws/kali-terminal')
+    expect(buildAgentWsUrl('/ws/agent')).toBe('ws://10.0.0.5:8090/ws/agent')
+  })
+
+  test('empty hint object falls back to same-origin (no crash, no :8090 leak)', () => {
+    vi.stubGlobal('window', {
+      location: { protocol: 'https:', hostname: 'redamon.example.com', port: '' },
+      __REDAMON_WS__: {},
+    })
+    const url = buildAgentWsUrl('/ws/agent')
+    expect(url).toBe('wss://redamon.example.com/ws/agent')
+    expect(url).not.toContain(':8090')
+  })
+})
+
+describe('resolveWsHint -- server env -> injected hint (app/layout.tsx mapping)', () => {
+  test('AGENT_WS_PUBLIC_URL wins and yields a url hint', () => {
+    expect(resolveWsHint({ AGENT_WS_PUBLIC_URL: 'wss://x/ws/agent', AGENT_WS_MODE: 'agent-port', AGENT_WS_PORT: '8090' }))
+      .toEqual({ url: 'wss://x/ws/agent' })
+  })
+
+  test('agent-port mode yields a port hint (default 8090)', () => {
+    expect(resolveWsHint({ AGENT_WS_MODE: 'agent-port' })).toEqual({ port: '8090' })
+  })
+
+  test('agent-port mode honours a custom AGENT_WS_PORT', () => {
+    expect(resolveWsHint({ AGENT_WS_MODE: 'agent-port', AGENT_WS_PORT: '9000' })).toEqual({ port: '9000' })
+  })
+
+  test('no relevant env -> null (browser keeps same-origin behavior)', () => {
+    expect(resolveWsHint({})).toBeNull()
+  })
+
+  test('a non-agent-port mode (e.g. same-origin) -> null', () => {
+    expect(resolveWsHint({ AGENT_WS_MODE: 'same-origin' })).toBeNull()
+  })
+
+  test('empty AGENT_WS_PUBLIC_URL is ignored (falls through to mode)', () => {
+    expect(resolveWsHint({ AGENT_WS_PUBLIC_URL: '', AGENT_WS_MODE: 'agent-port' })).toEqual({ port: '8090' })
   })
 })
 

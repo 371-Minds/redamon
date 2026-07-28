@@ -250,6 +250,31 @@ Server-mismatch variants (when nginx / a reverse proxy fronts the app):
 
 Capture the first oracle hit, record the exact payload form, and move on.
 
+#### 4A-bis. Classify the sink: INCLUDE/execute vs STREAM/read (MANDATORY before you decide RCE is "unnecessary")
+
+Reading a NON-code file (`/etc/passwd`, `/etc/hosts`) proves traversal but does NOT tell
+you whether the sink `include()`s / interprets the path or merely streams bytes
+(`file_get_contents` / `readfile` / `sendFile`) -- both echo `/etc/passwd` identically. You
+MUST run a positive discriminator BEFORE concluding "simple file read, no execution, RCE
+unnecessary" -- that inference, drawn from a non-code file, is a recurring run-loser:
+
+- **Include a file you KNOW contains server code** -- the app's OWN source reached via the
+  traversal (its index / router / config script, which definitely holds `<?php` / JSP /
+  template code) -- and read HOW it comes back:
+  - rendered HTML, or a BLANK / zero-length / truncated body, or a parse/500 error -> the
+    file was INTERPRETED: the sink is an `include`/`require`, so **code execution is on the
+    table**. A code file that does NOT echo its own source is EXECUTING, not "absent".
+  - the literal `<?php ... ?>` / raw source text comes back -> the sink STREAMS bytes (or a
+    wrapper de-fanged execution); source disclosure is your primitive.
+- A **blank / zero-length** response from including a code file is the STRONGEST signal that
+  the sink executes -- do NOT read it as "file missing / wrong traversal depth" and do NOT
+  let it send you back to brute-forcing flag filenames. When the sink executes and the datum
+  you need lives inside a file that will not echo (it is itself interpreted), the ONLY way to
+  read it is to GAIN execution (log / session poisoning, 4B) and print it as data.
+
+Do NOT record "file_get_contents / no execution / RCE unnecessary" for a sink until this
+include-vs-stream discriminator is on record.
+
 #### 4B. PHP wrappers and log poisoning (CONDITIONAL on `PHP wrappers`=True)
 
 When the target is PHP-based and the basic traversal is filtered, escalate to
@@ -507,6 +532,18 @@ the following must be on record for each confirmed sink:
       target can reach, with the sink's appended suffix (if any) matched. Failed
       LOCAL reads NEVER close an inclusion sink until remote inclusion has also
       failed.
+- [ ] If the sink INTERPRETS the path AND direct reads EXECUTE rather than disclose
+      (an interpreted target -- PHP/JSP/etc. -- returns blank or a parse error instead
+      of its source, or the datum you need lives inside a file that is itself executed),
+      a LOCAL code-execution read has been EXECUTED end-to-end -- not merely planned:
+      poison a writable sink the app records (access/error log, session file,
+      `/proc/self/environ`), INCLUDE it, and READ the command output. A blank /
+      zero-length / parse-error response from including a code file is the TRIGGER to do
+      this, not a dead end. You may NOT `switch_skill`, ask for a hint, write a final
+      summary, or end the run on "the flag is probably in <file>" while a planned-but-
+      unexecuted log/session-poisoning RCE is still outstanding on a confirmed include
+      sink -- plan-then-quit does not satisfy this gate; the poison-include-read cycle
+      must actually have been sent and its output read.
 Only once this checklist is complete may you `switch_skill` or report the class
 as not present. A 403 you never re-routed through a second handler is an open
 lead, not a closed door.
@@ -624,11 +661,35 @@ When the target is PHP AND you have LFI but `allow_url_include` is OFF (no
 `data://`, no remote inclusion), poison a log file with a PHP payload, then
 include the log:
 
+**POISON HYGIENE -- read before your first request; this is where most log-poison
+attempts silently die.** An append-only log CANNOT be un-corrupted. The FIRST malformed
+PHP line you write to it -- most often a double quote the logger escapes to `\"`, which
+turns your string literal into a parse error -- makes `include()` fail to compile the
+WHOLE file, so that log returns BLANK on every later include and no clean payload can
+ever fire again. Therefore:
+- **Zero-quote payload, always.** Use a payload containing NO double AND NO single quotes,
+  so nothing the logger escapes can break it: `<?php system($_GET[c]);?>` or
+  `<?=system($_GET[c])?>` (an unquoted `$_GET[c]` key is fine); pass the command as `&c=id`.
+  Avoid `echo "..."`, `'...'`, and nested-shell quoting entirely.
+- **Poison ONCE per log.** Do not spray several payloads into the same log "to be sure" --
+  every extra line is another chance to corrupt it.
+- **Blank include AFTER a clean poison == already-corrupted log, NOT wrong depth.** If the
+  include returns empty once you KNOW the path resolves (you read `/etc/passwd` at the same
+  depth), an earlier bad line has poisoned it. Do NOT keep re-poisoning or re-guessing depth
+  on that file: pivot to a DIFFERENT sink you have not corrupted -- a fresh `error.log` (send
+  a request that errors with the payload in the path), a PHP session file you control (store
+  the payload via a form field), or an uploaded file -- and include THAT.
+
 1. Identify a readable log: `?file=../../../../var/log/apache2/access.log`,
    `?file=../../../../var/log/nginx/access.log`,
    `?file=../../../../var/log/auth.log`,
    `?file=../../../../var/log/mail.log`,
    `?file=../../../../proc/self/fd/N` (numbered fd, brute the index).
+   **Do NOT let the advertised `Server:` header pick the log path for you.** A PHP
+   app (`X-Powered-By: PHP`, `.php` endpoints) frequently sits behind a reverse
+   proxy that rewrites `Server:` to its own (e.g. `nginx`/`cloudflare`), so the real
+   log is the *backend's* -- sweep BOTH `apache2/*` and `nginx/*` (and `php*-fpm`)
+   paths regardless of what the banner claims, rather than concluding "no log here".
 2. Inject the payload via the channel that writes to that log:
    - Apache / nginx access log: send a request with a crafted `User-Agent`
      header: `User-Agent: <?php system($_GET['c']); ?>`.
@@ -637,6 +698,22 @@ include the log:
    - Mail log: send a mail with the crafted subject.
 3. Trigger inclusion: `?file=../../../../var/log/apache2/access.log&c=id`.
 4. Read the response for the command output.
+5. **Payload hygiene (why a "correct" poison silently returns nothing):**
+   - **Quote-escaping.** Access-log formats ESCAPE double-quotes in the logged field
+     (Apache stores a `"` as `\"`), so PHP that relies on double-quoted string literals
+     is written malformed and fatals on include. Use single-quoted or quote-free PHP
+     (e.g. `<?php system($_GET[c]); ?>`), and generate it with a real HTTP client, not
+     nested shell quoting that can mangle it before it is sent.
+   - **All-or-nothing compile.** `include()` compiles the ENTIRE log in one pass; a
+     single earlier line holding a broken `<?php ... ?>` fragment is a parse error that
+     blanks the whole response, hiding a valid payload later in the file. Keep injected
+     PHP minimal and syntactically complete; if the response goes empty right after your
+     probes, assume you poisoned the log with a malformed line and switch channel
+     (`/proc/self/environ`, a session file, a fresh log) rather than re-firing.
+   - A **blank / zero-length** response from including a file is itself a signal that the
+     file was interpreted (or failed to compile), NOT that it is absent -- when a target
+     file executes instead of rendering, read its bytes as DATA through your RCE
+     (`readfile`/`cat`/`file_get_contents`), never by including it directly.
 
 Log poisoning is a Level-4 critical-impact primitive -- it gives RCE under the
 web user. Treat it as a path-traversal-to-RCE chain and stop at one

@@ -265,8 +265,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // the orchestrator capture-proxy/{start,stop}. Best-effort: a save must not
     // fail because the orchestrator is briefly unreachable.
     const captureEnabledChanged = captureEnabledProvided && captureDesiredEnabled !== (existing?.captureProxyEnabled ?? true)
-    const captureConfigChanged = Object.keys(captureData).length > 0
-    if (captureEnabledChanged || (settings.captureProxyEnabled && captureConfigChanged)) {
+    // Egress toggles + body-storage policy are applied LIVE by the proxy's config-file
+    // hot-reload (DB -> /spool/.capture-config.json -> proxy, within seconds), so a
+    // save that touches ONLY those must NOT restart the proxy. A container recreate is
+    // required solely for knobs baked in at spawn time: the listen port (proxy command)
+    // and redact-secrets (the ingest container's env). Everything else is either
+    // hot-reloaded or enforced outside the container (scope routing, retention cron).
+    const RECREATE_FIELDS = ['captureProxyPort', 'captureProxyRedactSecrets'] as const
+    const existingRow = existing as Record<string, unknown> | null
+    const changedRecreateField = RECREATE_FIELDS.some(
+      (k) => k in captureData && captureData[k] !== existingRow?.[k],
+    )
+    if (captureEnabledChanged || (settings.captureProxyEnabled && changedRecreateField)) {
       const orchUrl = process.env.RECON_ORCHESTRATOR_URL || 'http://recon-orchestrator:8010'
       try {
         if (settings.captureProxyEnabled) {

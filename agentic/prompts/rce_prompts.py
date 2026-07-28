@@ -308,6 +308,48 @@ universal SSTI oracle:
   is inert on every downstream view may you drop the template-injection hypothesis for that
   input. Record which views you fetched; "it looked like XSS" is not grounds to skip the matrix.
 
+#### 4B-bis. Filter / WAF bypass for character-restricted template sinks
+
+A confirmed template sink often sits behind an INPUT blacklist and/or an OUTPUT check.
+Do NOT conclude "SSTI is dead" because your first canonical payload is rejected -- the
+engine is still compiling your input; you only need syntax that AVOIDS the blocked
+tokens. Work it as a constraint-satisfaction problem, not a fixed recipe:
+
+1. **Map the constraint first (measure, never guess).** Probe each structural
+   metacharacter in isolation (`{{{{`, `}}}}`, `{{%`, `%}}`, `_`, `.`, `[`, `]`, `|`, `(`,
+   `'`, `"`, `~`) and record which ones the app rejects and with what message. Note any
+   OUTPUT validation too (e.g. the reflected field must stay numeric or match a regex).
+   You now know EXACTLY which syntax you must route around -- discovered from the target,
+   never assumed.
+2. **Output braces (`{{{{ }}}}`) blocked -> emit another way.** Expression braces are only
+   ONE way an engine produces output. If they are filtered, obtain output via:
+   - a statement/tag construct the engine still renders (Jinja/Twig `{{% ... %}}`,
+     ERB `<% ... %>`), combined with SHADOWING a variable the template already emits on
+     its own -- reassign that in-scope name so the template's OWN output expression
+     carries your value out;
+   - an engine debug/dump tag, or an error-based leak (force your value into an exception
+     message the app echoes back);
+   - a stored-then-rendered field (see 4B "seed-then-render") whose LATER view emits it.
+3. **Dot (`.`) blocked -> attribute access without dots.** Use the engine's attribute
+   filter (`|attr('NAME')`) or its map/lookup helpers instead of dotted access.
+4. **Subscript (`[` `]`) blocked -> index without brackets.** Reach items via
+   `|attr('...')(k)` forms, `|first`/`|last`/`|map`/`|list` filters, slicing helpers, or
+   methods reached through the attribute filter.
+5. **Underscore (`_`) blocked -> build reserved names without a literal `_`.** Compose the
+   character from a string escape or concatenation the engine evaluates (hex/unicode
+   escapes inside a string literal, `~`-concatenation, `chr()`-style helpers) so the
+   blocked byte never appears in your INPUT while the engine still resolves the name.
+6. **Satisfy the OUTPUT check.** If the reflected field is validated, keep THAT field
+   compliant (e.g. leave it numeric) and route your real output to a DIFFERENT part of
+   the response -- a shadowed variable, a second injected field, or an error string --
+   so the check passes while your data still lands in the body.
+
+Every concrete gadget above is a PLACEHOLDER: the exact global/object, the exact escape,
+and the exact emit path are target-specific -- derive them from step 1's constraint map
+and the engine's own object graph (the 4B breadth-first extraction walk), never from a
+memorised payload. A blacklist that blocks the "textbook" chain is a signal to enumerate
+the SURVIVING syntax, not to abandon the class.
+
 #### 4C. Insecure deserialization (CONDITIONAL on `RCE_DESERIALIZATION_ENABLED`)
 
 Only if `RCE_DESERIALIZATION_ENABLED`=True AND you identified a deserialization

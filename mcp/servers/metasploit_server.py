@@ -1103,13 +1103,35 @@ class SessionProgressHandler(BaseHTTPRequestHandler):
             return {}
 
     def _send_json(self, status: int, data):
-        """Send a JSON response."""
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        # No CORS header (I9): served only server-side by the agent container;
-        # leaks live session/exploitation data if readable cross-origin.
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        """Send a JSON response.
+
+        A client that polls this progress/session endpoint and hangs up mid-response
+        (normal for a browser tab closing or the UI reconnecting) leaves the socket
+        half-closed. Serialise BEFORE touching the socket, then swallow the resulting
+        BrokenPipe/ConnectionReset instead of letting it bubble up: otherwise do_GET's
+        own error handler tries to write a 500 to the same dead socket, faults again,
+        and socketserver logs a noisy double traceback (issue #159)."""
+        payload = json.dumps(data).encode()
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            # No CORS header (I9): served only server-side by the agent container;
+            # leaks live session/exploitation data if readable cross-origin.
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected before we finished writing; nothing to recover.
+            pass
+
+    def _send_status(self, status: int):
+        """Send a body-less status response (404/204/…), swallowing the same
+        client-disconnect errors as _send_json so a poller that hangs up on these
+        paths can't spam the log with an unhandled BrokenPipe traceback either."""
+        try:
+            self.send_response(status)
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_GET(self):
         resource, res_id, action = self._parse_route()
@@ -1134,8 +1156,7 @@ class SessionProgressHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"status": "ok"})
 
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_status(404)
 
     def do_POST(self):
         resource, res_id, action = self._parse_route()
@@ -1176,8 +1197,7 @@ class SessionProgressHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True, "id": sid})
 
             else:
-                self.send_response(404)
-                self.end_headers()
+                self._send_status(404)
 
         except Exception as e:
             self._send_json(500, {"error": str(e)})
@@ -1191,14 +1211,12 @@ class SessionProgressHandler(BaseHTTPRequestHandler):
             msf._non_msf_sessions.pop(sid, None)
             self._send_json(200, {"ok": True})
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_status(404)
 
     def do_OPTIONS(self):
         """Preflight: no CORS allowance (I9). Cross-origin browser reads of this
         server-side-only endpoint are intentionally rejected."""
-        self.send_response(204)
-        self.end_headers()
+        self._send_status(204)
 
     def log_message(self, format, *args):
         """Suppress request logging."""

@@ -103,6 +103,27 @@ def policy_from_env(env: Optional[Mapping[str, str]] = None) -> EgressPolicy:
     })
 
 
+def policy_from_dict(d: Optional[Mapping[str, object]]) -> EgressPolicy:
+    """Build an EgressPolicy from a plain dict keyed by EgressPolicy field names
+    (snake_case, e.g. ``{"block_private": false}``). This is the DB-sourced path:
+    the config the operator saves in TrafficMind is materialised to a JSON file by
+    the trusted control plane and read here — the proxy never touches the DB.
+
+    Same fail-safe posture as `policy_from_env`: any missing/None/garbage field
+    defaults to True (BLOCK), so a truncated or partially-written file can never
+    silently relax the guard. Only an explicit false-like value turns a check off."""
+    d = d or {}
+    return EgressPolicy(**{
+        field: _as_bool(d.get(field), True) for field in POLICY_ENV
+    })
+
+
+def policy_to_dict(policy: EgressPolicy) -> dict:
+    """Serialise an EgressPolicy to the snake_case dict `policy_from_dict` reads.
+    Used by the control plane when rendering the DB settings to the config file."""
+    return {field: bool(getattr(policy, field)) for field in POLICY_ENV}
+
+
 def is_internal_ip(
     ip_str: str,
     extra_blocked: Optional[List[str]] = None,

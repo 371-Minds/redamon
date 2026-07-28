@@ -206,6 +206,66 @@ async def _ai_attack_reaper():
         pass
 
 
+def _fetch_capture_config(url: str, key: str):
+    """Blocking GET of the global TrafficMind capture config from the webapp (the
+    DB owner). Returns the parsed dict, or None on any non-200 / error so the caller
+    keeps the last-good file rather than clobbering it with a relaxed policy."""
+    import urllib.request
+    req = urllib.request.Request(url, headers={"x-internal-key": key})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            if getattr(r, "status", 200) != 200:
+                return None
+            return json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _atomic_write(path: str, text: str) -> None:
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)  # atomic rename; the proxy sees whole-file or nothing
+
+
+async def _capture_config_reconcile():
+    """DB -> file reconciler (single source of truth = the DB / TrafficMind).
+
+    Polls the webapp for the global capture config and materialises it to the shared
+    spool volume as `/spool/.capture-config.json`; the credential-free, target-facing
+    proxy hot-reloads that file. Running continuously means ANY proxy start path
+    (orchestrator spawn, a stray `docker compose up`, a manual restart) converges to
+    the DB truth within one interval — drift becomes structurally impossible. The
+    proxy never touches the DB; env in the proxy is only its fail-closed cold-start
+    default before the first file appears."""
+    base = os.environ.get("WEBAPP_API_URL", "http://webapp:3000").rstrip("/")
+    url = f"{base}/api/internal/capture-config"
+    key = os.environ.get("INTERNAL_API_KEY", "")
+    path = os.environ.get("CAPTURE_CONFIG_FILE", "/spool/.capture-config.json")
+    interval = float(os.environ.get("CAPTURE_CONFIG_RECONCILE_SEC", "5") or 5)
+    last = None
+    while True:
+        try:
+            cfg = await asyncio.to_thread(_fetch_capture_config, url, key)
+            if cfg is not None:
+                payload = json.dumps(cfg, separators=(",", ":"), sort_keys=True)
+                # Rewrite when the DB payload changed OR the file went missing out of
+                # band (deleted volume, fresh mount) — the latter keeps the proxy from
+                # being stranded fail-closed just because the payload never changes.
+                if payload != last or not os.path.exists(path):
+                    await asyncio.to_thread(_atomic_write, path, payload)
+                    last = payload
+                    logger.info(
+                        "capture-config reconciled -> %s (source=%s block_private=%s enabled=%s)",
+                        path, cfg.get("source"),
+                        cfg.get("egress", {}).get("block_private"), cfg.get("enabled"))
+        except Exception as e:  # never let the reconciler die
+            logger.warning("capture-config reconcile error (keeping last file): %s", e)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources"""
@@ -219,9 +279,11 @@ async def lifespan(app: FastAPI):
     # CodeFix build sandbox (T6/E10): host path of the shared cypherfix-work volume.
     container_manager.codefix_work_host_base = CODEFIX_WORK_PATH
     reaper = asyncio.create_task(_ai_attack_reaper())
+    capture_reconciler = asyncio.create_task(_capture_config_reconcile())
     yield
     logger.info("Shutting down Recon Orchestrator...")
     reaper.cancel()
+    capture_reconciler.cancel()
     if local_llm_manager:
         local_llm_manager.shutdown()
     await container_manager.cleanup()

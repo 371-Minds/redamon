@@ -969,54 +969,26 @@ class ContainerManager:
     async def start_capture_proxy(self, config: dict | None = None) -> dict:
         """Start (idempotently reconcile) the capture proxy + ingest pair.
 
-        `config` (from the Global Settings toggle) may override runtime knobs:
-        port, maxBodyKb, storeBodies, redactSecrets, scope, blockedIps. The image
-        is NOT overridable from the UI (it comes from the trusted orchestrator env)
-        so the operator toggle can never spawn an arbitrary container image.
+        `config` (from the Global Settings toggle) may override only the spawn-baked
+        knobs: `port` (proxy listen port) and `redactSecrets` (ingest env). The
+        egress-guard + body-storage policy are NOT spawn env any more — they are the
+        DB source of truth, hot-reloaded from /spool/.capture-config.json at runtime.
+        The image is NOT overridable from the UI (it comes from the trusted
+        orchestrator env) so the operator toggle can never spawn an arbitrary image.
         """
         config = config or {}
         image = self._capture_image()  # trusted env only, never from `config`
         port = int(config.get("port") or self._capture_port())
-        max_body_kb = str(config.get("maxBodyKb") or os.environ.get("CAPTURE_PROXY_MAX_BODY_KB", "64"))
-        store_bodies = self._bool_env(config.get("storeBodies"), os.environ.get("CAPTURE_PROXY_STORE_BODIES", "true"))
         redact = self._bool_env(config.get("redactSecrets"), os.environ.get("CAPTURE_PROXY_REDACT_SECRETS", "true"))
         blocked_ips = config.get("blockedIps") or os.environ.get("CAPTURE_BLOCKED_IPS", "")
-
-        # Granular body-storage policy -> CAPTURE_* env the proxy addon reads
-        # (capture_lib.decide_body / parse_body_rules). The addon fails safe on a
-        # bad bodyRules value, but normalize here so garbage never reaches the env.
-        store_req = self._bool_env(config.get("storeReqBodies"), os.environ.get("CAPTURE_STORE_REQ_BODIES", "true"))
-        store_resp = self._bool_env(config.get("storeRespBodies"), os.environ.get("CAPTURE_STORE_RESP_BODIES", "true"))
-        max_store_mb = str(config.get("maxStoreMb") if config.get("maxStoreMb") is not None
-                           else os.environ.get("CAPTURE_MAX_STORE_MB", "5"))
-        body_rules = config.get("bodyRules") or os.environ.get("CAPTURE_BODY_RULES", "")
-        if body_rules:
-            try:
-                # accept a dict or JSON string; re-serialize compactly
-                parsed = body_rules if isinstance(body_rules, dict) else json.loads(body_rules)
-                body_rules = json.dumps(parsed, separators=(",", ":")) if isinstance(parsed, dict) else ""
-            except (ValueError, TypeError):
-                body_rules = ""
-
-        # Egress-guard toggles (Global Settings > TrafficMind). Each config key maps
-        # to a CAPTURE_EGRESS_* env the proxy addon reads (egress.policy_from_env).
-        # Default is block (True); an omitted/None key keeps the always-on guard.
-        _egress_map = {
-            "egressBlockEmptyHost":     ("CAPTURE_EGRESS_BLOCK_EMPTY_HOST",     "CAPTURE_EGRESS_BLOCK_EMPTY_HOST"),
-            "egressBlockHardGuardrail": ("CAPTURE_EGRESS_BLOCK_HARD_GUARDRAIL", "CAPTURE_EGRESS_BLOCK_HARD_GUARDRAIL"),
-            "egressFailClosed":         ("CAPTURE_EGRESS_FAIL_CLOSED",          "CAPTURE_EGRESS_FAIL_CLOSED"),
-            "egressBlockUnresolvable":  ("CAPTURE_EGRESS_BLOCK_UNRESOLVABLE",   "CAPTURE_EGRESS_BLOCK_UNRESOLVABLE"),
-            "egressBlockPrivate":       ("CAPTURE_EGRESS_BLOCK_PRIVATE",        "CAPTURE_EGRESS_BLOCK_PRIVATE"),
-            "egressBlockLoopback":      ("CAPTURE_EGRESS_BLOCK_LOOPBACK",       "CAPTURE_EGRESS_BLOCK_LOOPBACK"),
-            "egressBlockLinkLocal":     ("CAPTURE_EGRESS_BLOCK_LINK_LOCAL",     "CAPTURE_EGRESS_BLOCK_LINK_LOCAL"),
-            "egressBlockCgnat":         ("CAPTURE_EGRESS_BLOCK_CGNAT",          "CAPTURE_EGRESS_BLOCK_CGNAT"),
-            "egressBlockReserved":      ("CAPTURE_EGRESS_BLOCK_RESERVED",       "CAPTURE_EGRESS_BLOCK_RESERVED"),
-            "egressBlockMulticast":     ("CAPTURE_EGRESS_BLOCK_MULTICAST",      "CAPTURE_EGRESS_BLOCK_MULTICAST"),
-            "egressBlockUnspecified":   ("CAPTURE_EGRESS_BLOCK_UNSPECIFIED",    "CAPTURE_EGRESS_BLOCK_UNSPECIFIED"),
-        }
-        egress_env = {}
-        for cfg_key, (env_key, host_env) in _egress_map.items():
-            egress_env[env_key] = self._bool_env(config.get(cfg_key), os.environ.get(host_env, "true"))
+        # NOTE: the egress-guard toggles + body-storage policy are NO LONGER injected
+        # as proxy env. They are the DB single-source-of-truth (Global Settings >
+        # TrafficMind), materialised to the shared /spool/.capture-config.json by
+        # _capture_config_reconcile() and HOT-RELOADED by the proxy — so a settings
+        # change applies without a container recreate and can never drift from env.
+        # Only genuinely spawn-baked knobs remain here: the listen `port` (proxy
+        # command) and `redact` (the ingest container's env). `blocked_ips` is a
+        # security invariant on the proxy env, never DB-tunable.
 
         # Idempotent: clear any stale instances first.
         self._remove_container_if_exists(self.CAPTURE_PROXY_NAME)
@@ -1042,14 +1014,10 @@ class ContainerManager:
             environment={
                 "CAPTURE_SPOOL_DIR": "/spool",
                 "CAPTURE_BODIES_DIR": "/bodies",
-                "CAPTURE_PROXY_MAX_BODY_KB": max_body_kb,
-                "CAPTURE_PROXY_STORE_BODIES": store_bodies,
-                "CAPTURE_STORE_REQ_BODIES": store_req,
-                "CAPTURE_STORE_RESP_BODIES": store_resp,
-                "CAPTURE_MAX_STORE_MB": max_store_mb,
-                "CAPTURE_BODY_RULES": body_rules,
+                # Egress + body-storage policy come from the DB via the hot-reloaded
+                # /spool/.capture-config.json, NOT env. Only the always-on service-IP
+                # denylist (security invariant, never DB-tunable) stays on the env.
                 "CAPTURE_BLOCKED_IPS": blocked_ips,
-                **egress_env,
             },
             volumes={**spool_vols, "redamon_capture_ca": {"bind": "/ca", "mode": "rw"}},
             cap_drop=["ALL"],

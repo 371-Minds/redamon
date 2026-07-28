@@ -40,7 +40,7 @@ from capture_lib import (
     build_record, classify_family, decide_body, normalize_headers,
     parse_body_rules, sha256_hex,
 )
-from egress import check_egress, policy_from_env
+from egress import check_egress, policy_from_dict, policy_from_env
 
 try:
     from hard_guardrail import is_hard_blocked  # bundled into the image
@@ -74,24 +74,24 @@ class RedamonCapture:
     def __init__(self) -> None:
         self.spool_dir = os.environ.get("CAPTURE_SPOOL_DIR", "/spool")
         self.bodies_dir = os.environ.get("CAPTURE_BODIES_DIR", "/bodies")
-        self.max_body_bytes = _num_env("CAPTURE_PROXY_MAX_BODY_KB", 64, int) * 1024
-        self.store_bodies = os.environ.get("CAPTURE_PROXY_STORE_BODIES", "true").lower() != "false"
-        # Granular body-storage policy. `store_bodies` is the master switch; the
-        # two direction toggles gate request vs response independently; the family
-        # rules + max-store ceiling decide inline/disk/meta per body (capture_lib).
-        self.store_req_bodies = os.environ.get("CAPTURE_STORE_REQ_BODIES", "true").lower() != "false"
-        self.store_resp_bodies = os.environ.get("CAPTURE_STORE_RESP_BODIES", "true").lower() != "false"
-        _max_store_mb = _num_env("CAPTURE_MAX_STORE_MB", 5.0, float)
-        self.max_store_bytes = int(_max_store_mb * 1024 * 1024) if _max_store_mb > 0 else 0
-        self.body_rules = parse_body_rules(os.environ.get("CAPTURE_BODY_RULES", ""))
-        print(f"[capture] body rules={self.body_rules} max_store_bytes={self.max_store_bytes} "
-              f"store_req={self.store_req_bodies} store_resp={self.store_resp_bodies}", flush=True)
-        self.extra_blocked_ips = [ip for ip in os.environ.get("CAPTURE_BLOCKED_IPS", "").split(",") if ip.strip()]
-        # Egress-guard policy from CAPTURE_EGRESS_* env (every check defaults to
-        # block, so an unset/typo'd var can never relax the guard). Surfaced in
-        # Global Settings > TrafficMind and injected at spawn by the orchestrator.
-        self.egress_policy = policy_from_env(os.environ)
-        print(f"[capture] egress policy: {self.egress_policy}", flush=True)
+        # --- Reloadable runtime config: egress guard + body-storage policy -------
+        # SINGLE SOURCE OF TRUTH is the DB (Global Settings > TrafficMind). The
+        # trusted control plane (orchestrator) materialises those DB settings to a
+        # JSON file on the shared spool volume; THIS proxy only READS that file and
+        # HOT-RELOADS it on change. The proxy never connects to the DB — it is the
+        # credential-free, target-facing component (§11.1). Env vars are ONLY the
+        # pre-file cold-start default, and every one is fail-safe (block/keep), so a
+        # missing or partially-written file can never open the egress guard.
+        self.config_file = os.environ.get(
+            "CAPTURE_CONFIG_FILE", os.path.join(self.spool_dir, ".capture-config.json"))
+        self._config_sig = None
+        self._config_lock = threading.Lock()
+        raw, sig = self._read_config()
+        self._apply_config(raw)          # sets egress_policy + all body-storage knobs
+        self._config_sig = sig
+        self._cfg_watcher = threading.Thread(
+            target=self._config_watch, name="config-watch", daemon=True)
+        self._cfg_watcher.start()
         self.tmp_dir = os.path.join(self.spool_dir, ".tmp")
         os.makedirs(self.tmp_dir, exist_ok=True)
         os.makedirs(self.bodies_dir, exist_ok=True)
@@ -107,6 +107,109 @@ class RedamonCapture:
         self.dropped = 0
         self._writer = threading.Thread(target=self._drain, name="spool-writer", daemon=True)
         self._writer.start()
+
+    # ---- reloadable config (DB -> control-plane file -> hot-reload) --------
+    @staticmethod
+    def _as_bool(v, default: bool = True) -> bool:
+        """Fail-safe truthiness for file/env values. Missing/None/empty -> default
+        (block/keep). Only an explicit false-like value turns a toggle OFF."""
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        s = str(v).strip().lower()
+        if s == "":
+            return default
+        return s not in ("false", "0", "no", "off")
+
+    def _read_config(self):
+        """Return (raw_dict_or_None, signature). No file -> (None, None). Present but
+        unreadable/invalid -> ({}, signature): fall back to fail-safe defaults rather
+        than keep a possibly stale-open policy.
+
+        The signature is the raw file BYTES, so change detection is exact — no reliance
+        on mtime resolution (float precision / coarse-granularity or network volumes),
+        and a rewrite with identical content is correctly treated as no-change."""
+        try:
+            with open(self.config_file, "rb") as f:
+                data = f.read()
+        except OSError:
+            return None, None
+        try:
+            raw = json.loads(data.decode("utf-8"))
+            return (raw if isinstance(raw, dict) else {}), data
+        except ValueError:  # JSONDecodeError + UnicodeDecodeError are both ValueError
+            return {}, data
+
+    def _apply_config(self, raw) -> None:
+        """Build the reloadable settings from the file (authoritative when present)
+        or, per section, from env (cold-start fallback), then assign atomically.
+        The egress guard NEVER relaxes from a malformed file: policy_from_dict /
+        policy_from_env both default every check to block."""
+        raw = raw if isinstance(raw, dict) else {}
+        egress = raw.get("egress")
+        if isinstance(egress, dict):
+            policy, esrc = policy_from_dict(egress), "file"
+        else:
+            policy, esrc = policy_from_env(os.environ), "env"
+
+        body = raw.get("body")
+        if isinstance(body, dict):
+            store_bodies = self._as_bool(body.get("store_bodies"), True)
+            store_req = self._as_bool(body.get("store_req_bodies"), True)
+            store_resp = self._as_bool(body.get("store_resp_bodies"), True)
+            try:
+                max_body_kb = int(body.get("max_body_kb") or 64)
+            except (ValueError, TypeError):
+                max_body_kb = 64
+            try:
+                _msm = body.get("max_store_mb")
+                max_store_mb = float(_msm if _msm is not None else 5.0)
+            except (ValueError, TypeError):
+                max_store_mb = 5.0
+            body_rules = parse_body_rules(body.get("body_rules") or "")
+            bsrc = "file"
+        else:
+            store_bodies = os.environ.get("CAPTURE_PROXY_STORE_BODIES", "true").lower() != "false"
+            store_req = os.environ.get("CAPTURE_STORE_REQ_BODIES", "true").lower() != "false"
+            store_resp = os.environ.get("CAPTURE_STORE_RESP_BODIES", "true").lower() != "false"
+            max_body_kb = _num_env("CAPTURE_PROXY_MAX_BODY_KB", 64, int)
+            max_store_mb = _num_env("CAPTURE_MAX_STORE_MB", 5.0, float)
+            body_rules = parse_body_rules(os.environ.get("CAPTURE_BODY_RULES", ""))
+            bsrc = "env"
+
+        # The RedAmon-service IP denylist is a SECURITY invariant, NOT a DB-tunable
+        # knob: it is ALWAYS sourced from env CAPTURE_BLOCKED_IPS and can never be
+        # relaxed by the config file (egress.is_internal_ip enforces it un-gated).
+        extra_blocked = [ip for ip in os.environ.get("CAPTURE_BLOCKED_IPS", "").split(",") if ip.strip()]
+
+        with self._config_lock:
+            self.egress_policy = policy
+            self.store_bodies = store_bodies
+            self.store_req_bodies = store_req
+            self.store_resp_bodies = store_resp
+            self.max_body_bytes = int(max_body_kb) * 1024
+            self.max_store_bytes = int(max_store_mb * 1024 * 1024) if max_store_mb > 0 else 0
+            self.extra_blocked_ips = extra_blocked
+            self.body_rules = body_rules
+        print(f"[capture] config applied: egress<-{esrc} body<-{bsrc} "
+              f"block_private={policy.block_private} store_bodies={store_bodies} "
+              f"max_body_bytes={self.max_body_bytes} extra_blocked={len(extra_blocked)}", flush=True)
+
+    def _config_watch(self) -> None:
+        """Poll the config file; re-read + re-apply whenever its CONTENT changes. Any
+        error keeps the current (already-applied) settings — a bad write never crashes
+        capture."""
+        interval = _num_env("CAPTURE_CONFIG_POLL_SEC", 5.0, float) or 5.0
+        while True:
+            time.sleep(interval)
+            try:
+                raw, sig = self._read_config()
+                if sig != self._config_sig:
+                    self._apply_config(raw)
+                    self._config_sig = sig
+            except Exception as e:  # never let the watcher die
+                print(f"[capture] config-watch error (keeping current config): {e}", flush=True)
 
     # ---- mitmproxy hooks ---------------------------------------------------
     def request(self, flow: http.HTTPFlow) -> None:

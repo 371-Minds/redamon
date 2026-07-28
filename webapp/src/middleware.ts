@@ -17,6 +17,9 @@ const INTERNAL_ALLOWLIST: { method: string; pattern: RegExp }[] = [
   { method: 'GET', pattern: /^\/api\/users\/[^/]+\/tradecraft-resources$/ },
   { method: 'GET', pattern: /^\/api\/projects\/[^/]+$/ },
   { method: 'ANY', pattern: /^\/api\/internal\/codefix-sandbox\// },
+  // Global TrafficMind capture config, polled by the orchestrator to materialise
+  // the DB settings to the proxy's config file (DB = single source of truth).
+  { method: 'GET', pattern: /^\/api\/internal\/capture-config$/ },
   { method: 'ANY', pattern: /^\/api\/conversations\/by-session\// },
   { method: 'ANY', pattern: /^\/api\/remediations(\/|$)/ },
   { method: 'GET', pattern: /^\/api\/global\/tunnel-config$/ },
