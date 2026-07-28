@@ -348,7 +348,7 @@ docker container prune -f                         # Remove stopped containers
 
 The agent's `web_search` tool includes a local **Knowledge Base** -- a RAG pipeline that searches curated security datasets (GTFOBins, LOLBAS, OWASP WSTG, NVD CVEs, ExploitDB, Nuclei templates, and agent skill docs) before falling back to Tavily web search. When the KB returns a high-confidence match, Tavily is skipped entirely for faster, offline-capable results.
 
-**How it works:** When the KB is enabled, `install` / `up` / `restart` builds a lightweight KB index (~1,200 chunks in 10-15 min on CPU). At query time, the agent runs a hybrid retrieval pipeline (FAISS vector search + Neo4j fulltext), reranks with a cross-encoder, and checks a confidence threshold. If the score is high enough, results come from the local KB. Otherwise, it falls back to Tavily or merges both.
+**How it works:** When the KB is enabled, `install` / `up` / `update` builds a lightweight KB index (~1,200 chunks in 10-15 min on CPU). At query time, the agent runs a hybrid retrieval pipeline (FAISS vector search + Neo4j fulltext), reranks with a cross-encoder, and checks a confidence threshold. If the score is high enough, results come from the local KB. Otherwise, it falls back to Tavily or merges both.
 
 **Default behavior:** The KB is **opt-in**. `./redamon.sh install` produces a lightweight install (~4.4 GB lighter, Tavily-only web search). To enable the local KB, pass `--kbase`:
 

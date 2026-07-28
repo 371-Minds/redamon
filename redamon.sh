@@ -667,6 +667,58 @@ _rotate_neo4j_password() {
         "ALTER CURRENT USER SET PASSWORD FROM '${old}' TO '${new}';" >/dev/null 2>&1
 }
 
+# True iff `password` authenticates against the running Neo4j.
+_neo4j_auth_ok() {
+    docker exec redamon-neo4j cypher-shell -u neo4j -p "$1" 'RETURN 1;' >/dev/null 2>&1
+}
+
+# S13 / #160: the password Neo4j baked into its volume at first init is the ONLY
+# one that works; NEO4J_AUTH is ignored once the volume exists. A .env value that
+# was hand-set (the #155 work-around) or left over from a stale volume can disagree
+# with it, and ensure_db_secrets trusts a pinned .env without checking -- so the
+# mismatch only surfaces LATER as a cryptic `AuthenticationRateLimit` in the recon
+# pipeline. Here we VERIFY the pinned password and auto-reconcile: clear any auth
+# rate-limit (repeated wrong-password attempts lock out even the correct one), then
+# rotate the volume TO the .env value using a known old password. If we cannot, we
+# stop with rotate-or-wipe steps instead of handing over a silently-broken stack.
+# Best-effort + fail-safe: if Neo4j will not come up we return 0 (never block a start
+# on this check). Returns 1 only on a confirmed, un-reconcilable mismatch.
+_reconcile_neo4j_password() {
+    local envpw="$1"
+    [[ -z "$envpw" ]] && return 0
+
+    # Need Neo4j running to probe. .env already carries the password so the
+    # fail-closed compose `:?` resolves; start it idempotently if it is down.
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^redamon-neo4j$'; then
+        docker compose up -d neo4j >/dev/null 2>&1 || return 0
+    fi
+    _kb_wait_neo4j >/dev/null 2>&1 || return 0   # cannot verify -> do not block
+
+    _neo4j_auth_ok "$envpw" && return 0
+
+    warn "Neo4j did not accept NEO4J_PASSWORD from .env; clearing any auth rate-limit..."
+    docker restart redamon-neo4j >/dev/null 2>&1
+    _kb_wait_neo4j >/dev/null 2>&1 || true
+    if _neo4j_auth_ok "$envpw"; then
+        success "Neo4j auth OK after clearing the rate-limit."
+        return 0
+    fi
+
+    # Genuine mismatch: try known old passwords, rotate the volume to the .env value.
+    local cand
+    for cand in "$(_env_get NEO4J_PASSWORD_OLD)" changeme123; do
+        [[ -z "$cand" ]] && continue
+        if _neo4j_auth_ok "$cand"; then
+            info "Neo4j volume password differs from .env; rotating it to match .env..."
+            if _rotate_neo4j_password "$cand" "$envpw" && _neo4j_auth_ok "$envpw"; then
+                success "Reconciled: Neo4j now uses NEO4J_PASSWORD from .env."
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
 # Harden the datastore passwords (STRIDE S13/S1). The passwords are baked into
 # the postgres/neo4j data volumes at FIRST init, so on a FRESH install (volume
 # absent) we auto-generate before the volume is created. On an EXISTING install
@@ -746,8 +798,16 @@ ensure_db_secrets() {
         default="$(echo "$spec" | cut -d: -f3)"
         rotate_fn="$(echo "$spec" | cut -d: -f4)"
 
-        # Operator already pinned it in .env — respect it, do nothing.
+        # Operator/prior-run already pinned it in .env. Respect the value, but for
+        # Neo4j VERIFY it actually matches the volume and reconcile if not (#160): a
+        # hand-set password that disagrees with the baked-in volume password
+        # otherwise fails later with a cryptic AuthenticationRateLimit. On a
+        # confirmed, un-reconcilable mismatch, fall through to the actionable stop.
         if grep -q "^${var}=" "$env_file" 2>/dev/null; then
+            if [[ "$var" == "NEO4J_PASSWORD" ]] && _data_volume_exists "$suffix" \
+               && ! _reconcile_neo4j_password "$(_env_get NEO4J_PASSWORD)"; then
+                unresolved+=("${var}=${project}_${suffix}")
+            fi
             continue
         fi
 
@@ -1133,6 +1193,16 @@ _kb_export_env() {
 
 # Wait for the Neo4j container to become healthy. Starts it if not running.
 # Returns 0 on success, 1 on timeout.
+# Every Knowledge Base `make` goes through here so it inherits the REAL Neo4j
+# credentials from .env (redamon.sh does not source .env), instead of the Makefile's
+# insecure `changeme123` fallback which fails auth on any rotated/custom-password DB
+# (#160 / the `kb stats` failure). An env var (even empty) defeats the Makefile's
+# `?=` default, so this is authoritative.
+_kb_make() {
+    NEO4J_PASSWORD="$(_env_get NEO4J_PASSWORD)" \
+        make -C knowledge_base "$@"
+}
+
 _kb_wait_neo4j() {
     if ! docker ps --format '{{.Names}}' | grep -q '^redamon-neo4j$'; then
         info "Neo4j not running — starting it..."
@@ -1267,7 +1337,7 @@ _kb_bootstrap() {
     _kb_export_env
     _kb_wait_neo4j || return 1
     info "Bootstrapping Knowledge Base (profile=${profile})..."
-    make -C knowledge_base "kb-build-${profile}" MODE=docker
+    _kb_make "kb-build-${profile}" MODE=docker
 }
 
 # Status helpers: read KB and Tavily state directly from disk/env without
@@ -1308,7 +1378,7 @@ _kb_get_neo4j_count() {
     # to the env var, then the fresh-install default.
     local pass
     pass="$(_env_get NEO4J_PASSWORD)"
-    pass="${pass:-${NEO4J_PASSWORD:-changeme123}}"
+    pass="${pass:-${NEO4J_PASSWORD}}"
     local user="${NEO4J_USER:-neo4j}"
     local count
     count=$(docker exec redamon-neo4j cypher-shell \
@@ -2078,14 +2148,14 @@ cmd_kb_build() {
     _kb_wait_neo4j || exit 1
 
     info "Running ingestion pipeline..."
-    if ! make -C knowledge_base "kb-build-${profile}" MODE=docker; then
+    if ! _kb_make "kb-build-${profile}" MODE=docker; then
         error "KB build failed"
         exit 1
     fi
 
     echo ""
     success "Knowledge Base built successfully"
-    make -C knowledge_base kb-stats MODE=docker
+    _kb_make kb-stats MODE=docker
 }
 
 cmd_kb_update() {
@@ -2105,7 +2175,7 @@ cmd_kb_update() {
                 ;;
         esac
         info "Updating KB source: ${source}"
-        if ! make -C knowledge_base "kb-update-${source}" MODE=docker; then
+        if ! _kb_make "kb-update-${source}" MODE=docker; then
             error "KB update failed for ${source}"
             exit 1
         fi
@@ -2115,7 +2185,7 @@ cmd_kb_update() {
         for src in nvd exploitdb nuclei gtfobins lolbas owasp tools; do
             echo ""
             info "→ ${src}"
-            make -C knowledge_base "kb-update-${src}" MODE=docker || failed+=("$src")
+            _kb_make "kb-update-${src}" MODE=docker || failed+=("$src")
         done
         if [[ ${#failed[@]} -gt 0 ]]; then
             echo ""
@@ -2125,7 +2195,7 @@ cmd_kb_update() {
 
     echo ""
     success "Knowledge Base update complete"
-    make -C knowledge_base kb-stats MODE=docker
+    _kb_make kb-stats MODE=docker
 }
 
 cmd_kb_rebuild() {
@@ -2148,20 +2218,20 @@ cmd_kb_rebuild() {
     _kb_wait_neo4j || exit 1
 
     info "Rebuilding Knowledge Base from scratch..."
-    if ! make -C knowledge_base "kb-rebuild-${profile}" MODE=docker; then
+    if ! _kb_make "kb-rebuild-${profile}" MODE=docker; then
         error "KB rebuild failed"
         exit 1
     fi
 
     echo ""
     success "Knowledge Base rebuilt"
-    make -C knowledge_base kb-stats MODE=docker
+    _kb_make kb-stats MODE=docker
 }
 
 cmd_kb_stats() {
     _kb_export_env
     _kb_wait_neo4j || exit 1
-    make -C knowledge_base kb-stats MODE=docker
+    _kb_make kb-stats MODE=docker
 }
 
 cmd_kb_help() {

@@ -9,7 +9,7 @@ services:
       - "7474:7474"  # HTTP browser interface
       - "7687:7687"  # Bolt protocol (for Python driver)
     environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-changeme123}
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set - run redamon.sh (STRIDE S13)}
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
       - NEO4J_dbms_security_procedures_allowlist=apoc.*

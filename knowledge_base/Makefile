@@ -24,7 +24,11 @@ AGENT_CONTAINER ?= redamon-agent
 # In local mode: connects to localhost
 NEO4J_URI ?= bolt://localhost:7687
 NEO4J_USER ?= neo4j
-NEO4J_PASSWORD ?= changeme123
+# No insecure default (#160): the real password is passed by ./redamon.sh (from
+# .env) via _kb_make. A bare `make` without it fails auth loudly instead of
+# silently connecting with a well-known default that mismatches a rotated or
+# custom-password database.
+NEO4J_PASSWORD ?=
 
 # Embedding model. Default sourced from kb_config.yaml (`embedder.model`).
 MODEL ?= $(call _kb_yaml_get,embedder.model,intfloat/e5-large-v2)
@@ -78,7 +82,7 @@ ifeq ($(MODE),docker)
   KB_CMD = docker exec $(AGENT_CONTAINER) python -m knowledge_base.curation.data_ingestion \
     --neo4j-uri bolt://neo4j:7687 \
     --neo4j-user $(NEO4J_USER) \
-    --neo4j-password $(NEO4J_PASSWORD) \
+    --neo4j-password "$(NEO4J_PASSWORD)" \
     --model $(MODEL) \
     --nvd-days $(NVD_DAYS)
   PY_RUN = docker exec $(AGENT_CONTAINER) python
@@ -86,7 +90,7 @@ else
   KB_CMD = "$(PYTHON)" -m knowledge_base.curation.data_ingestion \
     --neo4j-uri $(NEO4J_URI) \
     --neo4j-user $(NEO4J_USER) \
-    --neo4j-password $(NEO4J_PASSWORD) \
+    --neo4j-password "$(NEO4J_PASSWORD)" \
     --model $(MODEL) \
     --nvd-days $(NVD_DAYS)
   PY_RUN = "$(PYTHON)"

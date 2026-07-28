@@ -221,6 +221,164 @@ assert_false "no NEO4J_PASSWORD :-changeme123 default"       "grep -q 'NEO4J_PAS
 assert_eq    "POSTGRES_PASSWORD uses :? fail-closed (x2 consumers + db)" "$(grep -c 'POSTGRES_PASSWORD:?' "$COMPOSE")" "3"
 assert_eq    "NEO4J_PASSWORD uses :? fail-closed (db + 4 consumers)"     "$(grep -c 'NEO4J_PASSWORD:?' "$COMPOSE")" "5"
 
+# test_subcompose_neo4j_failclosed (issue #160): the per-service compose files
+# used for standalone/dev runs must ALSO refuse the well-known changeme123
+# fallback, so a bare `docker compose up` on any of them cannot silently init a
+# volume with a default that later mismatches the rotated .env value.
+echo "== sub-compose NEO4J_PASSWORD fail closed (no :-changeme123) =="
+for sub in graph_db recon_orchestrator recon webapp agentic; do
+    f="$REPO_ROOT/$sub/docker-compose.yml"
+    assert_false "$sub: no NEO4J_PASSWORD :-changeme123 default" "grep -q 'NEO4J_PASSWORD:-changeme123' '$f'"
+    assert_true  "$sub: NEO4J_PASSWORD uses :? fail-closed"      "grep -q 'NEO4J_PASSWORD:?' '$f'"
+done
+
+# test_kb_makefile_no_default_password (issue #160): the KB Makefile must not
+# ship a changeme123 default; redamon.sh passes the real password via _kb_make.
+echo "== KB Makefile has no insecure NEO4J_PASSWORD default =="
+KBMK="$REPO_ROOT/knowledge_base/Makefile"
+assert_false "KB Makefile: no 'NEO4J_PASSWORD ?= changeme123'" "grep -qE 'NEO4J_PASSWORD[[:space:]]*\?=[[:space:]]*changeme123' '$KBMK'"
+assert_true  "KB Makefile: NEO4J_PASSWORD default is empty"    "grep -qE 'NEO4J_PASSWORD[[:space:]]*\?=[[:space:]]*\$' '$KBMK'"
+assert_true  "KB Makefile: --neo4j-password value is quoted"   "[ \"\$(grep -c 'neo4j-password \"\$(NEO4J_PASSWORD)\"' '$KBMK')\" = 2 ]"
+assert_true  "redamon.sh: _kb_make exports NEO4J_PASSWORD"     "grep -qE '_kb_make\(\)' '$REPO_ROOT/redamon.sh'"
+assert_true  "redamon.sh: _kb_make sources NEO4J_PASSWORD from .env" "awk '/^_kb_make\\(\\)/{f=1} f&&/NEO4J_PASSWORD=.*_env_get NEO4J_PASSWORD/{print;exit}' '$REPO_ROOT/redamon.sh' | grep -q NEO4J_PASSWORD"
+
+# test_reconcile_neo4j_password_present (issue #160): the pinned-.env branch of
+# ensure_db_secrets must VERIFY the neo4j password against the live volume and
+# reconcile, not trust it blindly (the silent-mismatch that produced #160).
+echo "== redamon.sh neo4j reconcile preflight wired in =="
+assert_true "redamon.sh: _reconcile_neo4j_password defined" "grep -q '^_reconcile_neo4j_password()' '$REPO_ROOT/redamon.sh'"
+assert_true "redamon.sh: _neo4j_auth_ok defined"            "grep -q '^_neo4j_auth_ok()' '$REPO_ROOT/redamon.sh'"
+assert_true "ensure_db_secrets calls _reconcile_neo4j_password on pinned .env" \
+    "awk '/^ensure_db_secrets\\(\\)/{f=1} f&&/_reconcile_neo4j_password/{print;exit}' '$REPO_ROOT/redamon.sh' | grep -q _reconcile_neo4j_password"
+
+# test_reconcile_neo4j_password_behaviour (issue #160): exercise the reconcile
+# function against a stubbed Neo4j. `cypher-shell` succeeds only for the volume's
+# CURRENT password ($GOODPW); rotation moves GOODPW to the requested new value.
+echo "== _reconcile_neo4j_password behaviour (stubbed neo4j) =="
+# Stubbed Neo4j state:
+#   GOODPW        = password the "volume" currently accepts
+#   LOCKED        = non-empty -> auth is rate-limited (fails for ANY pw); a
+#                   `docker restart` clears it (mirrors the AuthenticationRateLimit
+#                   lockout that #160 is really about).
+#   NEO4J_RUNNING = whether `docker ps` reports the container up
+#   COMPOSE_UP_RC = exit code of `docker compose up -d neo4j`
+#   WAIT_RC       = exit code of _kb_wait_neo4j
+#   ROTATE_CALLS  = number of times rotation was attempted (assert no needless rotate)
+#   DOCKER_CALLS  = number of docker invocations (assert the empty-guard touches nothing)
+GOODPW=""; LOCKED=""; NEO4J_RUNNING=1; COMPOSE_UP_RC=0; WAIT_RC=0; ROTATE_CALLS=0; DOCKER_CALLS=0; RESTART_RC=0
+docker() {
+    DOCKER_CALLS=$((DOCKER_CALLS+1))
+    case "$1" in
+        exec) # docker exec redamon-neo4j cypher-shell -u neo4j -p <PW> 'RETURN 1;'
+            [[ -n "$LOCKED" ]] && return 1     # rate-limited: correct pw rejected too
+            local pw="" prev="" a
+            for a in "$@"; do [[ "$prev" == "-p" ]] && pw="$a"; prev="$a"; done
+            [[ "$pw" == "$GOODPW" ]] && return 0 || return 1 ;;
+        ps)      [[ -n "$NEO4J_RUNNING" ]] && printf 'redamon-neo4j\n'; return 0 ;;
+        restart) LOCKED=""; return "$RESTART_RC" ;;  # restart clears the rate-limit lock
+        compose) return "$COMPOSE_UP_RC" ;;    # `docker compose up -d neo4j`
+        *)       return 0 ;;
+    esac
+}
+_kb_wait_neo4j() { return "$WAIT_RC"; }
+# rotation only works when handed the correct current password; it then moves
+# the accepted password to the new value (mirrors ALTER CURRENT USER).
+_rotate_neo4j_password() { ROTATE_CALLS=$((ROTATE_CALLS+1)); if [[ "$1" == "$GOODPW" ]]; then GOODPW="$2"; return 0; else return 1; fi; }
+_env_get() { case "$1" in NEO4J_PASSWORD) echo "$RECON_ENVPW";; NEO4J_PASSWORD_OLD) echo "$RECON_OLDPW";; *) echo "";; esac; }
+_reset_recon() { LOCKED=""; NEO4J_RUNNING=1; COMPOSE_UP_RC=0; WAIT_RC=0; ROTATE_CALLS=0; DOCKER_CALLS=0; RESTART_RC=0; RECON_OLDPW=""; }
+
+# (a) .env password already matches the volume -> OK, no rotation performed.
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="envsecret"
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+assert_eq "reconcile: matching .env password -> 0"          "$?" "0"
+assert_eq "reconcile: matching password does NOT rotate"    "$ROTATE_CALLS" "0"
+
+# (b) volume still on changeme123, .env holds the new value -> rotate to match.
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="changeme123"
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+rc=$?
+assert_eq "reconcile: legacy changeme123 volume -> rotated -> 0" "$rc" "0"
+assert_eq "reconcile: volume now accepts the .env password"      "$GOODPW" "envsecret"
+
+# (c) volume on an unknown password, no NEO4J_PASSWORD_OLD hint -> cannot fix -> 1.
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="totally-unknown"
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+assert_eq "reconcile: un-reconcilable mismatch -> 1" "$?" "1"
+
+# (d) unknown live password but operator supplied NEO4J_PASSWORD_OLD -> rotate.
+_reset_recon; RECON_ENVPW="envsecret"; RECON_OLDPW="prev-known-pw"; GOODPW="prev-known-pw"
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+rc=$?
+assert_eq "reconcile: NEO4J_PASSWORD_OLD hint -> rotated -> 0" "$rc" "0"
+assert_eq "reconcile: volume rotated to .env via OLD hint"     "$GOODPW" "envsecret"
+
+# (e) empty envpw -> immediate 0, touches nothing (guard clause).
+_reset_recon; RECON_ENVPW=""; GOODPW="whatever"
+_reconcile_neo4j_password "" >/dev/null 2>&1
+assert_eq "reconcile: empty password -> 0 (guard)"    "$?" "0"
+assert_eq "reconcile: empty password touches no docker" "$DOCKER_CALLS" "0"
+
+# (f) THE #160 CASE: password is correct but auth is rate-limited. A restart
+#     clears the lockout and auth then succeeds -> 0, WITHOUT any rotation.
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="envsecret"; LOCKED="yes"
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+rc=$?
+assert_eq "reconcile: rate-limited-but-correct -> restart clears -> 0" "$rc" "0"
+assert_eq "reconcile: rate-limit clear does NOT rotate"                "$ROTATE_CALLS" "0"
+
+# (g) Neo4j down AND compose cannot start it -> fail-safe 0 (never block a start).
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="envsecret"; NEO4J_RUNNING=""; COMPOSE_UP_RC=1
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+assert_eq "reconcile: cannot start neo4j -> fail-safe 0" "$?" "0"
+
+# (h) Neo4j never becomes healthy (_kb_wait_neo4j fails) -> fail-safe 0.
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="envsecret"; WAIT_RC=1
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+assert_eq "reconcile: neo4j never healthy -> fail-safe 0" "$?" "0"
+
+# (i) genuinely locked out with a WRONG .env password -> restart clears lock but
+#     auth still fails and no candidate matches -> un-reconcilable 1.
+_reset_recon; RECON_ENVPW="wrongpw"; GOODPW="the-real-one"; LOCKED="yes"
+_reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1
+assert_eq "reconcile: locked + wrong pw + no candidate -> 1" "$?" "1"
+
+# (j) set -e regression: reconcile runs from an `if !` condition, so bash disables
+#     set -e for the whole function -- a standalone `docker restart` that returns
+#     non-zero must NOT abort the caller. Prove it under a real `set -e` subshell:
+#     the un-reconcilable path returns 1 and execution reaches the line AFTER.
+_reset_recon; RECON_ENVPW="envsecret"; GOODPW="nope"; RESTART_RC=1
+sete_out="$( set -e; if ! _reconcile_neo4j_password "$RECON_ENVPW" >/dev/null 2>&1; then echo GOT1; fi; echo AFTER )"
+assert_true "reconcile under set -e: failing restart does not abort caller" "[[ \"\$sete_out\" == *GOT1*AFTER* ]]"
+unset -f docker _kb_wait_neo4j _rotate_neo4j_password _env_get _reset_recon
+
+# test_kb_make_injects_real_password (issue #160, integration): _kb_make must run
+# `make -C knowledge_base` with NEO4J_PASSWORD taken from .env, NOT empty and NOT
+# changeme123. We stub `make` to echo the value it received in its environment.
+echo "== _kb_make injects the real .env password into make =="
+make() { printf 'MADE NEO4J_PASSWORD=[%s] ARGS=[%s]\n' "${NEO4J_PASSWORD:-}" "$*"; }
+_env_get() { [[ "$1" == "NEO4J_PASSWORD" ]] && echo "env-real-pw-123"; }
+kb_out="$(_kb_make kb-stats 2>&1)"
+unset -f make _env_get
+assert_true "_kb_make passes the .env password to make"     "echo \"\$kb_out\" | grep -q 'NEO4J_PASSWORD=\[env-real-pw-123\]'"
+assert_false "_kb_make does NOT leak changeme123"           "echo \"\$kb_out\" | grep -q 'changeme123'"
+assert_true "_kb_make forwards the make target"             "echo \"\$kb_out\" | grep -q 'ARGS=\[.*kb-stats.*\]'"
+
+# test_kb_makefile_dryrun (issue #160, integration): a real `make -n` on the KB
+# Makefile must (1) embed the supplied password QUOTED into the recipe, and (2)
+# with the var unset, emit an EMPTY quoted arg (never changeme123). `make -n`
+# prints the recipe without executing it. Skipped gracefully if make is absent.
+if command -v make >/dev/null 2>&1; then
+    echo "== KB Makefile expands --neo4j-password from env, no default (make -n) =="
+    KBDIR="$REPO_ROOT/knowledge_base"
+    dry_set="$(NEO4J_PASSWORD='sup3r-secret' MODE=docker make -C "$KBDIR" -n kb-stats 2>/dev/null)"
+    dry_unset="$(env -u NEO4J_PASSWORD MODE=docker make -C "$KBDIR" -n kb-stats 2>/dev/null)"
+    assert_true  "make -n: password passed quoted when env set" "printf '%s' \"\$dry_set\" | grep -q -- '--neo4j-password \"sup3r-secret\"'"
+    assert_false "make -n: no changeme123 when env unset"       "printf '%s' \"\$dry_unset\" | grep -q 'changeme123'"
+    assert_true  "make -n: empty quoted arg when env unset"     "printf '%s' \"\$dry_unset\" | grep -q -- '--neo4j-password \"\"'"
+else
+    echo "== KB Makefile make -n test SKIPPED (make not installed) =="
+fi
+
 echo
 echo "-----------------------------------------"
 printf 'Secrets suite: \033[0;32m%d passed\033[0m, ' "$PASS"
