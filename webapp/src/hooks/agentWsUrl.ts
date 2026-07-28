@@ -55,11 +55,7 @@ function applyPath(url: string, path: string): string {
  *    no-reverse-proxy deploy (issue #159).
  *  - else null -> the browser keeps the same-origin behavior (proxied deploy).
  */
-export function resolveWsHint(env: {
-  AGENT_WS_PUBLIC_URL?: string
-  AGENT_WS_MODE?: string
-  AGENT_WS_PORT?: string
-}): { url: string } | { port: string } | null {
+export function resolveWsHint(env: Record<string, string | undefined>): { url: string } | { port: string } | null {
   const url = env.AGENT_WS_PUBLIC_URL || ''
   if (url) return { url }
   if (env.AGENT_WS_MODE === 'agent-port') return { port: env.AGENT_WS_PORT || '8090' }

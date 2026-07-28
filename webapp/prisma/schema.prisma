@@ -839,7 +839,7 @@ model Project {
   // DEFAULT_AGENT_SETTINGS in agentic/project_settings.py (ships ON and DRIVES
   // by default; SHADOW off; exploitation-only until post-exploitation scoring
   // is tuned, §6.1).
-  agentLatsEnabled                      Boolean  @default(true)            @map("agent_lats_enabled")
+  agentLatsEnabled                      Boolean  @default(false)           @map("agent_lats_enabled")
   agentLatsShadowMode                   Boolean  @default(false)           @map("agent_lats_shadow_mode")
   agentLatsPhaseExploitation            Boolean  @default(true)            @map("agent_lats_phase_exploitation")
   agentLatsPhasePostExpl                Boolean  @default(false)           @map("agent_lats_phase_post_expl")

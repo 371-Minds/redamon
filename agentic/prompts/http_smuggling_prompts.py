@@ -55,6 +55,17 @@ Once a desync is confirmed, smuggle a request whose method/path targets what the
 front tier denies but the back-end trusts:
 - Smuggle a request for a front-blocked or internal-only path so it arrives at the
   back-end as if it came from the front tier.
+- PIVOT ON ROUTING METADATA, not just method and path. The smuggled request is
+  parsed FRESH by the next hop, so ITS `Host` / authority and other routing headers
+  are now attacker-controlled and are no longer normalized by the front tier.
+  Systematically VARY the smuggled request's `Host` / authority (and any routing
+  headers the stack keys on) -- front tiers routinely route different virtual hosts
+  or internal-only backends by `Host` or ACLs, and a re-emitting proxy rewrites the
+  `Host` of every request IT parses, so a smuggled request is often the ONLY way to
+  deliver an internal-only authority value to the back-end. Enumerate candidate
+  authorities you have EVIDENCE for (names the app itself disclosed, internal
+  service names, the upstream's own name); do not assume `localhost` / `127.0.0.1`
+  is the only authority worth trying.
 - Leave a partial request queued so a victim's next request is APPENDED to your
   smuggled prefix (request/response queue poisoning), capturing their data or
   forcing an action as them.
@@ -65,4 +76,13 @@ front tier denies but the back-end trusts:
 Success = you retrieved content or triggered an action that the front tier blocks
 for a direct request, proving the boundary disagreement is exploitable. Cite the
 exact framing variant that desynced and the response that proves it.
+
+A desync is a TRANSPORT primitive, not a finished exploit. If smuggled requests to
+protected resources return auth redirects / denials (302 / 401 / 403) WHILE the
+channel demonstrably works, do NOT declare the class dead -- CHAIN it: (a) re-target
+via routing metadata (a different `Host` / authority may reach an unauthenticated
+internal service), and / or (b) acquire a session first -- attempt default / weak
+credentials at the discovered login, or capture a victim session via request /
+response socket poisoning -- then re-smuggle the request as the authenticated
+principal. An auth block on a working channel means CHAIN, not STOP.
 """

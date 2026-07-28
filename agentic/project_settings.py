@@ -76,10 +76,11 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'FIRETEAM_PROPENSITY': 3,                    # 1-5 scalar: how strongly LLM is pushed to deploy fireteams (3=baseline, 1=reluctant, 5=aggressive)
 
     # LATS (Language Agent Tree Search) — bounded exploit-path search.
-    # See internal/LATS_integration.md §8 "Settings summary". Ships ON by
-    # default and DRIVES by default; flip SHADOW on to build+stream the tree
-    # without letting it drive (observe-only).
-    'LATS_ENABLED': True,                         # master switch
+    # See internal/LATS_integration.md §8 "Settings summary". Ships OFF by
+    # default (new projects run the plain sequential agent); enable per project
+    # in Settings. When enabled it DRIVES by default; flip SHADOW on to
+    # build+stream the tree without letting it drive (observe-only).
+    'LATS_ENABLED': False,                        # master switch (default OFF)
     'LATS_SHADOW_MODE': False,                    # drive by default; True = observe-only (build the tree, do NOT drive)
     'LATS_ALLOWED_PHASES': ['exploitation'],     # phases where the tree search runs (post_exploitation experimental, §6.1)
     'LATS_MIN_HYPOTHESES': 2,                     # min credible probes lats_expand must yield to activate

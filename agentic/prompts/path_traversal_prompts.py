@@ -544,6 +544,29 @@ the following must be on record for each confirmed sink:
       unexecuted log/session-poisoning RCE is still outstanding on a confirmed include
       sink -- plan-then-quit does not satisfy this gate; the poison-include-read cycle
       must actually have been sent and its output read.
+- [ ] OBJECTIVE-DATUM LOCATION SWEEP on record. When a read or inclusion primitive
+      is CONFIRMED but the objective datum (flag / secret / key / credential / config
+      value) has not been located, you may NOT `switch_skill`, ask for a hint, write a
+      final summary, or end the run until you have swept for it along a matrix you
+      GENERATE yourself (never a fixed short list):
+        - names: vary CASE (lower / UPPER / Mixed) and try common extensions AND the
+          app's OWN language extension -- a datum file may itself be an interpreted
+          script, not plain text;
+        - directories: the current web-root and its parents, the filesystem root,
+          temp / home, and any service directory the app revealed;
+        - depths: several traversal depths (the correct one is target-specific).
+      Probe EVERY candidate through BOTH channels: (a) a direct read/stream, AND
+      (b) wherever an include/execute sink or any RCE primitive is confirmed, an
+      execute-then-emit-as-data read (`readfile` / `cat` / `file_get_contents`),
+      because an INTERPRETED datum file returns blank/boilerplate on direct inclusion.
+      Treat a blank / "not found" / zero-length body as INCONCLUSIVE, never as
+      "absent" -- re-read that same candidate through the execution channel. Prefer
+      reading the location from the app's OWN source/config over blind guessing.
+- [ ] "Execution channel not viable" is an INVALID verdict unless at least ONE full
+      poison -> include -> read cycle was actually EXECUTED against a FRESH /
+      uncorrupted sink. A sink polluted by your own prior probe lines parse-errors the
+      whole include and returns blank; that is corruption to route around (use a fresh
+      or different writable sink), NOT proof the channel is dead.
 Only once this checklist is complete may you `switch_skill` or report the class
 as not present. A 403 you never re-routed through a second handler is an open
 lead, not a closed door.
