@@ -62,17 +62,37 @@ _TRANSIENT_KEYWORDS = (
 # because it's rate-limit, retry-worthy.
 _TRANSIENT_STATUS_RE = re.compile(r"\b(429|500|502|503|504|529)\b")
 
-# Some models reject the `temperature` sampling param with a permanent 400:
-#   * Anthropic 4.7+/5:  "`temperature` is deprecated for this model."
-#   * OpenAI o-series:   "Unsupported value: 'temperature' ... does not support ..."
-#   * Moonshot kimi-k3:  "invalid temperature: only 1 is allowed for this model."
-# This is NOT transient, but it IS auto-recoverable: drop temperature and retry
-# (the model then falls back to its own default). Handling it here means any
-# current or future model that rejects the param, or forces a fixed value, works
-# without maintaining a per-model allowlist.
+# Some models reject the `temperature` sampling param with a permanent 400,
+# either because they forbid it outright or because a reasoning/thinking mode
+# constrains it to a value our default of 0 violates. Observed across providers:
+#   * Anthropic 4.7+/5:      "`temperature` is deprecated for this model."
+#   * OpenAI o-series/gpt-5:  "'temperature' does not support 0 ... Only the default (1)"
+#   * Moonshot kimi-k3:       "invalid temperature: only 1 is allowed for this model."
+#   * DeepSeek reasoner:      "deepseek-reasoner does not support the parameter `temperature`"
+#   * Bedrock + thinking:     "temperature may only be set to 1 when thinking is enabled"
+#   * Zhipu GLM / Qwen think: temperature "must be greater than 0" (open interval)
+# None are transient, but ALL are auto-recoverable the same way: drop temperature
+# and retry, so the model falls back to its own (compatible) default. Matching on
+# these phrases means any current or future model that rejects the param, forces a
+# fixed value, or requires a non-zero value works without a per-model allowlist.
+# Anchored on the word "temperature" being present, so these stay specific.
+# Each phrase is tied to a real provider error string above — no speculative
+# widening, which would only grow the false-positive surface.
 _TEMPERATURE_UNSUPPORTED_HINTS = (
     "deprecated", "unsupported", "not supported", "does not support",
-    "only 1 is allowed", "invalid temperature",
+    "only 1 is allowed", "invalid temperature", "only the default",
+    "may only be set", "must be greater than", "greater than 0",
+    "must be set to",
+)
+
+# Hints for a DIFFERENT class: the model lacks the thinking capability entirely
+# and rejects `reasoning_effort` (e.g. Ollama's `"<model>" does not support
+# thinking`). Deliberately NOT the temperature-range phrases above — a
+# temperature-range error that happens to mention "thinking" (Qwen's
+# "temperature must be greater than 0 for thinking mode") is a TEMPERATURE
+# error, and must not be mis-healed by dropping reasoning_effort.
+_THINKING_UNSUPPORTED_HINTS = (
+    "deprecated", "unsupported", "not supported", "does not support",
 )
 
 
@@ -89,7 +109,7 @@ def _is_thinking_unsupported_error(exc: BaseException) -> bool:
     non-thinking model keep running instead of bricking every LLM call.
     """
     s = str(exc).lower()
-    return "thinking" in s and any(h in s for h in _TEMPERATURE_UNSUPPORTED_HINTS)
+    return "thinking" in s and any(h in s for h in _THINKING_UNSUPPORTED_HINTS)
 
 
 def _without_reasoning_effort(llm: Any) -> Any:
@@ -130,6 +150,43 @@ def _without_temperature(llm: Any) -> Any:
         return None
 
 
+def heal_llm_param_error(
+    llm: Any,
+    exc: BaseException,
+    *,
+    already_healed: frozenset = frozenset(),
+) -> tuple[Any, str] | None:
+    """Try to auto-recover from a permanent parameter-rejection 400.
+
+    Some models reject our default sampling params: ``temperature`` (forbidden,
+    or constrained by a reasoning mode) or ``reasoning_effort`` (model lacks the
+    thinking capability). Both are fixable by dropping the offending param and
+    retrying once — the model then uses its own compatible default.
+
+    Returns ``(healed_llm, heal_key)`` where ``heal_key`` is ``"temperature"`` or
+    ``"reasoning_effort"``, or ``None`` when the error isn't of that class, the
+    relevant heal was already applied (``already_healed``), or no copy of ``llm``
+    could be made. Never mutates the original ``llm``.
+
+    Temperature is checked first: an error like Bedrock's "temperature may only
+    be set to 1 when thinking is enabled" names both params, and dropping
+    temperature is the correct fix there.
+
+    This is the shared self-heal used by ``retry_llm_call`` and by direct
+    ``ainvoke`` call sites (the scope guardrail and the attack-path classifier)
+    that run their own retry loops.
+    """
+    if "temperature" not in already_healed and _is_temperature_unsupported_error(exc):
+        neutered = _without_temperature(llm)
+        if neutered is not None:
+            return neutered, "temperature"
+    if "reasoning_effort" not in already_healed and _is_thinking_unsupported_error(exc):
+        neutered = _without_reasoning_effort(llm)
+        if neutered is not None:
+            return neutered, "reasoning_effort"
+    return None
+
+
 def is_transient_llm_error(exc: BaseException) -> bool:
     """Classify an LLM-call exception as transient (worth retrying) or not.
 
@@ -168,49 +225,47 @@ async def retry_llm_call(
     can be disambiguated in the log stream.
     """
     last_exc: BaseException | None = None
-    healed_temperature = False
-    healed_reasoning = False
+    healed: set[str] = set()
     for attempt in range(max_attempts):
         try:
             return await llm.ainvoke(messages)
         except Exception as exc:
             last_exc = exc
-            # Self-heal (once): a model that rejects `temperature` raises a
-            # permanent 400. Strip the param and immediately retry so any such
-            # model/provider works without a per-model allowlist. If the retry
-            # still fails, fall through to normal classification of that error.
-            if (not healed_temperature) and _is_temperature_unsupported_error(exc):
-                neutered = _without_temperature(llm)
-                if neutered is not None:
-                    healed_temperature = True
-                    llm = neutered
-                    logger.warning(
-                        "[%s] model rejected `temperature`; retrying without it.",
-                        label,
+            # Self-heal (once per param): a model that rejects `temperature` or
+            # `reasoning_effort` raises a permanent 400. Strip the offending
+            # param and immediately retry so any such model/provider works
+            # without a per-model allowlist. If the retry still fails, fall
+            # through to normal classification of that error.
+            heal = heal_llm_param_error(llm, exc, already_healed=frozenset(healed))
+            if heal is not None:
+                llm, heal_key = heal
+                healed.add(heal_key)
+                logger.warning(
+                    "[%s] model rejected `%s`; retrying without it.",
+                    label, heal_key,
+                )
+                try:
+                    return await llm.ainvoke(messages)
+                except Exception as exc2:
+                    last_exc = exc2
+                    exc = exc2
+                    # A second param might still be rejected (e.g. temperature
+                    # then reasoning_effort). Heal it too before classifying.
+                    heal2 = heal_llm_param_error(
+                        llm, exc, already_healed=frozenset(healed)
                     )
-                    try:
-                        return await llm.ainvoke(messages)
-                    except Exception as exc2:
-                        last_exc = exc2
-                        exc = exc2
-            # Self-heal (once): a non-thinking model rejects `reasoning_effort`
-            # with a permanent 400. Drop it and retry so a provider that enabled
-            # reasoning on a model without the thinking capability keeps working.
-            if (not healed_reasoning) and _is_thinking_unsupported_error(exc):
-                neutered = _without_reasoning_effort(llm)
-                if neutered is not None:
-                    healed_reasoning = True
-                    llm = neutered
-                    logger.warning(
-                        "[%s] model does not support thinking; retrying without "
-                        "`reasoning_effort`.",
-                        label,
-                    )
-                    try:
-                        return await llm.ainvoke(messages)
-                    except Exception as exc2:
-                        last_exc = exc2
-                        exc = exc2
+                    if heal2 is not None:
+                        llm, heal_key = heal2
+                        healed.add(heal_key)
+                        logger.warning(
+                            "[%s] model rejected `%s`; retrying without it.",
+                            label, heal_key,
+                        )
+                        try:
+                            return await llm.ainvoke(messages)
+                        except Exception as exc3:
+                            last_exc = exc3
+                            exc = exc3
             transient = is_transient_llm_error(exc)
             logger.warning(
                 "[%s] LLM attempt %d/%d error (transient=%s, type=%s): %s",

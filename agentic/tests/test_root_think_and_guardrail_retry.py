@@ -178,6 +178,46 @@ class GuardrailSelectiveRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_llm.ainvoke.await_count, 2)
         self.assertEqual(sleep.await_count, 1)
 
+    # ----- Temperature self-heal: the reported Kimi-k3 bug -----
+
+    async def test_temperature_rejection_self_heals(self):
+        """REGRESSION (reported): selecting Moonshot kimi-k3 made the guardrail
+        400 with "invalid temperature: only 1 is allowed for this model". The
+        fail-closed policy turned that fixable param error into a bogus
+        "Scope Guardrail: Check Failed". The guardrail must now drop temperature
+        and retry, returning a real verdict."""
+        healed = MagicMock()
+        healed.ainvoke = AsyncMock(return_value=MagicMock(content=self._VALID_JSON))
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=Exception(
+            "Error code: 400 - {'error': {'message': 'invalid temperature: "
+            "only 1 is allowed for this model', 'type': 'invalid_request_error'}}"
+        ))
+        mock_llm.model_copy = MagicMock(return_value=healed)
+        result, sleep, exc = await self._run(mock_llm)
+        self.assertIsNone(exc, "temperature error must self-heal, not propagate")
+        self.assertEqual(result, {"allowed": True, "reason": "test allow"})
+        self.assertEqual(mock_llm.ainvoke.await_count, 1)
+        self.assertEqual(healed.ainvoke.await_count, 1,
+                         "temperature-stripped clone must produce the verdict")
+        mock_llm.model_copy.assert_called_once_with(update={"temperature": None})
+
+    async def test_openai_o_series_temperature_self_heals(self):
+        """The same heal covers OpenAI o-series/gpt-5, which reject any
+        temperature but the default. Different provider, same recovery."""
+        healed = MagicMock()
+        healed.ainvoke = AsyncMock(return_value=MagicMock(content=self._VALID_JSON))
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=Exception(
+            "Unsupported value: 'temperature' does not support 0 with this "
+            "model. Only the default (1) value is supported."
+        ))
+        mock_llm.model_copy = MagicMock(return_value=healed)
+        result, sleep, exc = await self._run(mock_llm)
+        self.assertIsNone(exc)
+        self.assertEqual(result, {"allowed": True, "reason": "test allow"})
+        mock_llm.model_copy.assert_called_once_with(update={"temperature": None})
+
     # ----- Core regression: non-transient must NOT retry -----
 
     async def test_non_transient_reraises_immediately(self):

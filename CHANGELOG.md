@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.6] - 2026-07-29
+
+### Fixed
+
+- **`redamon-agent` container crash-looped on a clean build (issue #161).** The `mcp` dependency was unpinned (only a transitive dep of `langchain-mcp-adapters>=0.1.0`), so a fresh `purge && install` resolved `mcp` up to the new **2.0.0** major, which removed `RequestContext` from `mcp.shared.context`. `langchain-mcp-adapters 0.3.x` still imports that name, so the agent failed at import (`ImportError: cannot import name 'RequestContext' from 'mcp.shared.context'`) and restarted forever. Both packages are now pinned to the known-good pair (`langchain-mcp-adapters==0.3.0`, `mcp==1.28.1`) in [agentic/requirements.txt](agentic/requirements.txt); existing images already on `mcp 1.28.1` were unaffected, which is why the crash only surfaced on clean builds. Operators updating must rebuild the agent image: `docker compose build agent && docker compose up -d agent`.
+
+---
+
 ## [6.2.5] - 2026-07-28
 
 ### Fixed

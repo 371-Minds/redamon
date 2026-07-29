@@ -212,6 +212,21 @@ universal SSTI oracle:
 - **Arithmetic-evaluating engines** (Jinja2, Twig, Freemarker, Velocity, ERB,
   Smarty, Mako) evaluate a math probe to `49` (Jinja2 `{{{{7*7}}}}`, Freemarker
   `${{7*7}}`, ERB `<%= 7*7 %>`). Math evaluating -> SSTI confirmed.
+- **When template DELIMITER characters are FILTERED (`{` `}` `%` `$` `<` `>` rejected --
+  e.g. a `400`/"forbidden characters" the instant you send one):** a blocked delimiter is
+  NOT evidence of "no SSTI," and it is NOT a reason to abandon the parameter or fall back
+  to SQLi/other classes. Consider that your input may land INSIDE a template construct the
+  application ALREADY wrote, where the engine's delimiters already surround the injection
+  point -- in which case you must NOT add your own delimiters at all. Test that hypothesis
+  DELIMITER-FREE: send a bare, neutral expression -- a simple arithmetic or boolean
+  placeholder such as `A op B` -- that contains NONE of the filtered characters, alongside
+  a plain-literal control, and DIFF THE WHOLE RESPONSE between them: body content,
+  structure, length, status code, error text, and timing. ANY difference that tracks the
+  COMPUTED value rather than the characters you typed is evidence the input was evaluated;
+  do not assume the effect surfaces in any one place -- inspect the entire response and its
+  shape, not a single field. Confirm on the exact sink/URL/method you will exploit. Only
+  after a delimiter-free bare probe is ALSO inert there may you write the endpoint off.
+  Filtered delimiters mean "try delimiter-free," never "give up on the vector."
 - **Logic-less / sandboxed engines** (Django templates, Handlebars, Mustache,
   Liquid, Go text/template) do NOT compute `7*7`; they render empty, echo it, or
   raise a template error the app may swallow into a blank page/redirect. A probe

@@ -11,6 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from state import AttackPathClassification
 from prompts.classification import build_classification_prompt
 from .json_utils import normalize_content, extract_json
+from .llm_retry import heal_llm_param_error
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ async def classify_attack_path(
     ]
 
     last_error = None
+    healed: set[str] = set()
 
     for attempt in range(max_retries):
         try:
@@ -98,6 +100,21 @@ async def classify_attack_path(
             logger.warning(f"Attempt {attempt + 1}/{max_retries}: {last_error}")
 
         except Exception as e:
+            # Self-heal (once per param): the model may reject our default
+            # `temperature`/`reasoning_effort` with a permanent 400 (OpenAI
+            # o-series, Bedrock Claude 4.x, Moonshot k3, GLM/Qwen thinking, ...).
+            # This call site runs its own loop instead of retry_llm_call, so heal
+            # here too and retry immediately rather than burning attempts on an
+            # error that will repeat identically.
+            heal = heal_llm_param_error(llm, e, already_healed=frozenset(healed))
+            if heal is not None:
+                llm, heal_key = heal
+                healed.add(heal_key)
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries}: model rejected "
+                    f"`{heal_key}`; retrying without it."
+                )
+                continue
             last_error = f"Unexpected error: {e}"
             logger.warning(f"Attempt {attempt + 1}/{max_retries}: {last_error}")
 

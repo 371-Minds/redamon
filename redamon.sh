@@ -290,11 +290,47 @@ _export_clamped_cap() {
     export "$var=${val}m"
 }
 
+# Export a CPU cap of min(compose default, detected cores) for VAR, unless the
+# operator pinned it. Skips when the core count is unknown, leaving the compose
+# default in place.
+_export_cpu_cap() {
+    local var="$1" default="$2" n="${BUILD_NCPU:-0}"
+    [[ -n "${!var:-}" ]] && return 0                 # shell/env override wins
+    # A pin in .env must win too: compose gives the shell environment priority
+    # over .env, so exporting here would silently override the operator's value.
+    [[ -r "$SCRIPT_DIR/.env" ]] && grep -q "^[[:space:]]*${var}=" "$SCRIPT_DIR/.env" && return 0
+    [[ "$n" -lt 1 ]] && return 0
+    [[ "$default" -gt "$n" ]] && default="$n"
+    export "$var=$default"
+}
+
+# #163: docker-compose.yml carries generous `cpus:` defaults sized for a
+# workstation (neo4j 8, kali 10, agent 8). The Docker daemon REJECTS any cpus
+# value above the host core count -- "range of CPUs is from 0.01 to 4.00, as
+# there are only 4 CPUs available" -- so on a 4-vCPU VM every `docker compose
+# up` died before the stack came up. Clamp each cap to the detected core count.
+# `cpus:` is a limit, not a reservation, so clamping loses nothing: the core
+# count was already the real ceiling. Keep these defaults in sync with
+# docker-compose.yml and deploy/single-host/deploy.sh's cap_cpus block.
+export_cpu_caps() {
+    [[ -z "${BUILD_NCPU:-}" ]] && detect_build_resources
+    _export_cpu_cap POSTGRES_CPUS 4
+    _export_cpu_cap NEO4J_CPUS 8
+    _export_cpu_cap KALI_CPUS 10
+    _export_cpu_cap RECON_ORCHESTRATOR_CPUS 4
+    _export_cpu_cap AGENT_CPUS 8
+    _export_cpu_cap WEBAPP_CPUS 4
+    _export_cpu_cap DOCKER_BROKER_CPUS 2
+}
+
 # Derive per-service memory caps from detected RAM and export them so
 # docker-compose.yml `${VAR:-default}` picks them up. Always-on services get a
 # static generous cap sized to the host (Part 4). No-op if RAM undetectable.
 export_resource_caps() {
     detect_build_resources
+    # CPU caps first: unlike the memory caps they do not depend on RAM
+    # detection, so they must be applied before the undetectable-RAM bail-out.
+    export_cpu_caps
     [[ "${BUILD_MEM_MB:-0}" -le 0 ]] && return 0
     local t="$BUILD_MEM_MB"
     # neo4j: the container mem_limit MUST exceed heap + pagecache or the JVM gets
@@ -2307,6 +2343,16 @@ cmd_help() {
 # tested in isolation.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 cd "$SCRIPT_DIR"
+
+# #163: clamp the per-service `cpus:` caps to the host's core count for EVERY
+# command that can touch Docker. Done here rather than inside each command
+# because `install`, `update` and the password/KB helpers all reach
+# `docker compose up` by different routes, and any one of them exceeding the
+# core count aborts the whole `up`. `help` is excluded so it stays offline.
+case "${1:-help}" in
+    help|--help|-h) ;;
+    *) export_cpu_caps ;;
+esac
 
 case "${1:-help}" in
     install) shift; cmd_install "$@" ;;

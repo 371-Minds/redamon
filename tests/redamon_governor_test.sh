@@ -99,6 +99,57 @@ unset AGENT_MEM POSTGRES_MEM
 export_resource_caps
 eq "AGENT_MEM floored to 1024m" "$AGENT_MEM" "1024m"  # 4096*12% = 491 -> floor 1024
 
+echo "== export_cpu_caps (#163) =="
+CPU_VARS=(POSTGRES_CPUS NEO4J_CPUS KALI_CPUS RECON_ORCHESTRATOR_CPUS AGENT_CPUS WEBAPP_CPUS DOCKER_BROKER_CPUS)
+# Isolate from the repo's real .env (an operator pin there must not skew the test).
+CPU_TMP="$(mktemp -d)"; trap 'rm -rf "$CPU_TMP"' EXIT
+SCRIPT_DIR="$CPU_TMP"
+reset_cpu_stub() { unset "${CPU_VARS[@]}" BUILD_NCPU; STUB_NCPU="$1"; }
+detect_build_resources() { BUILD_MEM_MB="$STUB_MEM"; BUILD_RES_SOURCE="stub"; BUILD_NCPU="$STUB_NCPU"; }
+
+# The reported failure: a 4-vCPU VM. Every cap must land <= 4 or the daemon
+# rejects `up` with "range of CPUs is from 0.01 to 4.00".
+reset_cpu_stub 4; export_cpu_caps
+eq "4 cores: NEO4J_CPUS 8 -> 4"  "$NEO4J_CPUS" "4"
+eq "4 cores: KALI_CPUS 10 -> 4"  "$KALI_CPUS"  "4"
+eq "4 cores: AGENT_CPUS 8 -> 4"  "$AGENT_CPUS" "4"
+eq "4 cores: POSTGRES_CPUS kept" "$POSTGRES_CPUS" "4"
+eq "4 cores: BROKER_CPUS kept"   "$DOCKER_BROKER_CPUS" "2"
+over=""
+for v in "${CPU_VARS[@]}"; do [[ "${!v}" -gt 4 ]] && over="$over $v=${!v}"; done
+if [[ -z "$over" ]]; then ok "no cap exceeds host cores"; else bad "no cap exceeds host cores" "$over" "<=4"; fi
+
+# Roomy host: the generous compose defaults must survive untouched.
+reset_cpu_stub 16; export_cpu_caps
+eq "16 cores: NEO4J_CPUS stays 8" "$NEO4J_CPUS" "8"
+eq "16 cores: KALI_CPUS stays 10" "$KALI_CPUS"  "10"
+
+# Single-core host: everything collapses to 1, never to 0 (0 would mean unlimited).
+reset_cpu_stub 1; export_cpu_caps
+eq "1 core: NEO4J_CPUS -> 1"  "$NEO4J_CPUS" "1"
+eq "1 core: BROKER_CPUS -> 1" "$DOCKER_BROKER_CPUS" "1"
+
+# Undetectable core count -> export nothing, leave the compose defaults alone.
+reset_cpu_stub 0; export_cpu_caps
+eq "0 cores: NEO4J_CPUS unset" "${NEO4J_CPUS:-unset}" "unset"
+
+# An explicit shell override always wins over the clamp.
+reset_cpu_stub 4; NEO4J_CPUS=2; export_cpu_caps
+eq "shell override kept" "$NEO4J_CPUS" "2"
+
+# A pin in .env must win too: compose ranks the shell environment ABOVE .env, so
+# exporting a clamp here would silently override the operator's pinned value.
+reset_cpu_stub 4; printf 'NEO4J_CPUS=3\n' > "$CPU_TMP/.env"; export_cpu_caps
+eq ".env pin left to compose" "${NEO4J_CPUS:-unset}" "unset"
+eq ".env pin does not block others" "$KALI_CPUS" "4"
+rm -f "$CPU_TMP/.env"
+
+# export_resource_caps must apply the CPU clamp even when RAM is undetectable
+# (the memory branch bails out early; the CPU branch must not ride along).
+reset_cpu_stub 4; STUB_MEM=0; export_resource_caps
+eq "CPU clamp survives undetectable RAM" "$KALI_CPUS" "4"
+unset "${CPU_VARS[@]}"; STUB_MEM=32000
+
 echo "== setup_zram guards =="
 # Default off -> pure no-op (returns 0, does nothing).
 unset REDAMON_ENABLE_ZRAM

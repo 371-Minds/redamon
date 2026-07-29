@@ -16,7 +16,10 @@ from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from orchestrator_helpers.json_utils import normalize_content, extract_json
-from orchestrator_helpers.llm_retry import is_transient_llm_error
+from orchestrator_helpers.llm_retry import (
+    heal_llm_param_error,
+    is_transient_llm_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -168,10 +171,26 @@ async def _invoke_guardrail(llm: Any, user_prompt: str) -> dict[str, Any]:
     # both burns budget and produces a misleading "Guardrail LLM check
     # failed after 3 attempts" error message in place of the real cause.
     last_transient: BaseException | None = None
+    healed: set[str] = set()
     for attempt in range(3):
         try:
             response = await llm.ainvoke(messages)
         except Exception as e:
+            # Self-heal (once per param): the model may reject our default
+            # `temperature`/`reasoning_effort` with a permanent 400 (OpenAI
+            # o-series, Bedrock Claude 4.x, Moonshot k3, GLM/Qwen thinking,
+            # ...). This call site runs its own loop instead of retry_llm_call,
+            # so heal here too — otherwise the fail-closed policy turns a fixable
+            # param error into a bogus "Scope Guardrail: Check Failed".
+            heal = heal_llm_param_error(llm, e, already_healed=frozenset(healed))
+            if heal is not None:
+                llm, heal_key = heal
+                healed.add(heal_key)
+                logger.warning(
+                    f"Guardrail attempt {attempt + 1}: model rejected "
+                    f"`{heal_key}`; retrying without it."
+                )
+                continue
             if not is_transient_llm_error(e):
                 logger.warning(
                     f"Guardrail attempt {attempt + 1} non-transient error "
