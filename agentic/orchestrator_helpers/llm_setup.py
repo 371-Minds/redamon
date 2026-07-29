@@ -306,11 +306,17 @@ def setup_llm(
             raise ValueError(
                 f"Kimi (Moonshot) API key is required for model '{model_name}'"
             )
+        # Moonshot's reasoning models (kimi-k3, kimi-k2.6, ...) reject any
+        # temperature except 1 with a permanent HTTP 400 ("invalid temperature:
+        # only 1 is allowed for this model"). Classic moonshot-v1 models accept
+        # 0, but there is no reliable per-model signal, so we omit temperature
+        # entirely and let each model use its own default rather than crash the
+        # newer ones. The llm_retry self-heal is the backstop if a future model
+        # ever forces a different fixed value.
         llm = ChatOpenAI(
             model=api_model,
             api_key=kimi_api_key,
             base_url="https://api.moonshot.ai/v1",
-            temperature=0,
         )
 
     elif provider == "qwen":

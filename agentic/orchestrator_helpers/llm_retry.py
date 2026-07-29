@@ -65,11 +65,14 @@ _TRANSIENT_STATUS_RE = re.compile(r"\b(429|500|502|503|504|529)\b")
 # Some models reject the `temperature` sampling param with a permanent 400:
 #   * Anthropic 4.7+/5:  "`temperature` is deprecated for this model."
 #   * OpenAI o-series:   "Unsupported value: 'temperature' ... does not support ..."
-# This is NOT transient, but it IS auto-recoverable: drop temperature and retry.
-# Handling it here means any current or future model that stops accepting the
-# param works without maintaining a per-model allowlist.
+#   * Moonshot kimi-k3:  "invalid temperature: only 1 is allowed for this model."
+# This is NOT transient, but it IS auto-recoverable: drop temperature and retry
+# (the model then falls back to its own default). Handling it here means any
+# current or future model that rejects the param, or forces a fixed value, works
+# without maintaining a per-model allowlist.
 _TEMPERATURE_UNSUPPORTED_HINTS = (
     "deprecated", "unsupported", "not supported", "does not support",
+    "only 1 is allowed", "invalid temperature",
 )
 
 
