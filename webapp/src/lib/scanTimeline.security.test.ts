@@ -92,6 +92,26 @@ describe('the scheduler internal API is internal-key only', () => {
   })
 })
 
+describe('snapshot contents never reach an audit row', () => {
+  // Audit entries are long-lived and widely readable; recon graphs carry banners,
+  // secrets and credentials. Only ids, counts and labels may be recorded.
+  const AUDIT_SOURCES = [
+    'scanTimeline.ts',
+    '../app/api/projects/[id]/versions/route.ts',
+    '../app/api/projects/[id]/versions/[versionId]/route.ts',
+    '../app/api/projects/[id]/versions/[versionId]/activate/route.ts',
+  ]
+
+  test.each(AUDIT_SOURCES)('%s passes no payload into writeAudit', rel => {
+    const src = readFileSync(path.resolve(__dirname, rel), 'utf8')
+    const blocks = src.split('writeAudit(').slice(1)
+    for (const block of blocks) {
+      const body = block.slice(0, block.indexOf('})'))
+      expect(body).not.toMatch(/\b(nodes|relationships|snapshot|properties|payload|captured)\b\s*[,:}]/)
+    }
+  })
+})
+
 describe('no snapshot contents are logged', () => {
   test.each([
     'scanSnapshot.ts',

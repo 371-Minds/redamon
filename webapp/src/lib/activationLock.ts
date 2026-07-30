@@ -43,6 +43,28 @@ export async function isActivationInProgress(projectId: string): Promise<boolean
 }
 
 /**
+ * Batched form for callers that hold a LIST of projects (the scheduler's due
+ * feed). One query for N projects: asking per project turned a 25-schedule tick
+ * into 25 sequential round-trips.
+ */
+export async function activationStates(projectIds: string[]): Promise<Map<string, boolean>> {
+  const states = new Map<string, boolean>(projectIds.map(id => [id, false]))
+  if (projectIds.length === 0) return states
+  const rows = await prisma.project.findMany({
+    where: { id: { in: projectIds } },
+    select: { id: true, activationState: true, activationStartedAt: true },
+  })
+  const now = Date.now()
+  for (const row of rows) {
+    states.set(
+      row.id,
+      row.activationState === ACTIVATION_STATE_ACTIVATING && !isStale(row.activationStartedAt, now)
+    )
+  }
+  return states
+}
+
+/**
  * Guard for every path that touches the live graph while an activation may be
  * running (scan start, partial-recon start, agent-session start, scheduler).
  * Returns a 409 response to return, or null when the graph is free.

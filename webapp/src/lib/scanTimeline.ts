@@ -114,20 +114,7 @@ export async function prepareVersionsForFullScan(
     )
   }
 
-  const nextSeq = await nextVersionSeq(projectId)
-  const created = await prisma.$transaction(async tx => {
-    await tx.scanVersion.update({ where: { id: current.id }, data: { isCurrent: false } })
-    return tx.scanVersion.create({
-      data: {
-        projectId,
-        seq: nextSeq,
-        label: defaultVersionLabel(nextSeq),
-        isCurrent: true,
-        snapshot: null,
-      },
-      select: VERSION_SELECT,
-    })
-  })
+  const created = await rotateToNextVersion(projectId, current.id)
 
   // A version was just added to the timeline — trim it back to the policy.
   await applyRetentionSafe(projectId)
@@ -137,6 +124,55 @@ export async function prepareVersionsForFullScan(
     frozenVersionId: current.id,
     frozenNodeCount: captured.nodeCount,
   }
+}
+
+/** Prisma's unique-constraint violation. */
+function isSeqCollision(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002'
+}
+
+const ROTATE_ATTEMPTS = 4
+
+/**
+ * Demote `demoteVersionId` and open the next version, atomically.
+ *
+ * Two writers can read the same max(seq) and both try to create seq+1 (a
+ * double-clicked Start, or a scan racing "save current as a version"). The
+ * `@@unique([projectId, seq])` constraint is what keeps version numbering from
+ * forking — but the loser used to surface as a 500 AFTER its snapshot had already
+ * been frozen. Retrying with a recomputed seq turns that race into a queue.
+ */
+export async function rotateToNextVersion(
+  projectId: string,
+  demoteVersionId: string
+): Promise<ScanVersionRow> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < ROTATE_ATTEMPTS; attempt++) {
+    const nextSeq = await nextVersionSeq(projectId)
+    try {
+      return await prisma.$transaction(async tx => {
+        await tx.scanVersion.update({ where: { id: demoteVersionId }, data: { isCurrent: false } })
+        return tx.scanVersion.create({
+          data: {
+            projectId,
+            seq: nextSeq,
+            label: defaultVersionLabel(nextSeq),
+            isCurrent: true,
+            snapshot: null,
+          },
+          select: VERSION_SELECT,
+        })
+      })
+    } catch (err) {
+      if (!isSeqCollision(err)) throw err
+      lastError = err
+      console.warn(
+        `[scanTimeline] version seq ${nextSeq} was taken by a concurrent writer for project ` +
+        `${projectId}; retrying (${attempt + 1}/${ROTATE_ATTEMPTS})`
+      )
+    }
+  }
+  throw lastError
 }
 
 export async function nextVersionSeq(projectId: string): Promise<number> {

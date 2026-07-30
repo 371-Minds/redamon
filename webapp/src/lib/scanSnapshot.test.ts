@@ -270,6 +270,19 @@ describe('ensureCurrentVersion (backfill)', () => {
     expect(prismaMock.scanVersion.create).not.toHaveBeenCalled()
   })
 
+  test('IDEMPOTENT: a second call creates nothing once a current version exists', async () => {
+    prismaMock.scanVersion.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    prismaMock.scanVersion.create.mockResolvedValue({ id: 'v1', seq: 1, isCurrent: true })
+    const first = await ensureCurrentVersion('p1')
+
+    prismaMock.scanVersion.create.mockClear()
+    prismaMock.scanVersion.findFirst.mockResolvedValueOnce({ id: 'v1', seq: 1, isCurrent: true })
+    const second = await ensureCurrentVersion('p1')
+
+    expect(second.id).toBe(first.id)
+    expect(prismaMock.scanVersion.create).not.toHaveBeenCalled()
+  })
+
   test('a create race resolves to the winner row rather than throwing', async () => {
     prismaMock.scanVersion.findFirst
       .mockResolvedValueOnce(null)          // no current

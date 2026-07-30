@@ -13,9 +13,8 @@ import {
   captureGraphSnapshot,
   storeSnapshot,
   ensureCurrentVersion,
-  defaultVersionLabel,
 } from '@/lib/scanSnapshot'
-import { nextVersionSeq } from '@/lib/scanTimeline'
+import { rotateToNextVersion } from '@/lib/scanTimeline'
 import { isActivationInProgress } from '@/lib/activationLock'
 import { describeScanWriters } from '@/lib/graphWriters'
 import { applyRetentionSafe } from '@/lib/scanRetention'
@@ -133,20 +132,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       await prisma.scanVersion.update({ where: { id: current.id }, data: { label } })
     }
 
-    const nextSeq = await nextVersionSeq(id)
-    const created = await prisma.$transaction(async tx => {
-      await tx.scanVersion.update({ where: { id: current.id }, data: { isCurrent: false } })
-      return tx.scanVersion.create({
-        data: {
-          projectId: id,
-          seq: nextSeq,
-          label: defaultVersionLabel(nextSeq),
-          isCurrent: true,
-          snapshot: null,
-        },
-        select: { id: true, seq: true, label: true },
-      })
-    })
+    // Same collision-tolerant rotation the scan path uses.
+    const created = await rotateToNextVersion(id, current.id)
 
     await applyRetentionSafe(id)
 

@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { isInternalRequest } from '@/lib/session'
-import { isActivationInProgress } from '@/lib/activationLock'
+import { activationStates } from '@/lib/activationLock'
 
 export const runtime = 'nodejs'
 
@@ -39,12 +39,10 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // F3: the worker must not spawn into an in-flight graph swap.
-    const projectIds = [...new Set(due.map(d => d.projectId))]
-    const activating = new Map<string, boolean>()
-    for (const pid of projectIds) {
-      activating.set(pid, await isActivationInProgress(pid))
-    }
+    // F3: the worker must not spawn into an in-flight graph swap. Batched — this
+    // endpoint is polled every tick, so one query per due project would scale the
+    // round-trips with the number of schedules.
+    const activating = await activationStates([...new Set(due.map(d => d.projectId))])
 
     return NextResponse.json({
       now: now.toISOString(),

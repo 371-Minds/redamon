@@ -37,6 +37,13 @@ describe('parseCron', () => {
     ['zero step', '*/0 * * * *'],
     ['garbage', 'every minute'],
     ['empty', ''],
+    // Number('') is 0, so an open-ended range used to be silently reinterpreted:
+    // "-5" became "0-5", i.e. a schedule firing at times the user never asked for.
+    ['a range with no lower bound', '-5 * * * *'],
+    ['a range with no upper bound', '5- * * * *'],
+    ['an hour range with no lower bound', '0 -5 * * *'],
+    ['a bare dash', '- * * * *'],
+    ['a step with no value', '*/ * * * *'],
   ])('rejects %s', (_desc, expr) => {
     expect(() => parseCron(expr)).toThrow(CronParseError)
   })

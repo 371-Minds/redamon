@@ -71,6 +71,34 @@ describe('VersionSwitch', () => {
     expect(screen.getByText('Activating…')).toBeTruthy()
   })
 
+  test('Escape closes the dropdown and returns focus to the trigger', () => {
+    render(<VersionSwitch versions={versions} selectedVersionId={null} onSelect={vi.fn()} />)
+    const trigger = screen.getByRole('button', { name: /Scan 3/ })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('listbox')).toBeTruthy()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  test('the trigger exposes its state to assistive tech', () => {
+    render(<VersionSwitch versions={versions} selectedVersionId={null} onSelect={vi.fn()} />)
+    const trigger = screen.getByRole('button', { name: /Scan 3/ })
+    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(trigger.getAttribute('aria-label')).toMatch(/scan version/i)
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  test('every option reports whether it is the selected one', () => {
+    render(<VersionSwitch versions={versions} selectedVersionId="v2" onSelect={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Scan 2/ }))
+    const options = screen.getAllByRole('option')
+    expect(options.map(o => o.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false'])
+  })
+
   test('the manage entry is only rendered when a handler is provided', () => {
     const onManage = vi.fn()
     render(<VersionSwitch versions={versions} selectedVersionId={null} onSelect={vi.fn()} onManage={onManage} />)

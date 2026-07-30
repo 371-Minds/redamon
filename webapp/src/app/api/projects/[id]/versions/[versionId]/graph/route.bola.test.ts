@@ -15,8 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const mockRequireEff = vi.fn()
 const mockRequireProjectAccess = vi.fn()
-const mockFindUnique = vi.fn()
-const mockQueryRaw = vi.fn()
+const mockVersionRow = vi.fn()
 const mockLoadSnapshot = vi.fn()
 const mockReadLiveGraph = vi.fn()
 
@@ -24,11 +23,10 @@ vi.mock('@/lib/access', () => ({
   requireEffectiveUser: () => mockRequireEff(),
   requireProjectAccess: (...a: unknown[]) => mockRequireProjectAccess(...a),
 }))
+// The route uses the REAL ownership guard, which resolves the version in a single
+// raw query (row + snapshot size together).
 vi.mock('@/lib/prisma', () => ({
-  default: {
-    scanVersion: { findUnique: (...a: unknown[]) => mockFindUnique(...a) },
-    $queryRaw: (...a: unknown[]) => mockQueryRaw(...a),
-  },
+  default: { $queryRaw: (...a: unknown[]) => mockVersionRow(...a) },
 }))
 vi.mock('@/lib/scanSnapshot', async orig => ({
   ...(await orig<typeof import('@/lib/scanSnapshot')>()),
@@ -44,12 +42,17 @@ const NOT_FOUND = NextResponse.json({ error: 'Not found' }, { status: 404 })
 const UNAUTH = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 const params = (id: string, versionId: string) => ({ params: Promise.resolve({ id, versionId }) })
 const req = () => new NextRequest('http://x/api/projects/p1/versions/v1/graph')
+const versionRow = (over: Record<string, unknown> = {}) => ({
+  id: 'v1', project_id: 'p1', seq: 1, label: 'Scan 1', is_current: false,
+  pinned: false, node_count: 3, link_count: 2, created_at: new Date(),
+  snapshot_bytes: 4096, ...over,
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockRequireEff.mockResolvedValue({ userId: 'owner' })
   mockRequireProjectAccess.mockResolvedValue({ project: { id: 'p1', userId: 'owner' } })
-  mockQueryRaw.mockResolvedValue([{ len: 10 }])
+  mockVersionRow.mockResolvedValue([])
   mockLoadSnapshot.mockResolvedValue({ nodes: [], relationships: [] })
   mockReadLiveGraph.mockResolvedValue({ nodes: [], links: [] })
 })
@@ -59,7 +62,7 @@ describe('GET version graph — authorization', () => {
     mockRequireEff.mockResolvedValue(UNAUTH)
     const res = await GET(req(), params('p1', 'v1'))
     expect(res.status).toBe(401)
-    expect(mockFindUnique).not.toHaveBeenCalled()
+    expect(mockVersionRow).not.toHaveBeenCalled()
     expect(mockLoadSnapshot).not.toHaveBeenCalled()
   })
 
@@ -67,12 +70,12 @@ describe('GET version graph — authorization', () => {
     mockRequireProjectAccess.mockResolvedValue(NOT_FOUND)
     const res = await GET(req(), params('victimProj', 'v1'))
     expect(res.status).toBe(404)
-    expect(mockFindUnique).not.toHaveBeenCalled()
+    expect(mockVersionRow).not.toHaveBeenCalled()
     expect(mockLoadSnapshot).not.toHaveBeenCalled()
   })
 
   test("EXPLOIT: own project + ANOTHER project's versionId → 404, snapshot never loaded", async () => {
-    mockFindUnique.mockResolvedValue({ id: 'vOther', projectId: 'someoneElsesProject', isCurrent: false })
+    mockVersionRow.mockResolvedValue([versionRow({ id: 'vOther', project_id: 'someoneElsesProject' })])
     const res = await GET(req(), params('p1', 'vOther'))
     expect(res.status).toBe(404)
     expect(mockLoadSnapshot).not.toHaveBeenCalled()
@@ -80,7 +83,7 @@ describe('GET version graph — authorization', () => {
   })
 
   test('unknown versionId → 404', async () => {
-    mockFindUnique.mockResolvedValue(null)
+    mockVersionRow.mockResolvedValue([])
     const res = await GET(req(), params('p1', 'nope'))
     expect(res.status).toBe(404)
   })
@@ -88,7 +91,7 @@ describe('GET version graph — authorization', () => {
 
 describe('GET version graph — payload source', () => {
   test('current version reads the LIVE graph', async () => {
-    mockFindUnique.mockResolvedValue({ id: 'v3', projectId: 'p1', isCurrent: true })
+    mockVersionRow.mockResolvedValue([versionRow({ id: 'v3', is_current: true })])
     mockReadLiveGraph.mockResolvedValue({ nodes: [{ id: '1' }], links: [] })
     const res = await GET(req(), params('p1', 'v3'))
     expect(res.status).toBe(200)
@@ -100,7 +103,7 @@ describe('GET version graph — payload source', () => {
   })
 
   test('past version renders stored bytes and NEVER touches Neo4j', async () => {
-    mockFindUnique.mockResolvedValue({ id: 'v1', projectId: 'p1', isCurrent: false })
+    mockVersionRow.mockResolvedValue([versionRow({ id: 'v1' })])
     mockLoadSnapshot.mockResolvedValue({
       nodes: [{ labels: ['IP'], properties: { address: '1.1.1.1' }, _exportId: 'n1' }],
       relationships: [],
@@ -114,7 +117,7 @@ describe('GET version graph — payload source', () => {
   })
 
   test('a past version with no bytes reports it instead of showing live data', async () => {
-    mockFindUnique.mockResolvedValue({ id: 'v1', projectId: 'p1', isCurrent: false })
+    mockVersionRow.mockResolvedValue([versionRow({ id: 'v1' })])
     mockLoadSnapshot.mockResolvedValue(null)
     const res = await GET(req(), params('p1', 'v1'))
     expect(res.status).toBe(409)
@@ -123,7 +126,7 @@ describe('GET version graph — payload source', () => {
   })
 
   test('responses are not cacheable by shared caches', async () => {
-    mockFindUnique.mockResolvedValue({ id: 'v1', projectId: 'p1', isCurrent: false })
+    mockVersionRow.mockResolvedValue([versionRow({ id: 'v1' })])
     const res = await GET(req(), params('p1', 'v1'))
     expect(res.headers.get('Cache-Control')).toBe('private, no-cache')
   })

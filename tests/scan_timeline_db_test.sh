@@ -105,6 +105,63 @@ q "update scan_versions set snapshot = decode('1f8b0800', 'hex') where id = 'v2_
 got=$(q "select length(snapshot) from scan_versions where id = 'v2_$SUF'")
 expect_eq "snapshot bytes persist" "4" "$got"
 
+# ------------------------------------------------------ FK + NOT NULL ---------
+bad=$(q "insert into scan_jobs (id, project_id, version_id, trigger, status, created_at, updated_at)
+         values ('jbad_$SUF', '$P', 'no_such_version', 'manual', 'completed', now(), now())")
+if echo "$bad" | grep -qi "foreign key"; then
+  ok "a job cannot reference a version that does not exist (FK)"
+else
+  bad "a job cannot reference a version that does not exist (FK)" "insert unexpectedly succeeded: $bad"
+fi
+
+bad=$(q "insert into scan_versions (id, project_id, seq, label, is_current, pinned, created_at, updated_at)
+         values ('vnull_$SUF', '$P', null, 'no seq', false, false, now(), now())")
+if echo "$bad" | grep -qi "not-null\|null value"; then
+  ok "seq is NOT NULL (a version always has an identity)"
+else
+  bad "seq is NOT NULL (a version always has an identity)" "insert unexpectedly succeeded: $bad"
+fi
+
+bad=$(q "insert into scan_schedules (id, project_id, user_id, label, mode, scan_mode, enabled, created_at, updated_at)
+         values ('sbad_$SUF', 'no_such_project', '$U', '', 'once', 'new', true, now(), now())")
+if echo "$bad" | grep -qi "foreign key"; then
+  ok "a schedule cannot reference a project that does not exist (FK)"
+else
+  bad "a schedule cannot reference a project that does not exist (FK)" "insert unexpectedly succeeded: $bad"
+fi
+
+# ------------------------------------------- activation lock atomicity --------
+# The lock is a conditional UPDATE; two concurrent acquires must not both win, or
+# two activations would clear and rebuild the same graph at the same time.
+q "update projects set activation_state='idle', activation_started_at=null where id='$P'" >/dev/null
+a=$(q "update projects set activation_state='activating', activation_started_at=now()
+       where id='$P' and (activation_state='idle' or activation_started_at is null) returning id" &)
+b=$(q "update projects set activation_state='activating', activation_started_at=now()
+       where id='$P' and (activation_state='idle' or activation_started_at is null) returning id")
+wait
+winners=0
+[ -n "$a" ] && winners=$((winners + 1))
+[ -n "$b" ] && winners=$((winners + 1))
+if [ "$winners" -eq 1 ]; then
+  ok "two concurrent activation-lock acquires: exactly one wins"
+else
+  bad "two concurrent activation-lock acquires: exactly one wins" "winners=$winners"
+fi
+q "update projects set activation_state='idle', activation_started_at=null where id='$P'" >/dev/null
+
+# ------------------------------------------------- schema push idempotency ----
+# The project deploys schema with `prisma db push` (never migrate), so the check
+# that matters is: re-pushing against POPULATED tables is a no-op with no data loss.
+before=$(q "select count(*) from scan_versions where project_id='$P'")
+push=$(docker compose exec -T webapp npx prisma db push --skip-generate 2>&1)
+after=$(q "select count(*) from scan_versions where project_id='$P'")
+if echo "$push" | grep -qi "already in sync"; then
+  ok "re-pushing the schema is a no-op (already in sync)"
+else
+  bad "re-pushing the schema is a no-op (already in sync)" "$(echo "$push" | tail -3)"
+fi
+expect_eq "populated version rows survive a schema push (no data loss)" "$before" "$after"
+
 # -------------------------------------------------- project delete cascades ---
 q "insert into scan_schedules (id, project_id, user_id, label, mode, scan_mode, enabled, created_at, updated_at)
    values ('s2_$SUF', '$P', '$U', '', 'interval', 'new', true, now(), now())" >/dev/null

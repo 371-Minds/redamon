@@ -151,6 +151,27 @@ describe('preconditions', () => {
     expect(h.release).toHaveBeenCalledWith('p1')
   })
 
+  test('IDEMPOTENT: activating the same version twice leaves the same state', async () => {
+    // First call swaps; the second sees it is already current and must not clear,
+    // restore, freeze again, or move the pointer a second time.
+    const first = await POST(req(), params('p1', 'v1'))
+    expect(first.status).toBe(200)
+    expect(h.clearGraph).toHaveBeenCalledTimes(1)
+
+    vi.clearAllMocks()
+    h.requireEff.mockResolvedValue({ userId: 'owner' })
+    h.requireProjectAccess.mockResolvedValue({ project: { id: 'p1', userId: 'owner' } })
+    h.requireVersion.mockResolvedValue({ ...TARGET, isCurrent: true })   // now current
+
+    const second = await POST(req(), params('p1', 'v1'))
+    expect(second.status).toBe(200)
+    expect((await second.json()).alreadyCurrent).toBe(true)
+    expect(h.clearGraph).not.toHaveBeenCalled()
+    expect(h.restore).not.toHaveBeenCalled()
+    expect(h.store).not.toHaveBeenCalled()
+    expect(h.txUpdate).not.toHaveBeenCalled()
+  })
+
   test('a version with no stored bytes is refused (4A.6)', async () => {
     h.requireVersion.mockResolvedValue({ ...TARGET, hasSnapshot: false })
     const res = await POST(req(), params('p1', 'v1'))

@@ -45,14 +45,26 @@ export function VersionSwitch({
 }: VersionSwitchProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
     const onClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    // Escape must dismiss it and hand focus back, or a keyboard user who opens
+    // the dropdown is stranded inside it.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
     document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [open])
 
   const current = versions.find(v => v.isCurrent) ?? null
@@ -66,8 +78,10 @@ export function VersionSwitch({
   return (
     <div className={styles.wrapper} ref={ref}>
       <button
+        ref={triggerRef}
         className={`${styles.trigger} ${viewingPast ? styles.triggerPast : ''}`}
         onClick={() => setOpen(o => !o)}
+        aria-label={`Scan version: ${activating ? 'activating' : selected ? selected.label : 'none selected'}`}
         title={viewingPast
           ? 'Viewing a past version (read-only). The agent and analytics use the active version.'
           : 'Scan version'}

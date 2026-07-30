@@ -36,30 +36,41 @@ export async function requireVersionInProject(
 ): Promise<OwnedVersion | NextResponse> {
   if (!versionId || typeof versionId !== 'string') return NOT_FOUND()
 
-  const row = await prisma.scanVersion.findUnique({
-    where: { id: versionId },
-    select: {
-      id: true,
-      projectId: true,
-      seq: true,
-      label: true,
-      isCurrent: true,
-      pinned: true,
-      nodeCount: true,
-      linkCount: true,
-      createdAt: true,
-      // Only the presence of bytes — never select the payload itself here.
-      snapshot: false,
-    },
-  })
-  if (!row || row.projectId !== projectId) return NOT_FOUND()
-
-  // `snapshot` is potentially megabytes, so ask Postgres for its size instead of
-  // loading it just to answer "is this version activatable?".
-  const [sizeRow] = await prisma.$queryRaw<Array<{ len: number | null }>>`
-    SELECT octet_length(snapshot) AS len FROM scan_versions WHERE id = ${versionId}
+  // ONE query. This runs on every version request, and `snapshot` is potentially
+  // megabytes — so the row and the "does it have bytes?" answer come back
+  // together, with Postgres reporting the SIZE rather than shipping the payload.
+  // `versionId` is bound as a parameter by the tagged template, never interpolated.
+  const [row] = await prisma.$queryRaw<Array<{
+    id: string
+    project_id: string
+    seq: number
+    label: string
+    is_current: boolean
+    pinned: boolean
+    node_count: number | null
+    link_count: number | null
+    created_at: Date
+    snapshot_bytes: number | null
+  }>>`
+    SELECT id, project_id, seq, label, is_current, pinned, node_count, link_count,
+           created_at, octet_length(snapshot) AS snapshot_bytes
+    FROM scan_versions
+    WHERE id = ${versionId}
   `
-  return { ...row, hasSnapshot: (sizeRow?.len ?? 0) > 0 }
+  if (!row || row.project_id !== projectId) return NOT_FOUND()
+
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    seq: row.seq,
+    label: row.label,
+    isCurrent: row.is_current,
+    pinned: row.pinned,
+    nodeCount: row.node_count,
+    linkCount: row.link_count,
+    createdAt: row.created_at,
+    hasSnapshot: (row.snapshot_bytes ?? 0) > 0,
+  }
 }
 
 /**

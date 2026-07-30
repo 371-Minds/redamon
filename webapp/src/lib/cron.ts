@@ -54,10 +54,19 @@ function parseField(spec: string, min: number, max: number, fieldName: string): 
       start = min
       end = max
     } else if (rangePart.includes('-')) {
-      const [a, b] = rangePart.split('-')
+      const [a, b, ...rest] = rangePart.split('-')
+      // Both sides must be present. `Number('')` is 0, so an open-ended range like
+      // "-5" would otherwise be silently reinterpreted as "0-5" — a typo becoming
+      // a schedule that fires at times the user never asked for.
+      if (a === '' || b === undefined || b === '' || rest.length > 0) {
+        throw new CronParseError(`invalid ${fieldName} range "${rangePart}"`)
+      }
       start = Number(a)
       end = Number(b)
     } else {
+      if (rangePart === '') {
+        throw new CronParseError(`empty ${fieldName} value`)
+      }
       start = Number(rangePart)
       end = stepPart !== undefined ? max : start
     }

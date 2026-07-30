@@ -21,6 +21,7 @@ const mockBusy = vi.fn()
 const mockUpdate = vi.fn()
 const mockCreate = vi.fn()
 const mockTransaction = vi.fn()
+const mockRotate = vi.fn()
 
 vi.mock('@/lib/access', () => ({
   requireEffectiveUser: () => mockRequireEff(),
@@ -48,7 +49,9 @@ vi.mock('@/lib/scanSnapshot', async orig => ({
   storeSnapshot: (...a: unknown[]) => mockStore(...a),
   ensureCurrentVersion: (...a: unknown[]) => mockEnsureCurrent(...a),
 }))
-vi.mock('@/lib/scanTimeline', () => ({ nextVersionSeq: async () => 3 }))
+vi.mock('@/lib/scanTimeline', () => ({
+  rotateToNextVersion: (...a: unknown[]) => mockRotate(...a),
+}))
 
 import { GET, POST } from './route'
 
@@ -73,6 +76,7 @@ beforeEach(() => {
   mockTransaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
     fn({ scanVersion: { update: mockUpdate, create: mockCreate } }))
   mockCreate.mockResolvedValue({ id: 'vNew', seq: 3, label: 'Scan 3' })
+  mockRotate.mockResolvedValue({ id: 'vNew', seq: 3, label: 'Scan 3' })
 })
 
 describe('GET /versions — BOLA', () => {
@@ -147,8 +151,8 @@ describe('POST /versions (save current as a version)', () => {
     expect(res.status).toBe(200)
     expect(mockStore).toHaveBeenCalledWith('vCur', expect.objectContaining({ nodeCount: 5 }))
     expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'vCur' }, data: { label: 'Before migration' } })
-    expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'vCur' }, data: { isCurrent: false } })
-    expect(mockCreate.mock.calls[0][0].data).toMatchObject({ seq: 3, isCurrent: true, snapshot: null })
+    // Demote + create go through the shared, collision-tolerant rotation.
+    expect(mockRotate).toHaveBeenCalledWith('p1', 'vCur')
     const body = await res.json()
     expect(body.savedVersion.id).toBe('vCur')
     expect(body.currentVersion.id).toBe('vNew')

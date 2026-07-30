@@ -103,6 +103,23 @@ describe('applyRetention', () => {
   })
 })
 
+describe('idempotency', () => {
+  test('a second run deletes nothing (the first already trimmed to the policy)', async () => {
+    process.env.SCAN_VERSION_RETENTION_KEEP = '2'
+    prismaMock.scanVersion.findMany.mockResolvedValueOnce([version(5), version(4), version(3)])
+    prismaMock.scanVersion.deleteMany.mockResolvedValue({ count: 1 })
+    const first = await applyRetention('p1')
+    expect(first.deletedVersionIds).toEqual(['v3'])
+
+    // Second pass sees the trimmed list.
+    prismaMock.scanVersion.deleteMany.mockClear()
+    prismaMock.scanVersion.findMany.mockResolvedValueOnce([version(5), version(4)])
+    const second = await applyRetention('p1')
+    expect(second.deletedVersionIds).toEqual([])
+    expect(prismaMock.scanVersion.deleteMany).not.toHaveBeenCalled()
+  })
+})
+
 describe('applyRetentionSafe', () => {
   test('swallows failures so it can never break the request that triggered it', async () => {
     prismaMock.scanVersion.findMany.mockRejectedValue(new Error('db down'))

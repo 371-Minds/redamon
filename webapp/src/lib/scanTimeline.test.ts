@@ -37,6 +37,7 @@ import {
   createScanJob,
   reconcileScanJobStatus,
   nextVersionSeq,
+  rotateToNextVersion,
   SnapshotFreezeError,
 } from './scanTimeline'
 
@@ -145,6 +146,53 @@ describe("prepareVersionsForFullScan — mode 'overwrite'", () => {
     prismaMock.scanVersion.update.mockResolvedValue(CURRENT)
     await prepareVersionsForFullScan('p1', 'overwrite', 'u1')
     expect(prismaMock.scanVersion.update.mock.calls[0][0].data.label).toBe('Pre-migration baseline')
+  })
+})
+
+describe('rotateToNextVersion — concurrent writers (double-submit)', () => {
+  test('a seq collision is retried with a recomputed seq instead of failing the request', async () => {
+    // Two starts (or a double-clicked button) can both read max(seq)=2 and both
+    // try to create seq=3. @@unique([projectId, seq]) rejects the loser, which
+    // used to surface as a 500 AFTER its snapshot had already been frozen.
+    let attempt = 0
+    prismaMock.scanVersion.findFirst
+      .mockResolvedValueOnce({ seq: 2 })   // first attempt computes 3
+      .mockResolvedValueOnce({ seq: 3 })   // the winner took 3, so retry computes 4
+    prismaMock.scanVersion.create.mockImplementation(async ({ data }: never) => {
+      attempt += 1
+      if (attempt === 1) throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+      return { ...CURRENT, id: 'vNew', seq: (data as { seq: number }).seq }
+    })
+
+    const created = await rotateToNextVersion('p1', 'vCur')
+    expect(attempt).toBe(2)
+    expect(created.seq).toBe(4)
+  })
+
+  test('a non-collision error is not retried', async () => {
+    prismaMock.scanVersion.findFirst.mockResolvedValue({ seq: 2 })
+    prismaMock.scanVersion.create.mockRejectedValue(new Error('disk on fire'))
+    await expect(rotateToNextVersion('p1', 'vCur')).rejects.toThrow('disk on fire')
+    expect(prismaMock.scanVersion.create).toHaveBeenCalledTimes(1)
+  })
+
+  test('it gives up after a bounded number of retries', async () => {
+    prismaMock.scanVersion.findFirst.mockResolvedValue({ seq: 2 })
+    prismaMock.scanVersion.create.mockRejectedValue(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+    )
+    await expect(rotateToNextVersion('p1', 'vCur')).rejects.toMatchObject({ code: 'P2002' })
+    expect(prismaMock.scanVersion.create.mock.calls.length).toBeLessThanOrEqual(4)
+  })
+
+  test('the demote and the create happen in ONE transaction (never a project with no current)', async () => {
+    prismaMock.scanVersion.findFirst.mockResolvedValue({ seq: 2 })
+    prismaMock.scanVersion.create.mockResolvedValue({ ...CURRENT, id: 'vNew', seq: 3 })
+    await rotateToNextVersion('p1', 'vCur')
+    expect(prismaMock.$transaction).toHaveBeenCalled()
+    expect(prismaMock.scanVersion.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'vCur' }, data: { isCurrent: false } })
+    )
   })
 })
 

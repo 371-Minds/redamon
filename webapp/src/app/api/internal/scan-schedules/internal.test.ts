@@ -15,10 +15,10 @@ import { NextRequest } from 'next/server'
 const h = vi.hoisted(() => ({
   isInternal: vi.fn(),
   findScheduleMany: vi.fn(),
+  projectFindMany: vi.fn(),
   findSchedule: vi.fn(),
   updateSchedule: vi.fn(),
   countJobs: vi.fn(),
-  isActivating: vi.fn(),
   start: vi.fn(),
   createJob: vi.fn(),
 }))
@@ -32,9 +32,9 @@ vi.mock('@/lib/prisma', () => ({
       update: (...a: unknown[]) => h.updateSchedule(...a),
     },
     scanJob: { count: (...a: unknown[]) => h.countJobs(...a) },
+    project: { findMany: (...a: unknown[]) => h.projectFindMany(...a) },
   },
 }))
-vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.isActivating(...a) }))
 vi.mock('@/lib/startFullScan', () => ({ startFullScan: (...a: unknown[]) => h.start(...a) }))
 vi.mock('@/lib/scanTimeline', async orig => ({
   ...(await orig<typeof import('@/lib/scanTimeline')>()),
@@ -63,7 +63,7 @@ beforeEach(() => {
   h.findSchedule.mockResolvedValue(SCHEDULE)
   h.updateSchedule.mockResolvedValue({})
   h.countJobs.mockResolvedValue(0)
-  h.isActivating.mockResolvedValue(false)
+  h.projectFindMany.mockResolvedValue([])
   h.start.mockResolvedValue({ ok: true, versionId: 'v3', versionSeq: 3, scanJobId: 'job1', frozenVersionId: 'v2' })
   h.createJob.mockResolvedValue({ id: 'job1' })
 })
@@ -91,12 +91,28 @@ describe('GET /due', () => {
     expect(where.nextRunAt.lte).toBeInstanceOf(Date)
   })
 
+  test('resolves activation state for N projects in ONE query, not N (no N+1)', async () => {
+    // The worker polls this every tick; one lock query per due project turned a
+    // 25-schedule tick into 25 sequential round-trips.
+    h.findScheduleMany.mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) => ({
+        id: `s${i}`, projectId: `p${i}`, userId: 'u1', mode: 'cron', scanMode: 'new',
+        nextRunAt: new Date(), estimatedEnvelopeBytes: null,
+      }))
+    )
+    await due(req('http://x/api/internal/scan-schedules/due'))
+    expect(h.projectFindMany).toHaveBeenCalledTimes(1)
+    expect(h.projectFindMany.mock.calls[0][0].where.id.in).toHaveLength(8)
+  })
+
   test('flags projects whose graph is mid-activation (F3)', async () => {
     h.findScheduleMany.mockResolvedValue([
       { id: 's1', projectId: 'p1', userId: 'u1', mode: 'cron', scanMode: 'new', nextRunAt: new Date(), estimatedEnvelopeBytes: null },
       { id: 's2', projectId: 'p2', userId: 'u1', mode: 'cron', scanMode: 'new', nextRunAt: new Date(), estimatedEnvelopeBytes: null },
     ])
-    h.isActivating.mockImplementation(async (pid: string) => pid === 'p2')
+    h.projectFindMany.mockResolvedValue([
+      { id: 'p2', activationState: 'activating', activationStartedAt: new Date() },
+    ])
     const body = await (await due(req('http://x/api/internal/scan-schedules/due'))).json()
     expect(body.schedules.map((s: { activationInProgress: boolean }) => s.activationInProgress))
       .toEqual([false, true])
