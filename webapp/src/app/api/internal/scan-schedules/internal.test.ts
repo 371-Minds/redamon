@@ -152,6 +152,41 @@ describe('POST /run', () => {
     expect(body.ok).toBe(false)
     expect(body.limit).toMatchObject({ limitType: 'ram' })
     expect(h.updateSchedule).toHaveBeenCalled()
+    // startFullScan already recorded its own job for the admission rejection, so
+    // /run must NOT record a duplicate.
+    expect(h.createJob).not.toHaveBeenCalled()
+  })
+
+  test('a run skipped because a scan is already running is RECORDED in history', async () => {
+    // startFullScan returns busy BEFORE it can record its own attempt (no
+    // scanJobId), so /run must write the skipped occurrence — otherwise it leaves
+    // no trace in the Scan Schedule run history.
+    h.start.mockResolvedValue({
+      ok: false, status: 409,
+      error: 'Cannot start a scan while a full recon scan is running for this project. Stop it first.',
+      busy: 'a full recon scan is running',
+    })
+    const res = await run(req('http://x/api/internal/scan-schedules/s1/run', {}), sp('s1'))
+    expect(res.status).toBe(200)
+    expect(h.createJob).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: 'p1',
+      trigger: 'scheduled',
+      status: 'failed',
+      scheduleId: 's1',
+      ramReason: expect.stringMatching(/already .*running|scan is running/i),
+    }))
+    // and the schedule still rolls forward (no hot loop)
+    expect(h.updateSchedule).toHaveBeenCalled()
+  })
+
+  test('an activation that begins after the pre-check is also recorded', async () => {
+    h.start.mockResolvedValue({
+      ok: false, status: 409, error: 'A version activation is in progress', activationInProgress: true,
+    })
+    await run(req('http://x/api/internal/scan-schedules/s1/run', {}), sp('s1'))
+    expect(h.createJob).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'failed', scheduleId: 's1', ramReason: expect.stringMatching(/activation/i),
+    }))
   })
 
   test('a disabled schedule is not run', async () => {

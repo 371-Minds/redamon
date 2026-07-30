@@ -17,7 +17,7 @@ import prisma from '@/lib/prisma'
 import { isInternalRequest } from '@/lib/session'
 import { startFullScan } from '@/lib/startFullScan'
 import { computeNextRun } from '@/lib/scanSchedule'
-import { parseScanMode } from '@/lib/scanTimeline'
+import { parseScanMode, createScanJob } from '@/lib/scanTimeline'
 
 export const runtime = 'nodejs'
 
@@ -63,6 +63,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (!result.ok) {
       console.warn(`[scanScheduler] schedule ${scheduleId} could not start: ${result.error}`)
+      // An admission-limit rejection already recorded its own ScanJob. A rejection
+      // that happened BEFORE that (the graph was busy: a scan already running, or
+      // an activation that began after the worker's pre-check) did not — so record
+      // the skipped occurrence here, otherwise it would leave no trace in the Scan
+      // Schedule run history (only a lastRunAt bump + logs).
+      let scanJobId = result.scanJobId ?? null
+      if (!scanJobId) {
+        const job = await createScanJob({
+          projectId: schedule.projectId,
+          trigger: 'scheduled',
+          mode: parseScanMode(schedule.scanMode),
+          status: 'failed',
+          initiatedByUserId: schedule.userId,
+          scheduleId: schedule.id,
+          ramReason: result.error,
+        }).catch(err => {
+          console.error('[scanScheduler] could not record skipped scheduled run:', err)
+          return null
+        })
+        scanJobId = job?.id ?? null
+      }
       return NextResponse.json(
         {
           ok: false,
@@ -70,7 +91,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ...(result.limit ? { limit: result.limit } : {}),
           ...(result.activationInProgress ? { activationInProgress: true } : {}),
           ...(result.snapshotFailed ? { snapshotFailed: true } : {}),
-          scanJobId: result.scanJobId ?? null,
+          scanJobId,
           nextRunAt,
         },
         { status: 200 }  // the worker handled it; this is not a transport error
