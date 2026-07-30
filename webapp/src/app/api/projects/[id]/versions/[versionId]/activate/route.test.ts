@@ -135,6 +135,22 @@ describe('preconditions', () => {
     expect(h.clearGraph).not.toHaveBeenCalled()
   })
 
+  test('NEVER freezes the live graph onto the version it is about to restore', async () => {
+    // If no row is marked current (e.g. a crashed activation, or an import whose
+    // archive carried no current flag), ensureCurrentVersion adopts the highest
+    // seq — which can be the very version being activated. Freezing onto it would
+    // overwrite the bytes we are about to restore with the CURRENT graph, i.e.
+    // silently destroy the version the user asked for.
+    h.ensureCurrent.mockResolvedValue({ id: 'v1', seq: 1, label: 'Scan 1' })  // == target
+    const res = await POST(req(), params('p1', 'v1'))
+    expect(res.status).toBe(200)
+    expect((await res.json()).alreadyCurrent).toBe(true)
+    expect(h.store).not.toHaveBeenCalled()
+    expect(h.clearGraph).not.toHaveBeenCalled()
+    expect(h.restore).not.toHaveBeenCalled()
+    expect(h.release).toHaveBeenCalledWith('p1')
+  })
+
   test('a version with no stored bytes is refused (4A.6)', async () => {
     h.requireVersion.mockResolvedValue({ ...TARGET, hasSnapshot: false })
     const res = await POST(req(), params('p1', 'v1'))

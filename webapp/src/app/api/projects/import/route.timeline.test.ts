@@ -79,7 +79,7 @@ async function exportZip(): Promise<File> {
       status: 'running', startedAt: '2026-07-30T09:00:00.000Z', finishedAt: null,
       nodeCount: null, ramReason: null },
   ]))
-  const buf = await zip.generateAsync({ type: 'nodebuffer' })
+  const buf = new Uint8Array(await zip.generateAsync({ type: 'nodebuffer' }))
   return new File([buf], 'export.zip', { type: 'application/zip' })
 }
 
@@ -145,11 +145,33 @@ describe('import — Scan Timeline history', () => {
     expect(h.jobCreate.mock.calls[1][0].data.status).toBe('canceled')
   })
 
+  test('a crafted archive cannot create two current versions', async () => {
+    // "exactly one current version per project" is the model's core invariant, and
+    // the archive is untrusted input. A second isCurrent row would make the live
+    // graph ambiguous for every later read.
+    const zip = new JSZip()
+    zip.file('manifest.json', JSON.stringify({ version: '1.0.0', projectName: 'src', stats: {} }))
+    zip.file('project.json', JSON.stringify({ id: 'oldProject', userId: 'oldOwner', name: 'src' }))
+    zip.file('timeline/versions.json', JSON.stringify([
+      { id: 'a', seq: 1, label: 'A', isCurrent: true, snapshotBase64: null },
+      { id: 'b', seq: 2, label: 'B', isCurrent: true, snapshotBase64: null },
+      { id: 'c', seq: 3, label: 'C', isCurrent: true, snapshotBase64: null },
+    ]))
+    const buf = new Uint8Array(await zip.generateAsync({ type: 'nodebuffer' }))
+    const res = await POST(formReq(new File([buf], 'export.zip', { type: 'application/zip' })))
+    expect(res.status).toBe(200)
+
+    const currents = h.versionCreate.mock.calls.filter(c => c[0].data.isCurrent)
+    expect(currents).toHaveLength(1)
+    // The highest seq wins, so the newest graph is the live one.
+    expect(currents[0][0].data.seq).toBe(3)
+  })
+
   test('an export without timeline files imports fine (older archives)', async () => {
     const zip = new JSZip()
     zip.file('manifest.json', JSON.stringify({ version: '1.0.0', projectName: 'src', stats: {} }))
     zip.file('project.json', JSON.stringify({ id: 'oldProject', userId: 'oldOwner', name: 'src' }))
-    const buf = await zip.generateAsync({ type: 'nodebuffer' })
+    const buf = new Uint8Array(await zip.generateAsync({ type: 'nodebuffer' }))
     const res = await POST(formReq(new File([buf], 'export.zip', { type: 'application/zip' })))
     expect(res.status).toBe(200)
     expect(h.versionCreate).not.toHaveBeenCalled()

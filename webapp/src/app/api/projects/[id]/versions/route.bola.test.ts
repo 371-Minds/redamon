@@ -17,6 +17,7 @@ const mockEnsureCurrent = vi.fn()
 const mockCapture = vi.fn()
 const mockStore = vi.fn()
 const mockIsActivating = vi.fn()
+const mockBusy = vi.fn()
 const mockUpdate = vi.fn()
 const mockCreate = vi.fn()
 const mockTransaction = vi.fn()
@@ -40,6 +41,7 @@ vi.mock('@/lib/audit', () => ({ writeAudit: vi.fn() }))
 vi.mock('@/lib/activationLock', () => ({
   isActivationInProgress: (...a: unknown[]) => mockIsActivating(...a),
 }))
+vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: (...a: unknown[]) => mockBusy(...a) }))
 vi.mock('@/lib/scanSnapshot', async orig => ({
   ...(await orig<typeof import('@/lib/scanSnapshot')>()),
   captureGraphSnapshot: (...a: unknown[]) => mockCapture(...a),
@@ -65,6 +67,7 @@ beforeEach(() => {
   mockQueryRaw.mockResolvedValue([])
   mockEnsureCurrent.mockResolvedValue({ id: 'vCur', seq: 2, label: 'Scan 2' })
   mockIsActivating.mockResolvedValue(false)
+  mockBusy.mockResolvedValue(null)
   mockCapture.mockResolvedValue({ nodes: [{}], relationships: [], nodeCount: 5, linkCount: 2, summary: {} })
   mockStore.mockResolvedValue({ bytes: 100 })
   mockTransaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
@@ -116,6 +119,14 @@ describe('POST /versions (save current as a version)', () => {
     const res = await POST(post(), params('p1'))
     expect(res.status).toBe(409)
     expect(mockCapture).not.toHaveBeenCalled()
+  })
+
+  test('refuses while a scan is rewriting the graph (Risk 1: no mid-write snapshot)', async () => {
+    mockBusy.mockResolvedValue('a full recon scan is running')
+    const res = await POST(post(), params('p1'))
+    expect(res.status).toBe(409)
+    expect(mockCapture).not.toHaveBeenCalled()
+    expect(mockStore).not.toHaveBeenCalled()
   })
 
   test('rejects an invalid label before capturing anything', async () => {

@@ -11,6 +11,7 @@ import { writeAudit } from '@/lib/audit'
 import {
   validateSchedule,
   checkScheduleFeasibility,
+  sanitizeScheduleLabel,
   ScheduleValidationError,
 } from '@/lib/scanSchedule'
 import { fetchScanEnvelope } from '@/lib/scanEnvelope'
@@ -41,23 +42,47 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
-  // A plain enable/disable does not re-validate the timing.
-  const onlyEnabled = Object.keys(body).length === 1 && 'enabled' in body
-  if (onlyEnabled) {
-    if (typeof body.enabled !== 'boolean') {
-      return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
+  // Only a change that touches the TIMING re-validates it. A spent one-off has a
+  // runAt in the past, so re-validating on every edit would make renaming or
+  // re-enabling it impossible ("runAt must be in the future") even though the
+  // caller never touched the schedule's timing.
+  const touchesTiming = ['mode', 'runAt', 'intervalMinutes', 'cronExpr'].some(k => k in body)
+  if (!touchesTiming) {
+    const data: { enabled?: boolean; label?: string; scanMode?: string } = {}
+    if ('enabled' in body) {
+      if (typeof body.enabled !== 'boolean') {
+        return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
+      }
+      data.enabled = body.enabled
     }
-    const updated = await prisma.scanSchedule.update({
-      where: { id: scheduleId },
-      data: { enabled: body.enabled },
-    })
+    if ('label' in body) {
+      const label = sanitizeScheduleLabel(body.label)
+      if (label instanceof Error) {
+        return NextResponse.json({ error: label.message }, { status: 400 })
+      }
+      if (label !== null) data.label = label
+    }
+    if ('scanMode' in body) {
+      if (body.scanMode !== 'new' && body.scanMode !== 'overwrite') {
+        return NextResponse.json({ error: "scanMode must be 'new' or 'overwrite'" }, { status: 400 })
+      }
+      data.scanMode = body.scanMode
+    }
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json(
+        { error: 'Nothing to update (expected enabled, label, scanMode or a timing change)' },
+        { status: 400 }
+      )
+    }
+
+    const updated = await prisma.scanSchedule.update({ where: { id: scheduleId }, data })
     await writeAudit({
       actorId: eff.userId,
       action: 'scan-schedule.update',
       targetType: 'scanSchedule',
       targetId: scheduleId,
-      before: { enabled: existing.enabled },
-      after: { enabled: updated.enabled },
+      before: { enabled: existing.enabled, label: existing.label, scanMode: existing.scanMode },
+      after: { enabled: updated.enabled, label: updated.label, scanMode: updated.scanMode },
     })
     return NextResponse.json({ schedule: serialize(updated) })
   }

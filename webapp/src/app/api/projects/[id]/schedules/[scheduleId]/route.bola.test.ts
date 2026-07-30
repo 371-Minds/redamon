@@ -91,6 +91,37 @@ describe('PATCH — behavior', () => {
     expect(h.update).not.toHaveBeenCalled()
   })
 
+  test('a label-only edit does not re-validate the timing', async () => {
+    // A spent one-off schedule has a runAt in the past. Re-validating it on every
+    // PATCH made renaming (or re-enabling) it impossible: "runAt must be in the
+    // future" for an edit that never touched the timing.
+    h.findUnique.mockResolvedValue({
+      ...SCHEDULE, mode: 'once', intervalMinutes: null,
+      runAt: new Date('2020-01-01T00:00:00Z'), nextRunAt: null, enabled: false,
+    })
+    const res = await PATCH(patchReq({ label: 'last year’s baseline scan' }), params('p1', 's1'))
+    expect(res.status).toBe(200)
+    expect(h.update.mock.calls[0][0].data).toMatchObject({ label: 'last year’s baseline scan' })
+    // Timing is untouched, so nextRunAt must not be recomputed.
+    expect(h.update.mock.calls[0][0].data.nextRunAt).toBeUndefined()
+  })
+
+  test('a scanMode-only edit is likewise allowed on a spent schedule', async () => {
+    h.findUnique.mockResolvedValue({
+      ...SCHEDULE, mode: 'once', intervalMinutes: null,
+      runAt: new Date('2020-01-01T00:00:00Z'), nextRunAt: null, enabled: false,
+    })
+    const res = await PATCH(patchReq({ scanMode: 'overwrite' }), params('p1', 's1'))
+    expect(res.status).toBe(200)
+    expect(h.update.mock.calls[0][0].data).toMatchObject({ scanMode: 'overwrite' })
+  })
+
+  test('an invalid scanMode is still rejected', async () => {
+    const res = await PATCH(patchReq({ scanMode: 'nuke' }), params('p1', 's1'))
+    expect(res.status).toBe(400)
+    expect(h.update).not.toHaveBeenCalled()
+  })
+
   test('a retime is validated and recomputes the next run', async () => {
     const res = await PATCH(patchReq({ mode: 'cron', cronExpr: '0 4 * * *' }), params('p1', 's1'))
     expect(res.status).toBe(200)

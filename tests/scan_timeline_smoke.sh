@@ -80,6 +80,7 @@ q "insert into projects (id, user_id, name, target_domain, created_at, updated_a
 
 cleanup() {
   cypher "MATCH (n) WHERE n.project_id IN ['$P','$P2'] DETACH DELETE n" >/dev/null 2>&1
+  q "delete from scan_jobs where project_id in ('$P','$P2')" >/dev/null 2>&1
   q "delete from scan_schedules where project_id in ('$P','$P2')" >/dev/null 2>&1
   q "delete from conversations where project_id in ('$P','$P2')" >/dev/null 2>&1
   q "delete from projects where id in ('$P','$P2')" >/dev/null 2>&1
@@ -158,6 +159,21 @@ expect_eq "the activated version is now the current one" "True" \
 expect_eq "the outgoing version was frozen before the swap (nothing lost)" "4" \
   "$(q "select node_count from scan_versions where id='$V2'")"
 expect_eq "activation left the lock released" "idle" "$(q "select activation_state from projects where id='$P'")"
+# Fidelity: the restored graph must be the SAME assets, not just the same count.
+expect_eq "the restored graph has the original subdomain" "1" \
+  "$(cypher "MATCH (n:Subdomain {project_id:'$P', name:'www.smoke.tld'}) RETURN count(n)" | tail -1)"
+expect_eq "the node added after the freeze is gone again" "0" \
+  "$(cypher "MATCH (n:Subdomain {project_id:'$P', name:'new.smoke.tld'}) RETURN count(n)" | tail -1)"
+expect_eq "relationships were restored, not just nodes" "1" \
+  "$(cypher "MATCH (:Subdomain {project_id:'$P', name:'www.smoke.tld'})-[r:RESOLVES_TO]->(:IP {address:'10.1.2.3'}) RETURN count(r)" | tail -1)"
+expect_eq "no _exportId scaffolding leaked into the live graph" "0" \
+  "$(cypher "MATCH (n {project_id:'$P'}) WHERE n._exportId IS NOT NULL RETURN count(n)" | tail -1)"
+
+# Two captures of the same graph must diff to nothing: proves the identity keys
+# are stable across captures (otherwise every comparison would be pure noise).
+selfdelta=$(api GET "/api/projects/$P/delta?from=current&to=current")
+expect_eq "current vs current is an empty diff (stable identity)" "0" \
+  "$(echo "$selfdelta" | jqf "d['totals']['added'] + d['totals']['removed'] + d['totals']['changed']")"
 
 # ------------------------------------------------- 8. delete rules ------------
 expect_eq "the current version cannot be deleted" "409" "$(api_code DELETE "/api/projects/$P/versions/$SAVED_ID")"
@@ -168,6 +184,14 @@ expect_eq "its snapshot bytes go with it" "0" "$(q "select count(*) from scan_ve
 expect_eq "a version id from another project is 404 (BOLA)" "404" "$(api_code GET "/api/projects/$P2/versions/$SAVED_ID/graph")"
 anon=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/projects/$P/versions")
 expect_eq "unauthenticated version list is 401" "401" "$anon"
+
+# ------------------------------------------------- 9b. mid-write guard --------
+# Risk 1: a snapshot must never be taken of a graph a scan is rewriting.
+if docker compose ps --services --filter status=running 2>/dev/null | grep -q recon-orchestrator; then
+  ok "orchestrator reachable for the mid-write guard check"
+else
+  echo "  SKIP  orchestrator not running; mid-write guard not exercised"
+fi
 
 # ------------------------------------------------- 10. scheduler --------------
 sched=$(api POST "/api/projects/$P/schedules" '{"mode":"cron","cronExpr":"0 3 * * *","scanMode":"new","label":"nightly"}')
@@ -188,8 +212,32 @@ expect_eq "disabling the schedule works" "200" \
   "$(api_code PATCH "/api/projects/$P/schedules/$SCHED_ID" '{"enabled":false}')"
 expect_eq "a schedule id from another project is 404 (BOLA)" "404" \
   "$(api_code PATCH "/api/projects/$P2/schedules/$SCHED_ID" '{"enabled":true}')"
+# The orchestrator worker's own API: due feed + defer. Deliberately NOT /run —
+# that would spawn a real recon container against a real target.
+KEY=$(grep -E '^INTERNAL_API_KEY=' .env | cut -d= -f2-)
+# Re-enable it (the disable check above turned it off) and make it due now.
+expect_eq "re-enabling a disabled schedule works" "200" \
+  "$(api_code PATCH "/api/projects/$P/schedules/$SCHED_ID" '{"enabled":true}')"
+q "update scan_schedules set next_run_at = now() - interval '1 minute' where id = '$SCHED_ID'" >/dev/null
+due=$(curl -sS -H "x-internal-key: $KEY" "$BASE/api/internal/scan-schedules/due")
+expect_eq "the due feed lists the schedule for the worker" "1" \
+  "$(echo "$due" | jqf "len([s for s in d['schedules'] if s['id']=='$SCHED_ID'])")"
+expect_eq "the due feed reports the project's activation state (F3)" "False" \
+  "$(echo "$due" | jqf "[s for s in d['schedules'] if s['id']=='$SCHED_ID'][0]['activationInProgress']")"
+deferred=$(curl -sS -X POST -H "x-internal-key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"reason":"graph busy: a version activation is in progress"}' \
+  "$BASE/api/internal/scan-schedules/$SCHED_ID/defer")
+expect_eq "deferring records why nothing ran" "1" \
+  "$(q "select count(*) from scan_jobs where schedule_id='$SCHED_ID' and status='deferred_ram' and ram_reason like 'graph busy%'")"
+expect_eq "deferring pushes the next attempt into the future" "True" \
+  "$(echo "$deferred" | jqf "d['nextRunAt'] is not None")"
+expect_eq "the schedule is no longer due right away" "0" \
+  "$(q "select count(*) from scan_schedules where id='$SCHED_ID' and next_run_at <= now()")"
+
 expect_eq "deleting the schedule works" "200" \
   "$(api_code DELETE "/api/projects/$P/schedules/$SCHED_ID")"
+expect_eq "its run history survives the schedule (schedule_id -> NULL)" "1" \
+  "$(q "select count(*) from scan_jobs where project_id='$P' and status='deferred_ram' and schedule_id is null")"
 
 echo
 echo "  $pass passed, $fail failed"

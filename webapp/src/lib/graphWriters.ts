@@ -24,6 +24,7 @@ const ACTIVE_PARTIAL_STATUSES = new Set(['running', 'starting', 'stopping'])
 /**
  * Returns a human phrase describing what is holding the live graph
  * (e.g. "a full recon scan is running"), or null when the graph is free.
+ * Used by ACTIVATION, which is exclusive with all three writers.
  */
 export async function describeLiveGraphWriters(projectId: string): Promise<string | null> {
   // Agent sessions first: a plain DB read, no network.
@@ -38,6 +39,18 @@ export async function describeLiveGraphWriters(projectId: string): Promise<strin
     return 'the agent session state could not be verified'
   }
 
+  return describeScanWriters(projectId)
+}
+
+/**
+ * The SCAN subset: a full recon or a partial recon that is rewriting the graph
+ * right now. Used before taking a snapshot (Risk 1: a capture must never read a
+ * mid-write graph) and before starting another full scan.
+ *
+ * Deliberately excludes agent sessions: an agent legitimately runs alongside a
+ * scan today, and blocking one on the other would be a behavior regression.
+ */
+export async function describeScanWriters(projectId: string): Promise<string | null> {
   let reconStatus: string | undefined
   try {
     const res = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/recon/${projectId}/status`, {

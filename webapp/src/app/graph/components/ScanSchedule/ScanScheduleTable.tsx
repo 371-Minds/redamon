@@ -68,6 +68,7 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -79,21 +80,26 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
   const [scanMode, setScanMode] = useState<Schedule['scanMode']>('new')
   const [label, setLabel] = useState('')
 
+  // Depends on `projectId` ONLY. The alert helpers are rebuilt by their provider
+  // whenever an alert opens or closes, so depending on one here would re-run the
+  // effect below on every alert — and reporting a load failure through an alert
+  // would then re-trigger the load that failed, in a request storm.
   const load = useCallback(async () => {
     if (!projectId) return
     setLoading(true)
+    setLoadError(null)
     try {
       const res = await fetch(`/api/projects/${projectId}/schedules`)
-      const body = await res.json()
+      const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || 'Failed to load schedules')
       setSchedules(body.schedules ?? [])
       setJobs(body.jobs ?? [])
     } catch (err) {
-      alertError(err instanceof Error ? err.message : String(err), 'Schedules')
+      setLoadError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
-  }, [projectId, alertError])
+  }, [projectId])
 
   useEffect(() => { load() }, [load])
 
@@ -175,6 +181,8 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
           <CalendarClock size={14} /> Scheduled scans
           {loading && <Loader2 size={12} className={styles.spinner} />}
         </h3>
+
+        {loadError && <div className={styles.loadError}>{loadError}</div>}
 
         <div className={styles.form}>
           <label className={styles.field}>

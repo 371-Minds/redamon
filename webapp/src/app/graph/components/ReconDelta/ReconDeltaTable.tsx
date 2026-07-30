@@ -93,6 +93,10 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
   // the union of both versions, which is up to twice the render set.
   const [overlay, setOverlay] = useState<OverlayPayload | null>(null)
   const [overlayLoading, setOverlayLoading] = useState(false)
+  const [overlayError, setOverlayError] = useState<string | null>(null)
+  // Which (project, from, to) the overlay has already been attempted for. A ref,
+  // not state, precisely so the fetch effect does not depend on anything it sets.
+  const overlayAttemptRef = useRef<string | null>(null)
   const [changesOnly, setChangesOnly] = useState(true)
   const [selectedNode, setSelectedNode] = useState<(GraphNode & { deltaState: DeltaState }) | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -100,22 +104,41 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
 
   useEffect(() => { setFrom(defaultFrom) }, [defaultFrom])
   // A new comparison invalidates whatever overlay was on screen.
-  useEffect(() => { setOverlay(null); setSelectedNode(null) }, [from, to, projectId])
-
   useEffect(() => {
-    if (section !== 'overlay' || !projectId || from === to || overlay || overlayLoading) return
+    setOverlay(null)
+    setOverlayError(null)
+    setSelectedNode(null)
+    overlayAttemptRef.current = null
+  }, [from, to, projectId])
+
+  // The overlay returns the UNION of both versions, so it is fetched separately
+  // and only when its tab is opened. The dependency list deliberately contains
+  // NOTHING this effect sets: including `overlayLoading` made the effect re-run on
+  // its own setState, and the cleanup then cancelled the in-flight request, so the
+  // response was always discarded and the overlay never appeared.
+  useEffect(() => {
+    if (section !== 'overlay' || !projectId || from === to) return
+    const attempt = `${projectId}|${from}|${to}`
+    if (overlayAttemptRef.current === attempt) return
+    overlayAttemptRef.current = attempt
+
     let cancelled = false
     setOverlayLoading(true)
+    setOverlayError(null)
     fetch(`/api/projects/${projectId}/delta?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&overlay=1`)
       .then(async res => {
-        const body = await res.json()
-        if (cancelled || !res.ok) return
-        setOverlay(body.overlay ?? null)
+        const body = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (!res.ok) {
+          setOverlayError(String(body.error || 'Failed to load the graph overlay'))
+          return
+        }
+        setOverlay(body.overlay ?? { nodes: [], links: [] })
       })
-      .catch(() => { /* the table above already surfaces comparison errors */ })
+      .catch(err => { if (!cancelled) setOverlayError(err instanceof Error ? err.message : String(err)) })
       .finally(() => { if (!cancelled) setOverlayLoading(false) })
     return () => { cancelled = true }
-  }, [section, projectId, from, to, overlay, overlayLoading])
+  }, [section, projectId, from, to])
 
   useEffect(() => {
     if (!projectId || from === to) { setData(null); return }
@@ -276,6 +299,7 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
               <DeltaOverlay
                 data={overlay}
                 loading={overlayLoading}
+                error={overlayError}
                 changesOnly={changesOnly}
                 onToggleChangesOnly={setChangesOnly}
                 fromLabel={data.from.label}
@@ -396,6 +420,7 @@ function Lens({
 interface DeltaOverlayProps {
   data: OverlayPayload | null
   loading: boolean
+  error: string | null
   changesOnly: boolean
   onToggleChangesOnly: (v: boolean) => void
   fromLabel: string
@@ -414,7 +439,7 @@ interface DeltaOverlayProps {
  * fields old → new.
  */
 function DeltaOverlay({
-  data, loading, changesOnly, onToggleChangesOnly, fromLabel, toLabel,
+  data, loading, error, changesOnly, onToggleChangesOnly, fromLabel, toLabel,
   containerRef, size, isDark, selectedNode, onSelectNode, changedByKey,
 }: DeltaOverlayProps) {
   const counts = useMemo(() => {
@@ -434,6 +459,8 @@ function DeltaOverlay({
   }, [data, changesOnly])
 
   const changes = selectedNode ? changedByKey.get(selectedNode.id)?.changes ?? [] : []
+
+  if (error) return <div className={styles.error}>{error}</div>
 
   return (
     <div className={styles.overlayWrap}>

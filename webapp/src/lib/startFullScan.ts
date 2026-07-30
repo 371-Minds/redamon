@@ -11,6 +11,7 @@
 import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
 import { isActivationInProgress } from '@/lib/activationLock'
+import { describeScanWriters } from '@/lib/graphWriters'
 import {
   prepareVersionsForFullScan,
   createScanJob,
@@ -51,6 +52,8 @@ export interface StartFullScanFailure {
   snapshotFailed?: boolean
   /** True when the project's graph is mid-activation (retry later). */
   activationInProgress?: boolean
+  /** What is already rewriting the graph, when the start was refused for that. */
+  busy?: string
   scanJobId?: string | null
 }
 
@@ -67,6 +70,20 @@ export async function startFullScan(input: StartFullScanInput): Promise<StartFul
       activationInProgress: true,
       error: 'A version activation is in progress for this project — the graph is being swapped. ' +
         'Try again once it finishes.',
+    }
+  }
+
+  // Risk 1 + Section 3.3: reject a start while a scan or partial recon is already
+  // rewriting the graph, BEFORE we freeze it. The orchestrator refuses the
+  // duplicate spawn anyway, but only after we would have snapshotted a mid-write
+  // graph and minted a version for a scan that never happens.
+  const busy = await describeScanWriters(projectId)
+  if (busy) {
+    return {
+      ok: false,
+      status: 409,
+      error: `Cannot start a scan while ${busy} for this project. Stop it first.`,
+      busy,
     }
   }
 

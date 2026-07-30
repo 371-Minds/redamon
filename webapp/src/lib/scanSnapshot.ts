@@ -80,7 +80,11 @@ const waiters: Array<() => void> = []
  */
 export async function withSnapshotSlot<T>(fn: () => Promise<T>): Promise<T> {
   const limit = snapshotMaxConcurrency()
-  if (running >= limit) {
+  // `while`, not `if`: a caller arriving in the microtask gap between a release
+  // and the woken waiter resuming would otherwise take the free slot, and the
+  // waiter would then increment on top of it — two bodies under a cap of one.
+  // Re-checking on wake makes the cap hold whatever the arrival interleaving.
+  while (running >= limit) {
     await new Promise<void>(resolve => waiters.push(resolve))
   }
   running += 1

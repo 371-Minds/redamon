@@ -17,6 +17,7 @@ import {
 } from '@/lib/scanSnapshot'
 import { nextVersionSeq } from '@/lib/scanTimeline'
 import { isActivationInProgress } from '@/lib/activationLock'
+import { describeScanWriters } from '@/lib/graphWriters'
 import { applyRetentionSafe } from '@/lib/scanRetention'
 import { sanitizeVersionLabel } from '@/lib/scanVersionLabel'
 
@@ -87,10 +88,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const access = await requireProjectAccess(eff, id)
   if (access instanceof NextResponse) return access
 
-  // Freezing reads the whole live graph; refuse while it is being swapped.
+  // Freezing reads the whole live graph, so it must not run while anything is
+  // rewriting it: an activation swap, or a scan/partial recon mid-write (Risk 1 —
+  // a snapshot of a half-built graph is worse than no snapshot).
   if (await isActivationInProgress(id)) {
     return NextResponse.json(
       { error: 'A version activation is in progress for this project. Try again once it finishes.' },
+      { status: 409 }
+    )
+  }
+  const busy = await describeScanWriters(id)
+  if (busy) {
+    return NextResponse.json(
+      {
+        error: `Cannot save a version while ${busy} for this project — the snapshot would capture a ` +
+          'half-written graph. Wait for it to finish.',
+        busy,
+      },
       { status: 409 }
     )
   }

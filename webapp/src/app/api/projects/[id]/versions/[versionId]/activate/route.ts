@@ -88,6 +88,16 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
     const current = await ensureCurrentVersion(id)
 
+    // The target must not be the outgoing current. `requireVersionInProject` read
+    // isCurrent BEFORE the lock, and ensureCurrentVersion can legitimately adopt
+    // the highest-seq row when none is marked current (a crashed activation, an
+    // imported archive with no current flag, or a concurrent list read). If that
+    // row IS the target, freezing would overwrite the very bytes we are about to
+    // restore with the live graph — silent loss of the version the user asked for.
+    if (current.id === versionId) {
+      return NextResponse.json({ ok: true, alreadyCurrent: true, versionId })
+    }
+
     // --- 1. freeze the outgoing current FROM LIVE (Risk 10) -------------------
     let frozenNodeCount = 0
     try {

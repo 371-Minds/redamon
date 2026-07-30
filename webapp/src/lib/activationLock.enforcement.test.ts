@@ -31,6 +31,9 @@ vi.mock('@/lib/access', () => ({
 }))
 vi.mock('@/lib/session', () => ({ getEffectiveUser: async () => ({ userId: 'owner' }) }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
+// "is something already scanning?" is covered in graphWriters.test.ts and
+// startFullScan.test.ts; here the graph is free so only the LOCK can refuse.
+vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: async () => null }))
 vi.mock('@/lib/prisma', () => ({
   default: {
     project: {

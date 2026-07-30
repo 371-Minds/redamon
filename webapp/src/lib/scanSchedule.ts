@@ -49,6 +49,24 @@ export function minIntervalMinutes(): number {
 
 export const MAX_SCHEDULE_LABEL_LENGTH = 120
 
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/
+
+/**
+ * Shared label check (Section 8.3). Returns the trimmed label, null when absent,
+ * or an Error describing why it was rejected.
+ */
+export function sanitizeScheduleLabel(raw: unknown): string | null | Error {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'string') return new Error('label must be a string')
+  const trimmed = raw.trim()
+  if (trimmed.length > MAX_SCHEDULE_LABEL_LENGTH) {
+    return new Error(`label is too long (max ${MAX_SCHEDULE_LABEL_LENGTH} characters)`)
+  }
+  if (CONTROL_CHARS.test(trimmed)) return new Error('label cannot contain control characters')
+  return trimmed
+}
+
 export function validateSchedule(input: unknown, now: Date = new Date()): ValidatedSchedule {
   if (!input || typeof input !== 'object') throw new ScheduleValidationError('invalid request body')
   const body = input as ScheduleInput
@@ -63,14 +81,9 @@ export function validateSchedule(input: unknown, now: Date = new Date()): Valida
     throw new ScheduleValidationError("scanMode must be 'new' or 'overwrite'")
   }
 
-  const label = typeof body.label === 'string' ? body.label.trim() : ''
-  if (label.length > MAX_SCHEDULE_LABEL_LENGTH) {
-    throw new ScheduleValidationError(`label is too long (max ${MAX_SCHEDULE_LABEL_LENGTH} characters)`)
-  }
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f]/.test(label)) {
-    throw new ScheduleValidationError('label cannot contain control characters')
-  }
+  const cleanedLabel = sanitizeScheduleLabel(body.label)
+  if (cleanedLabel instanceof Error) throw new ScheduleValidationError(cleanedLabel.message)
+  const label = cleanedLabel ?? ''
 
   const enabled = body.enabled === undefined ? true : Boolean(body.enabled)
   const min = minIntervalMinutes()

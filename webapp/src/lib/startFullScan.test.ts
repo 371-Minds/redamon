@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   findProject: vi.fn(),
   orchestratorFetch: vi.fn(),
   isActivating: vi.fn(),
+  busy: vi.fn(),
   prepare: vi.fn(),
   createJob: vi.fn(),
 }))
@@ -22,6 +23,7 @@ vi.mock('@/lib/prisma', () => ({
 }))
 vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
 vi.mock('@/lib/activationLock', () => ({ isActivationInProgress: (...a: unknown[]) => h.isActivating(...a) }))
+vi.mock('@/lib/graphWriters', () => ({ describeScanWriters: (...a: unknown[]) => h.busy(...a) }))
 vi.mock('@/lib/scanTimeline', async orig => ({
   ...(await orig<typeof import('@/lib/scanTimeline')>()),
   prepareVersionsForFullScan: (...a: unknown[]) => h.prepare(...a),
@@ -36,6 +38,7 @@ const orchestratorBody = () => JSON.parse(h.orchestratorFetch.mock.calls[0][1].b
 beforeEach(() => {
   vi.clearAllMocks()
   h.isActivating.mockResolvedValue(false)
+  h.busy.mockResolvedValue(null)
   h.findProject.mockResolvedValue({ id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [] })
   h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ project_id: 'p1', status: 'starting' }) })
   h.prepare.mockResolvedValue({
@@ -56,6 +59,37 @@ describe('activation lock (4A.3)', () => {
     expect(res.activationInProgress).toBe(true)
     expect(h.prepare).not.toHaveBeenCalled()
     expect(h.orchestratorFetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('Risk 1: never snapshot a mid-write graph', () => {
+  test('a scan already running is rejected BEFORE the freeze, with no version churn', async () => {
+    // The orchestrator would reject the duplicate start anyway, but by then we
+    // would have captured a snapshot of a graph the running scan is rewriting
+    // AND minted a version for a scan that never happens.
+    h.busy.mockResolvedValue('a full recon scan is running')
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('unreachable')
+    expect(res.status).toBe(409)
+    expect(res.error).toMatch(/already running|scan is running/i)
+    expect(h.prepare).not.toHaveBeenCalled()
+    expect(h.orchestratorFetch).not.toHaveBeenCalled()
+  })
+
+  test('an active partial recon also blocks the freeze', async () => {
+    h.busy.mockResolvedValue('a partial recon run is active')
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(res).toMatchObject({ ok: false, status: 409 })
+    expect(h.prepare).not.toHaveBeenCalled()
+  })
+
+  test('a running AGENT session does not block a scan (unchanged behavior)', async () => {
+    // Agents legitimately run while a scan runs; only the graph-swapping
+    // activation is mutually exclusive with them.
+    h.busy.mockResolvedValue(null)
+    const res = await startFullScan({ projectId: 'p1', mode: 'new', trigger: 'manual' })
+    expect(res.ok).toBe(true)
   })
 })
 

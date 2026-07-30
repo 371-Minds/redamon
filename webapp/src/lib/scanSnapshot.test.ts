@@ -297,6 +297,44 @@ describe('withSnapshotSlot (F5 concurrency cap)', () => {
     delete process.env.SCAN_SNAPSHOT_MAX_CONCURRENCY
   })
 
+  test('a caller arriving mid-handoff cannot push past the cap', async () => {
+    // Regression: with an `if` guard instead of a `while`, a caller that arrives
+    // in the microtask gap between "slot released" and "waiter resumed" takes the
+    // free slot, and then the waiter ALSO increments — two bodies run under a cap
+    // of one. Reproduced deterministically by stepping the microtask queue.
+    process.env.SCAN_SNAPSHOT_MAX_CONCURRENCY = '1'
+    let peak = 0
+    let inFlight = 0
+    const releases: Array<() => void> = []
+    const body = () => {
+      let release!: () => void
+      const hold = new Promise<void>(r => { release = r })
+      releases.push(release)
+      return async () => {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        await hold
+        inFlight -= 1
+      }
+    }
+
+    const a = withSnapshotSlot(body())   // A holds the only slot
+    const b = withSnapshotSlot(body())   // B queues behind it
+    releases[0]()                        // release A
+
+    // Step to the tick where A has released but B has not yet resumed.
+    for (let i = 0; i < 2; i++) await Promise.resolve()
+    const c = withSnapshotSlot(body())   // C arrives exactly in that gap
+    for (let i = 0; i < 4; i++) await Promise.resolve()
+
+    expect(peak).toBe(1)
+
+    // Never leak slots: the semaphore is module state shared with later tests.
+    releases.slice(1).forEach(r => r())
+    await Promise.all([a, b, c])
+    delete process.env.SCAN_SNAPSHOT_MAX_CONCURRENCY
+  })
+
   test('releases the slot when the body throws', async () => {
     process.env.SCAN_SNAPSHOT_MAX_CONCURRENCY = '1'
     await expect(withSnapshotSlot(async () => { throw new Error('boom') })).rejects.toThrow('boom')

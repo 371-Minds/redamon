@@ -341,13 +341,22 @@ export async function POST(request: NextRequest) {
     const versionsFile = zip.file('timeline/versions.json')
     if (versionsFile) {
       const versions: Array<Record<string, unknown>> = JSON.parse(await versionsFile.async('text'))
+      // "exactly one current version per project" is the model's core invariant and
+      // the archive is untrusted input, so it is enforced here rather than trusted:
+      // the highest-seq flagged row wins and every other flag is dropped.
+      const currentSeq = versions
+        .filter(v => v.isCurrent)
+        .reduce<number | null>((top, v) => Math.max(top ?? -Infinity, Number(v.seq ?? 0)), null)
+      let currentTaken = false
       for (const v of versions) {
+        const isCurrent = !currentTaken && Boolean(v.isCurrent) && Number(v.seq ?? 0) === currentSeq
+        if (isCurrent) currentTaken = true
         const created = await prisma.scanVersion.create({
           data: {
             projectId: newProject.id,
             seq: Number(v.seq ?? 1),
             label: String(v.label ?? ''),
-            isCurrent: Boolean(v.isCurrent),
+            isCurrent,
             pinned: Boolean(v.pinned),
             nodeCount: v.nodeCount === null || v.nodeCount === undefined ? null : Number(v.nodeCount),
             linkCount: v.linkCount === null || v.linkCount === undefined ? null : Number(v.linkCount),
