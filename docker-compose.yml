@@ -861,6 +861,20 @@ services:
       # .env once logs confirm only known routes use the key. Wired here so it is
       # reachable via .env (webapp has no env_file).
       INTERNAL_KEY_ALLOWLIST_ENFORCE: ${INTERNAL_KEY_ALLOWLIST_ENFORCE:-false}
+      # Scan Timeline (versioned recon graphs). All pass through EMPTY so unset
+      # keeps the safe code defaults in webapp/src/lib/scan*.ts. Wired here for the
+      # same reason as the knob above: the webapp has NO env_file, so a value set
+      # only in .env would be silently inert (see CHANGELOG 6.2.7 for the same
+      # class of bug on the orchestrator).
+      SCAN_SNAPSHOT_MAX_BYTES: ${SCAN_SNAPSHOT_MAX_BYTES:-}
+      SCAN_SNAPSHOT_MAX_CONCURRENCY: ${SCAN_SNAPSHOT_MAX_CONCURRENCY:-}
+      SCAN_VERSION_RETENTION_KEEP: ${SCAN_VERSION_RETENTION_KEEP:-}
+      SCAN_JOB_FAILED_RETENTION_DAYS: ${SCAN_JOB_FAILED_RETENTION_DAYS:-}
+      ACTIVATION_LOCK_TTL_MS: ${ACTIVATION_LOCK_TTL_MS:-}
+      SCAN_SCHEDULE_MIN_INTERVAL_MINUTES: ${SCAN_SCHEDULE_MIN_INTERVAL_MINUTES:-}
+      SCAN_SCHEDULE_ASSUMED_RUN_MINUTES: ${SCAN_SCHEDULE_ASSUMED_RUN_MINUTES:-}
+      SCAN_SCHEDULE_DEFER_RETRY_MINUTES: ${SCAN_SCHEDULE_DEFER_RETRY_MINUTES:-}
+      SCAN_SCHEDULE_MAX_DEFERRALS: ${SCAN_SCHEDULE_MAX_DEFERRALS:-}
       # S11: login lockout / backoff thresholds. SAFE DEFAULTS so an unset value
       # fails safe to a real limit, never to "no limit".
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}

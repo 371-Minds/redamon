@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-07-30
+
+### Added
+
+- **Scan Timeline: versioned recon graphs.** Every full scan can now be kept as an immutable **version** instead of overwriting the last one. Starting a second scan asks whether to *create a new version* (the current graph is frozen first) or *overwrite* it; the freeze happens **before** the scan starts and aborts the start if it fails, so a graph is never destroyed unsaved. Past versions are read-only snapshots stored in Postgres — **the Neo4j schema does not change** and old data never re-enters the live graph, so it can never reach the agent. See the new "Scan Timeline" section of [readmes/GRAPH.SCHEMA.md](readmes/GRAPH.SCHEMA.md).
+- **Activate a past version.** Any version with a stored snapshot can be made the live graph the agent, RedZone analytics and partial recon work on: the outgoing graph is frozen from LIVE, the recon graph is cleared (agent AttackChain nodes are *preserved*), the snapshot is restored through the same code path the project import uses, and only then does the current pointer move. A failure mid-restore loses nothing and is simply retriable. Held under a per-project lock that is mutually exclusive with scans, partial recon, agent sessions and the scheduler, in both directions.
+- **Version Manager** — rename, pin, delete and "save current as a version", with retention that trims old unpinned versions (`SCAN_VERSION_RETENTION_KEEP`, default 20).
+- **Recon Delta** — compare any two versions: added / removed / changed assets with per-field old→new, a change scorecard, security lenses (newly exposed ports, new and resolved vulnerabilities, technology drift, certificate changes, new parameters) and a colour-coded graph overlay. Assets are matched across versions by a stable identity key, not by Neo4j ids.
+- **Scan Scheduler** — `once` / `every N minutes` / `cron` (UTC) schedules per project, with a static RAM feasibility check at creation (a schedule that could never be admitted, or that overlaps others beyond the scan pool, is refused with the reason). A worker in the recon-orchestrator polls due schedules and starts them through the *same* path a manual scan uses, so RoE time windows, the hard guardrail and the admission ledger all still apply. If the graph is busy or memory is short it records a deferred run with the reason instead of spawning. Tunable via `SCAN_SCHEDULER_ENABLED` / `SCAN_SCHEDULER_TICK_SECONDS`; both default safely, so no `.env` edit is needed.
+- Project **export/import now round-trip the timeline** (versions with their snapshot bytes, run history, schedules). Imported schedules arrive **disabled**, so importing a project can never resume scanning someone else's target on the old cadence.
+
+### Fixed
+
+- **Malformed cron ranges were silently reinterpreted.** `Number('')` is `0`, so a field like `-5` parsed as `0-5` — a typo becoming a schedule that fires at times the operator never asked for. Open-ended ranges are now rejected ([webapp/src/lib/cron.ts](webapp/src/lib/cron.ts)).
+
+---
+
 ## [6.2.7] - 2026-07-30
 
 ### Fixed
