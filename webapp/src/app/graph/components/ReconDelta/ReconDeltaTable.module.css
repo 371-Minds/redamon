@@ -62,6 +62,22 @@
   white-space: nowrap;
 }
 
+/* "Show unchanged" toggle for the overlay, hoisted onto the controls bar. */
+.showUnchanged {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.showUnchanged input {
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
 .exportBtn {
   display: inline-flex;
   align-items: center;

@@ -144,12 +144,15 @@ describe('ReconDeltaTable', () => {
     await waitFor(() => expect(screen.getByText(/1 added/)).toBeTruthy())
     fireEvent.click(screen.getByRole('tab', { name: /Graph overlay/ }))
 
-    // The legend only renders from overlay data, and its counts come from it.
-    await waitFor(() => expect(screen.getByText(/New \(1\)/)).toBeTruthy())
-    expect(screen.getByText(/Unchanged \(1\)/)).toBeTruthy()
+    // The overlay canvas renders once the payload arrives. Counts + the "show
+    // unchanged" toggle live on the controls bar now (one bar less).
+    await waitFor(() => expect(screen.getByTestId('canvas')).toBeTruthy())
+    expect(screen.getByText(/Show unchanged/)).toBeTruthy()
 
-    // "Changes only" is the default, so the unchanged node is filtered out of the
-    // render set even though the legend still counts it.
+    // "Changes only" is the default, so the unchanged overlay node is filtered out
+    // of the render set even though the totals bar still counts the delta's stable
+    // nodes (4 unchanged from the fixture).
+    expect(screen.getByText(/4 unchanged/)).toBeTruthy()
     expect(screen.getByTestId('canvas').getAttribute('data-nodes')).toBe('1')
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect(screen.getByTestId('canvas').getAttribute('data-nodes')).toBe('2'))

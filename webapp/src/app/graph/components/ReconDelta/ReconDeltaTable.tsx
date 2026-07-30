@@ -6,7 +6,6 @@ import type { ScanVersionSummary } from '../../hooks/useScanVersions'
 import type { GraphNode, DeltaState } from '../../types'
 import { GraphCanvas } from '../GraphCanvas'
 import { useDimensions } from '../../hooks'
-import { DeltaOverlayLegend } from './DeltaOverlayLegend'
 import styles from './ReconDeltaTable.module.css'
 
 interface FieldChange { field: string; from: unknown; to: unknown }
@@ -216,6 +215,16 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
             <span className={styles.totalStable}>{data.totals.fromNodes} → {data.totals.toNodes} nodes</span>
           </div>
         )}
+        {data && section === 'overlay' && (
+          <label className={styles.showUnchanged}>
+            <input
+              type="checkbox"
+              checked={!changesOnly}
+              onChange={e => setChangesOnly(!e.target.checked)}
+            />
+            Show unchanged
+          </label>
+        )}
         {data && (
           <button className={styles.exportBtn} onClick={exportJson} title="Export this diff as JSON">
             <Download size={12} /> JSON
@@ -299,9 +308,6 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
                 loading={overlayLoading}
                 error={overlayError}
                 changesOnly={changesOnly}
-                onToggleChangesOnly={setChangesOnly}
-                fromLabel={data.from.label}
-                toLabel={data.to.label}
                 isDark={isDark}
                 selectedNode={selectedNode}
                 onSelectNode={setSelectedNode}
@@ -418,9 +424,6 @@ interface DeltaOverlayProps {
   loading: boolean
   error: string | null
   changesOnly: boolean
-  onToggleChangesOnly: (v: boolean) => void
-  fromLabel: string
-  toLabel: string
   isDark: boolean
   selectedNode: (GraphNode & { deltaState: DeltaState }) | null
   onSelectNode: (n: (GraphNode & { deltaState: DeltaState }) | null) => void
@@ -430,10 +433,11 @@ interface DeltaOverlayProps {
 /**
  * Section 6.3 — the two versions merged on the identity key and rendered through
  * the normal canvas, colored by delta state. Clicking a node shows its changed
- * fields old → new.
+ * fields old → new. The legend/counts + "show unchanged" toggle live on the Recon
+ * Delta controls bar (one bar less here).
  */
 function DeltaOverlay({
-  data, loading, error, changesOnly, onToggleChangesOnly, fromLabel, toLabel,
+  data, loading, error, changesOnly,
   isDark, selectedNode, onSelectNode, changedByKey,
 }: DeltaOverlayProps) {
   // Measure the canvas HERE, not in the parent: the ref only exists while the
@@ -442,12 +446,6 @@ function DeltaOverlay({
   // default. Mounting the hook with the div makes it observe the real box.
   const containerRef = useRef<HTMLDivElement>(null)
   const size = useDimensions(containerRef)
-
-  const counts = useMemo(() => {
-    const c = { added: 0, removed: 0, changed: 0, stable: 0 }
-    for (const n of data?.nodes ?? []) c[n.deltaState] += 1
-    return c
-  }, [data])
 
   const filtered = useMemo(() => {
     if (!data) return null
@@ -465,13 +463,9 @@ function DeltaOverlay({
 
   return (
     <div className={styles.overlayWrap}>
-      <DeltaOverlayLegend
-        fromLabel={fromLabel}
-        toLabel={toLabel}
-        counts={counts}
-        changesOnly={changesOnly}
-        onToggleChangesOnly={onToggleChangesOnly}
-      />
+      {/* The legend (from→to, per-state counts, "show unchanged") lives on the
+          Recon Delta controls bar now, not as a separate row here — one bar less,
+          more vertical room for the canvas. */}
       <div className={styles.overlayBody}>
         <div ref={containerRef} className={styles.overlayCanvas}>
           {loading ? (
