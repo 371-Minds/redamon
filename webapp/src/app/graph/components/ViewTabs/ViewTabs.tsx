@@ -280,15 +280,42 @@ export const ViewTabs = memo(function ViewTabs({
           <Waypoints size={14} />
           <span>Graph Map</span>
         </button>
+
+        {/* Scan Timeline: Recon Delta + Scan Schedule are their own top-level tabs
+            (not buried in the table dropdown), each flagged NEW. */}
+        <button
+          role="tab"
+          aria-selected={activeView === 'table' && tableViewMode === 'reconDelta'}
+          className={`${styles.tab} ${activeView === 'table' && tableViewMode === 'reconDelta' ? styles.tabActive : ''}`}
+          onClick={() => { onTableViewModeChange?.('reconDelta'); onViewChange('table') }}
+        >
+          <GitCompare size={14} />
+          <span>Recon Delta</span>
+          <span className={styles.newBadge}>NEW</span>
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeView === 'table' && tableViewMode === 'scanSchedule'}
+          className={`${styles.tab} ${activeView === 'table' && tableViewMode === 'scanSchedule' ? styles.tabActive : ''}`}
+          onClick={() => { onTableViewModeChange?.('scanSchedule'); onViewChange('table') }}
+        >
+          <CalendarClock size={14} />
+          <span>Scan Schedule</span>
+          <span className={styles.newBadge}>NEW</span>
+        </button>
+
         <div ref={tableMenuRef} className={styles.tableMenuContainer}>
           <button
             role="tab"
-            aria-selected={activeView === 'table'}
-            className={`${styles.tab} ${activeView === 'table' ? styles.tabActive : ''}`}
+            aria-selected={activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule'}
+            className={`${styles.tab} ${activeView === 'table' && tableViewMode !== 'reconDelta' && tableViewMode !== 'scanSchedule' ? styles.tabActive : ''}`}
             onClick={() => onViewChange('table')}
           >
             {(() => {
-              const mode = tableViewMode ?? 'all'
+              // Recon Delta / Scan Schedule are their own tabs now, so the table
+              // dropdown never advertises them — fall back to its default label.
+              const mode = (tableViewMode === 'reconDelta' || tableViewMode === 'scanSchedule')
+                ? 'all' : (tableViewMode ?? 'all')
               const Icon =
                 mode === 'nodeDetails' ? Layers
                 : mode === 'jsRecon' ? Code
@@ -308,12 +335,10 @@ export const ViewTabs = memo(function ViewTabs({
                 : mode === 'supplyChain' ? Package
                 : mode === 'dnsDrift' ? History
                 : mode === 'webCachePoison' ? Droplets
-                : mode === 'reconDelta' ? GitCompare
-                : mode === 'scanSchedule' ? CalendarClock
                 : Table2
               return <Icon size={14} />
             })()}
-            <span>{TABLE_MODE_LABELS[tableViewMode ?? 'all']}</span>
+            <span>{TABLE_MODE_LABELS[(tableViewMode === 'reconDelta' || tableViewMode === 'scanSchedule') ? 'all' : (tableViewMode ?? 'all')]}</span>
             <ChevronDown
               size={18}
               strokeWidth={3}
@@ -334,18 +359,6 @@ export const ViewTabs = memo(function ViewTabs({
                 onClick={() => { onTableViewModeChange?.('all'); setTableMenuOpen(false); onViewChange('table') }}
               >
                 <Table2 size={12} /> All Nodes
-              </button>
-              <button
-                className={`${styles.tableDropdownItem} ${tableViewMode === 'reconDelta' ? styles.tableDropdownItemActive : ''}`}
-                onClick={() => { onTableViewModeChange?.('reconDelta'); setTableMenuOpen(false); onViewChange('table') }}
-              >
-                <GitCompare size={12} /> Recon Delta
-              </button>
-              <button
-                className={`${styles.tableDropdownItem} ${tableViewMode === 'scanSchedule' ? styles.tableDropdownItemActive : ''}`}
-                onClick={() => { onTableViewModeChange?.('scanSchedule'); setTableMenuOpen(false); onViewChange('table') }}
-              >
-                <CalendarClock size={12} /> Scan Schedule
               </button>
               <button
                 className={`${styles.tableDropdownItem} ${tableViewMode === 'jsRecon' ? styles.tableDropdownItemActive : ''}`}

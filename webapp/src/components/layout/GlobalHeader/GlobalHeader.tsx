@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -16,7 +17,7 @@ export function GlobalHeader() {
   const { isAdmin } = useAuth()
   const { projectId } = useProject()
 
-  const coreNav = [
+  const coreNav: Array<{ label: string; href: string; icon: ReactNode; isNew?: boolean }> = [
     { label: 'Red Zone', href: '/graph', icon: <Crosshair size={14} /> },
     ...(projectId
       ? [{ label: 'Recon Pipeline', href: `/projects/${projectId}/settings`, icon: <GitBranch size={14} /> }]
@@ -26,7 +27,7 @@ export function GlobalHeader() {
     // TrafficMind table view is visible to everyone (view captured traffic for
     // their project). Only the TrafficMind *settings* (egress guard, master
     // switch) are admin-only, gated in Global Settings.
-    { label: 'TrafficMind', href: '/traffic', icon: <Network size={14} />, isNew: true },
+    { label: 'TrafficMind', href: '/traffic', icon: <Network size={14} /> },
     { label: 'Reports', href: '/reports', icon: <FileText size={14} /> },
   ]
 
