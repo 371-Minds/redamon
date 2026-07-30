@@ -1,3 +1,10 @@
+/* Wider than a 'large' modal so the whole action row fits, but capped -- a true
+   full-width modal is far more than this table needs. !important because the
+   Modal's own size class lives in another stylesheet with equal specificity. */
+.modal {
+  max-width: min(1040px, calc(100vw - var(--space-8))) !important;
+}
+
 .content {
   display: flex;
   flex-direction: column;
@@ -96,12 +103,26 @@
 }
 
 .labelCell {
-  min-width: 220px;
+  min-width: 160px;
+}
+
+.labelStack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Created timestamp rides under the label; it used to own a whole column. */
+.created {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .label {
   display: inline-block;
-  max-width: 320px;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -126,7 +147,9 @@
 
 .activeBadge,
 .pinBadge,
-.warnBadge {
+.warnBadge,
+.runningBadge,
+.busyBadge {
   display: inline-block;
   margin-right: var(--space-1);
   padding: 1px var(--space-1);
@@ -152,9 +175,54 @@
   color: var(--status-warning);
 }
 
+/* A scan is writing to the live graph right now. */
+.runningBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.runningDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Paused / pausing / stopping: the scan holds the graph but is not writing. */
+.busyBadge {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--status-warning);
+}
+
+/* The row is wider than the modal on narrow screens, so pin the actions to the
+   right edge -- Rename / Pin / Delete used to scroll out of sight behind the
+   horizontal scrollbar and looked like they did not exist. */
 .actionsCol {
+  position: sticky;
+  right: 0;
+  z-index: 2;
   width: 1%;
   white-space: nowrap;
+  background: var(--drawer-bg);
+  border-left: 1px solid var(--border-default);
+}
+
+.table th.actionsCol {
+  z-index: 3;
+  background: var(--bg-tertiary);
+}
+
+.rowViewing .actionsCol {
+  background: var(--bg-hover);
 }
 
 .actions {
@@ -205,8 +273,20 @@
   cursor: not-allowed;
 }
 
-.dangerBtn:hover:not(:disabled) {
+/* Destructive action reads red at rest, not only on hover. */
+.dangerBtn {
   color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.dangerBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.actionBtn svg,
+.iconBtn svg {
+  flex-shrink: 0;
 }
 
 .spinner {

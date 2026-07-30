@@ -60,6 +60,25 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('the active row reports what the live scan is doing', () => {
+  test('a running recon is called out on the active version, not on the others', () => {
+    render(<VersionManager {...props} liveScanStatus="running" />)
+    expect(within(rowFor('Scan 3')).getByText('Running')).toBeTruthy()
+    expect(within(rowFor('Scan 2')).queryByText('Running')).toBeNull()
+  })
+
+  test('the optimistic pausing state is shown too', () => {
+    render(<VersionManager {...props} liveScanStatus="pausing" />)
+    expect(within(rowFor('Scan 3')).getByText('Pausing')).toBeTruthy()
+  })
+
+  test('an idle project shows no scan badge at all', () => {
+    render(<VersionManager {...props} liveScanStatus="idle" />)
+    expect(screen.queryByText('Running')).toBeNull()
+    expect(within(rowFor('Scan 3')).getByText('Active')).toBeTruthy()
+  })
+})
+
 describe('affordances match what the server allows', () => {
   test('the current version cannot be activated or deleted', () => {
     render(<VersionManager {...props} />)

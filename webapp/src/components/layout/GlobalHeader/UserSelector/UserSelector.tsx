@@ -1,15 +1,16 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { ChevronDown, Users, LogOut, KeyRound } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
 import { useAuth } from '@/providers/AuthProvider'
 import { useUsers } from '@/hooks/useUsers'
+import { useGuardedRouter, useNavigationGuard } from '@/context/NavigationGuardContext'
 import styles from './UserSelector.module.css'
 
 export function UserSelector() {
-  const router = useRouter()
+  const router = useGuardedRouter()
+  const guard = useNavigationGuard()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const { userId, setUserId, setCurrentProject } = useProject()
@@ -28,8 +29,11 @@ export function UserSelector() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSelectUser = (user: { id: string; name: string }) => {
+  const handleSelectUser = async (user: { id: string; name: string }) => {
     if (user.id !== userId) {
+      // Switching user resets project context and reloads data — confirm first
+      // if a dirty form would lose edits.
+      if (guard?.hasGuards() && !(await guard.confirmAllGuards())) return
       setUserId(user.id)
       setCurrentProject(null)
     }
@@ -46,7 +50,9 @@ export function UserSelector() {
     setIsOpen(false)
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Logging out abandons everything — confirm if a dirty form is open.
+    if (guard?.hasGuards() && !(await guard.confirmAllGuards())) return
     setIsOpen(false)
     logout()
   }

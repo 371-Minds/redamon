@@ -77,15 +77,17 @@ export function OtherScansModal({
   isTrufflehogLogsOpen = false,
 }: OtherScansModalProps) {
   // GitHub Hunt derived state
-  const isGHBusy = githubHuntStatus === 'running' || githubHuntStatus === 'starting'
+  const isGHBusy = githubHuntStatus === 'running' || githubHuntStatus === 'starting' || githubHuntStatus === 'pausing'
   const isGHStopping = githubHuntStatus === 'stopping'
+  const isGHPausing = githubHuntStatus === 'pausing'
   const isGHRunning = isGHBusy || isGHStopping
   const isGHPaused = githubHuntStatus === 'paused'
   const isGHActive = isGHRunning || isGHPaused
 
   // TruffleHog derived state
-  const isTHBusy = trufflehogStatus === 'running' || trufflehogStatus === 'starting'
+  const isTHBusy = trufflehogStatus === 'running' || trufflehogStatus === 'starting' || trufflehogStatus === 'pausing'
   const isTHStopping = trufflehogStatus === 'stopping'
+  const isTHPausing = trufflehogStatus === 'pausing'
   const isTHRunning = isTHBusy || isTHStopping
   const isTHPaused = trufflehogStatus === 'paused'
   const isTHActive = isTHRunning || isTHPaused
@@ -150,7 +152,7 @@ export function OtherScansModal({
                 ) : (
                   <Play size={12} />
                 )}
-                <span>{isGHBusy ? 'Running...' : isGHStopping ? 'Stopping...' : 'Start'}</span>
+                <span>{isGHPausing ? 'Pausing...' : isGHBusy ? 'Running...' : isGHStopping ? 'Stopping...' : 'Start'}</span>
               </button>
             )}
 
@@ -158,9 +160,10 @@ export function OtherScansModal({
               <button
                 className={styles.pauseButton}
                 onClick={onPauseGithubHunt}
+                disabled={isGHPausing}
                 title="Pause"
               >
-                <Pause size={12} />
+                {isGHPausing ? <Loader2 size={12} className={styles.spinner} /> : <Pause size={12} />}
                 <span>Pause</span>
               </button>
             )}
@@ -251,7 +254,7 @@ export function OtherScansModal({
                 ) : (
                   <Play size={12} />
                 )}
-                <span>{isTHBusy ? 'Running...' : isTHStopping ? 'Stopping...' : 'Start'}</span>
+                <span>{isTHPausing ? 'Pausing...' : isTHBusy ? 'Running...' : isTHStopping ? 'Stopping...' : 'Start'}</span>
               </button>
             )}
 
@@ -259,9 +262,10 @@ export function OtherScansModal({
               <button
                 className={styles.pauseButton}
                 onClick={onPauseTrufflehog}
+                disabled={isTHPausing}
                 title="Pause"
               >
-                <Pause size={12} />
+                {isTHPausing ? <Loader2 size={12} className={styles.spinner} /> : <Pause size={12} />}
                 <span>Pause</span>
               </button>
             )}

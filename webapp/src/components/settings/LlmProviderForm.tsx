@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Loader2, CheckCircle, XCircle, Plus, Trash2, Eye, EyeOff, ExternalLink } from 'lucide-react'
 import { useToast } from '@/components/ui'
+import { useDirtyState } from '@/hooks/useDirtyState'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { PROVIDER_TYPES, OPENAI_COMPAT_PRESETS } from '@/lib/llmProviderPresets'
 import type { ProviderType } from '@/lib/llmProviderPresets'
 import { REASONING_EFFORTS } from '@/lib/llmReasoning'
@@ -15,6 +17,8 @@ interface LlmProviderFormProps {
   existingProviderTypes?: string[]
   onSave: () => void
   onCancel: () => void
+  /** Reports unsaved-changes state to the parent (drives the tab-switch guard). */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 export interface ProviderData {
@@ -58,7 +62,7 @@ const EMPTY_PROVIDER: ProviderData = {
   awsBearerToken: '',
 }
 
-export function LlmProviderForm({ userId, provider, existingProviderTypes = [], onSave, onCancel }: LlmProviderFormProps) {
+export function LlmProviderForm({ userId, provider, existingProviderTypes = [], onSave, onCancel, onDirtyChange }: LlmProviderFormProps) {
   const isEditing = !!provider?.id
   const toast = useToast()
   const [form, setForm] = useState<ProviderData>(() => ({
@@ -68,6 +72,16 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
     reasoningEnabled: provider?.reasoningEnabled ?? false,
     reasoningEffort: provider?.reasoningEffort || 'high',
   }))
+
+  // Dirty tracking vs the initial form (create = EMPTY_PROVIDER, edit = provider
+  // incl. masked secrets). Gates the Save button and the unsaved-changes guard.
+  const { isDirty, setBaseline } = useDirtyState(form)
+  // Local-only: the parent /settings page aggregates dirtiness (onDirtyChange)
+  // and owns the global sidebar/beforeunload guard, so this instance only wraps
+  // the Cancel button.
+  const { guardedNavigate } = useUnsavedChangesGuard(isDirty, { trackGlobal: false })
+  useEffect(() => { onDirtyChange?.(isDirty) }, [isDirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
   const [step, setStep] = useState<'type' | 'config'>(isEditing || form.providerType ? 'config' : 'type')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -162,6 +176,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
       }
 
       toast.success(isEditing ? 'Provider updated' : 'Provider added')
+      setBaseline(form)
       onSave()
     } catch (err) {
       console.error('Failed to save provider:', err)
@@ -169,7 +184,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
     } finally {
       setSaving(false)
     }
-  }, [isEditing, userId, provider, form, onSave])
+  }, [isEditing, userId, provider, form, onSave, setBaseline])
 
   // Step 1: Choose provider type
   if (step === 'type') {
@@ -200,7 +215,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
           })}
         </div>
         <div className={styles.formActions}>
-          <button className="secondaryButton" onClick={onCancel}>Cancel</button>
+          <button className="secondaryButton" onClick={() => guardedNavigate(onCancel)}>Cancel</button>
         </div>
       </div>
     )
@@ -538,12 +553,13 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
 
       {/* Actions */}
       <div className={styles.formActions}>
-        <button className="secondaryButton" onClick={onCancel}>Cancel</button>
+        <button className="secondaryButton" onClick={() => guardedNavigate(onCancel)}>Cancel</button>
         <button
           className="primaryButton"
           onClick={handleSave}
           disabled={
             saving ||
+            !isDirty ||
             !form.name ||
             (!isCompat && !form.apiKey && !isBedrock) ||
             (isBedrock && bedrockAuth === 'iam' && (!form.awsAccessKeyId || !form.awsSecretKey)) ||

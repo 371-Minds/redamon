@@ -26,6 +26,54 @@
   color: var(--text-primary);
 }
 
+/* Run-history header: title on the left, "Delete selected" on the right. */
+.historyHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 26px;
+}
+
+.clearBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: #ef4444;
+  cursor: pointer;
+}
+
+.clearBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+
+.clearBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Narrow leading checkbox column in the run-history table. */
+.checkCol {
+  width: 28px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.checkCol input {
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.rowSelected {
+  background: var(--bg-tertiary);
+}
+
 .form {
   display: flex;
   flex-wrap: wrap;

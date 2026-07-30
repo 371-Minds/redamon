@@ -67,6 +67,7 @@ export function ReconLogsDrawer({
         return <div className={styles.runningIndicator} />
       case 'paused':
         return <Pause size={14} className={styles.pausedIcon} />
+      case 'pausing':
       case 'stopping':
         return <Loader2 size={14} className={styles.spinner} />
       case 'completed':
@@ -96,6 +97,8 @@ export function ReconLogsDrawer({
         return 'Completed'
       case 'error':
         return errorMessage ? `Error: ${errorMessage}` : 'Error'
+      case 'pausing':
+        return 'Pausing...'
       case 'stopping':
         return 'Stopping...'
       default:
@@ -186,16 +189,19 @@ export function ReconLogsDrawer({
           <span className={styles.statusText} title={getStatusText()}>{getStatusText()}</span>
         </div>
         <div className={styles.statusActions}>
-          {(status === 'running' || status === 'paused') && (
+          {(status === 'running' || status === 'paused' || status === 'pausing') && (
             <button
               className={`${styles.iconButton} ${status === 'paused' ? styles.iconButtonPaused : ''}`}
               onClick={status === 'paused' ? onResume : onPause}
-              title={status === 'paused' ? 'Resume pipeline' : 'Pause pipeline'}
+              disabled={status === 'pausing'}
+              title={status === 'pausing' ? 'Pausing...' : status === 'paused' ? 'Resume pipeline' : 'Pause pipeline'}
             >
-              {status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+              {status === 'pausing'
+                ? <Loader2 size={14} className={styles.spinner} />
+                : status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
             </button>
           )}
-          {(status === 'running' || status === 'paused') && (
+          {(status === 'running' || status === 'paused' || status === 'pausing') && (
             <button
               className={`${styles.iconButton} ${styles.iconButtonStop}`}
               onClick={onStop}

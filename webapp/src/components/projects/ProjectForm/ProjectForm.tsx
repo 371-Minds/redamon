@@ -11,6 +11,8 @@ import { useProject } from '@/providers/ProjectProvider'
 import useReconStatus from '@/hooks/useReconStatus'
 import { useMultiPartialReconStatus } from '@/hooks/useMultiPartialReconStatus'
 import { useMultiPartialReconSSE } from '@/hooks/useMultiPartialReconSSE'
+import { useDirtyState } from '@/hooks/useDirtyState'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import type { PartialReconParams, PartialReconState } from '@/lib/recon-types'
 import { PARTIAL_RECON_PHASE_MAP } from '@/lib/recon-types'
@@ -191,6 +193,14 @@ export function ProjectForm({
     ...initialData
   } as ProjectFormData))
 
+  // Dirty tracking: baseline = the last saved/loaded formData. Edit mode adopts
+  // the initial value on mount; create mode re-adopts once async defaults load
+  // (see the defaults effect below). Drives the Update/Save button + the
+  // unsaved-changes guard. Applying a preset mutates formData, so it naturally
+  // marks the form dirty -- fixing the "preset applied but never saved" footgun.
+  const { isDirty, setBaseline } = useDirtyState(formData)
+  const { guardedNavigate } = useUnsavedChangesGuard(isDirty)
+
   // Body wrapper ref -- used to pin log drawer top/bottom to the main content area
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -317,16 +327,24 @@ export function ProjectForm({
         : Promise.resolve(null),
     ]).then(([defaults, user]) => {
       const seeded = seedInitialModels(user)
-      setFormData(prev => ({
-        ...defaults,
-        ...prev,
-        ...initialData,
-        agentOpenaiModel: seeded.agentOpenaiModel,
-        aiPipelineModel: seeded.aiPipelineModel,
-      } as ProjectFormData))
+      let loaded: ProjectFormData | null = null
+      setFormData(prev => {
+        loaded = {
+          ...defaults,
+          ...prev,
+          ...initialData,
+          agentOpenaiModel: seeded.agentOpenaiModel,
+          aiPipelineModel: seeded.aiPipelineModel,
+        } as ProjectFormData
+        return loaded
+      })
+      // Adopt the post-load value as the dirty baseline so freshly-loaded
+      // defaults do NOT read as unsaved changes (would otherwise light up Save
+      // and trigger the guard on a pristine create form).
+      if (loaded) setBaseline(loaded)
       setIsLoadingDefaults(false)
     })
-  }, [mode, initialData, userId])
+  }, [mode, initialData, userId, setBaseline])
 
   // Provider gate: block creating a project when no LLM provider is configured.
   useEffect(() => {
@@ -385,11 +403,15 @@ export function ProjectForm({
       if (!res.ok) {
         const err = await res.json()
         toast.error(err.error || 'Failed to save')
+        return
       }
+      // Workflow toggles persist immediately; adopt the saved field into the
+      // baseline so the batched Update button + guard don't flag it as unsaved.
+      setBaseline(prev => ({ ...prev, [field]: value }))
     } catch {
       toast.error('Failed to save setting')
     }
-  }, [projectId, mode, toast])
+  }, [projectId, mode, toast, setBaseline])
 
   const updateMultipleFields = (fields: Partial<ProjectFormData>) => {
     setFormData(prev => ({ ...prev, ...fields }))
@@ -527,6 +549,9 @@ export function ProjectForm({
         ...(mode === 'create' && projectId ? { id: projectId } : {}),
       }
       await onSubmit(submitData)
+      // Adopt the just-saved state as the new baseline so the form reads clean
+      // (create mode usually navigates away, but this keeps state correct if not).
+      setBaseline(formData)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save project'
       if (message.toLowerCase().includes('guardrail') || message.toLowerCase().includes('permanently blocked')) {
@@ -580,6 +605,7 @@ export function ProjectForm({
         ...(mode === 'create' && projectId ? { id: projectId } : {}),
       }
       await onSaveAndStay(submitData)
+      setBaseline(formData)
       toast.success('Project saved')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save project'
@@ -659,7 +685,7 @@ export function ProjectForm({
               <button
                 type="button"
                 className={`reconStartButton${isReconBusy ? ' reconStartButtonActive' : ''}`}
-                onClick={() => router.push(isReconBusy ? `/graph?project=${projectId}&openlogs=recon` : `/graph?project=${projectId}&autostart=true`)}
+                onClick={() => guardedNavigate(() => router.push(isReconBusy ? `/graph?project=${projectId}&openlogs=recon` : `/graph?project=${projectId}&autostart=true`))}
                 disabled={isSubmitting || runningPartialToolIds.size > 0}
                 title={runningPartialToolIds.size > 0 ? 'Partial recon is running -- stop it first' : isReconRunning ? 'Recon is running -- click to view progress' : isReconPaused ? 'Recon is paused -- click to view' : 'Navigate to the graph page and start the full recon pipeline'}
               >
@@ -686,7 +712,7 @@ export function ProjectForm({
             <button
               type="button"
               className="secondaryButton"
-              onClick={onCancel}
+              onClick={() => guardedNavigate(onCancel)}
               disabled={isSubmitting}
               title="Discard all unsaved changes and return to the previous page"
             >
@@ -728,8 +754,8 @@ export function ProjectForm({
           <button
             type="submit"
             className="primaryButton"
-            disabled={!canSubmit}
-            title={mode === 'create' ? 'Create the project with the current settings and start working' : 'Save all changes to the project settings'}
+            disabled={!canSubmit || !isDirty}
+            title={mode === 'create' ? 'Create the project with the current settings and start working' : !isDirty ? 'No unsaved changes' : 'Save all changes to the project settings'}
           >
             {isLoadingDefaults ? (
               <>

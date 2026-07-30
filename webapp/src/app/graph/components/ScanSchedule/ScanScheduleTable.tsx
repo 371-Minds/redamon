@@ -71,6 +71,9 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // Run-history multi-select (checkboxes on the left of the history table).
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [clearing, setClearing] = useState(false)
 
   // create form
   const [mode, setMode] = useState<Schedule['mode']>('interval')
@@ -94,6 +97,8 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
       if (!res.ok) throw new Error(body.error || 'Failed to load schedules')
       setSchedules(body.schedules ?? [])
       setJobs(body.jobs ?? [])
+      // Drop any selection that no longer maps to a visible row.
+      setSelected(new Set())
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -171,6 +176,47 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
       load()
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const toggleJob = (jobId: string) =>
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(jobId)) next.delete(jobId)
+      else next.add(jobId)
+      return next
+    })
+
+  const allSelected = jobs.length > 0 && selected.size === jobs.length
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(jobs.map(j => j.id)))
+
+  const deleteSelected = async () => {
+    if (!projectId || selected.size === 0) return
+    const n = selected.size
+    const confirmed = await dangerConfirm(
+      `Delete ${n} run-history ${n === 1 ? 'record' : 'records'}? This cannot be undone. ` +
+      'Schedules and saved versions are not affected, and any scan still running keeps running.',
+      'Delete run history'
+    )
+    if (!confirmed) return
+    setClearing(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/schedules/history`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected) }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alertError(String(body.error || 'Could not clear run history'), 'Run history')
+        return
+      }
+      const deleted = body.deleted ?? n
+      toast.info(`Deleted ${deleted} run ${deleted === 1 ? 'record' : 'records'}`)
+      load()
+    } finally {
+      setClearing(false)
     }
   }
 
@@ -282,20 +328,46 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
       </section>
 
       <section className={styles.section}>
-        <h3 className={styles.heading}>Run history</h3>
+        <div className={styles.historyHead}>
+          <h3 className={styles.heading}>Run history</h3>
+          {selected.size > 0 && (
+            <button className={styles.clearBtn} onClick={deleteSelected} disabled={clearing}>
+              {clearing ? <Loader2 size={13} className={styles.spinner} /> : <Trash2 size={13} />}
+              <span>Delete selected ({selected.size})</span>
+            </button>
+          )}
+        </div>
         <table className={styles.table}>
           <thead>
             <tr>
+              <th className={styles.checkCol}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  disabled={jobs.length === 0}
+                  aria-label="Select all runs"
+                  title="Select all"
+                />
+              </th>
               <th>Trigger</th><th>Mode</th><th>Status</th><th>Version</th>
               <th>Started</th><th>Duration</th><th className={styles.num}>Nodes</th><th>Reason</th>
             </tr>
           </thead>
           <tbody>
             {jobs.length === 0 && (
-              <tr><td colSpan={8} className={styles.empty}>No scans recorded yet.</td></tr>
+              <tr><td colSpan={9} className={styles.empty}>No scans recorded yet.</td></tr>
             )}
             {jobs.map(j => (
-              <tr key={j.id}>
+              <tr key={j.id} className={selected.has(j.id) ? styles.rowSelected : undefined}>
+                <td className={styles.checkCol}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(j.id)}
+                    onChange={() => toggleJob(j.id)}
+                    aria-label={`Select run ${j.version ? `v${j.version.seq}` : j.id}`}
+                  />
+                </td>
                 <td>{j.trigger}</td>
                 <td>{j.mode ?? '—'}</td>
                 <td>

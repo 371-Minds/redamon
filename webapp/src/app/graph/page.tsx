@@ -262,7 +262,7 @@ export default function GraphPage() {
   })
 
   // Check if recon is running to enable auto-refresh of graph data
-  const isReconRunning = reconState?.status === 'running' || reconState?.status === 'starting'
+  const isReconRunning = reconState?.status === 'running' || reconState?.status === 'starting' || reconState?.status === 'pausing'
 
   // Check if any agent conversation is active (writes attack chain nodes to graph)
   const isAgentRunning = agentSummary.activeCount > 0
@@ -344,7 +344,7 @@ export default function GraphPage() {
     clearLogs,
   } = useReconSSE({
     projectId,
-    enabled: reconState?.status === 'running' || reconState?.status === 'starting' || reconState?.status === 'paused' || reconState?.status === 'stopping',
+    enabled: reconState?.status === 'running' || reconState?.status === 'starting' || reconState?.status === 'paused' || reconState?.status === 'stopping' || reconState?.status === 'pausing',
     onLog: triggerGraphRefetch,
   })
 
@@ -394,7 +394,7 @@ export default function GraphPage() {
     enabled: !!projectId,
   })
 
-  const isGvmRunning = gvmState?.status === 'running' || gvmState?.status === 'starting'
+  const isGvmRunning = gvmState?.status === 'running' || gvmState?.status === 'starting' || gvmState?.status === 'pausing'
 
   // GVM logs SSE hook
   const {
@@ -404,7 +404,7 @@ export default function GraphPage() {
     clearLogs: clearGvmLogs,
   } = useGvmSSE({
     projectId,
-    enabled: gvmState?.status === 'running' || gvmState?.status === 'starting' || gvmState?.status === 'paused' || gvmState?.status === 'stopping',
+    enabled: gvmState?.status === 'running' || gvmState?.status === 'starting' || gvmState?.status === 'paused' || gvmState?.status === 'stopping' || gvmState?.status === 'pausing',
   })
 
   // GitHub Hunt status hook
@@ -420,7 +420,7 @@ export default function GraphPage() {
     enabled: !!projectId,
   })
 
-  const isGithubHuntRunning = githubHuntState?.status === 'running' || githubHuntState?.status === 'starting'
+  const isGithubHuntRunning = githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'pausing'
 
   // GitHub Hunt logs SSE hook
   const {
@@ -430,7 +430,7 @@ export default function GraphPage() {
     clearLogs: clearGithubHuntLogs,
   } = useGithubHuntSSE({
     projectId,
-    enabled: githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'paused' || githubHuntState?.status === 'stopping',
+    enabled: githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'paused' || githubHuntState?.status === 'stopping' || githubHuntState?.status === 'pausing',
   })
 
   // TruffleHog status hook
@@ -445,7 +445,7 @@ export default function GraphPage() {
     enabled: !!projectId,
   })
 
-  const isTrufflehogRunning = trufflehogState?.status === 'running' || trufflehogState?.status === 'starting'
+  const isTrufflehogRunning = trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'pausing'
 
   // TruffleHog logs SSE hook
   const {
@@ -455,7 +455,7 @@ export default function GraphPage() {
     clearLogs: clearTrufflehogLogs,
   } = useTrufflehogSSE({
     projectId,
-    enabled: trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused' || trufflehogState?.status === 'stopping',
+    enabled: trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused' || trufflehogState?.status === 'stopping' || trufflehogState?.status === 'pausing',
   })
 
   // Active sessions hook — polls kali-sandbox session list
@@ -1680,6 +1680,7 @@ export default function GraphPage() {
         onActivated={() => { refetchFresh(); refetchGraph() }}
         selectedVersionId={selectedVersionId}
         onSelectVersion={setSelectedVersionId}
+        liveScanStatus={reconState?.status}
       />
 
       <GvmConfirmModal

@@ -5,6 +5,7 @@ import { QueryProvider } from '@/providers/QueryProvider'
 import { AuthProvider } from '@/providers/AuthProvider'
 import { ProjectProvider } from '@/providers/ProjectProvider'
 import { ToastProvider, AlertProvider } from '@/components/ui'
+import { NavigationGuardProvider } from '@/context/NavigationGuardContext'
 import { AppLayout } from '@/components/layout'
 import { ThemeDbBridge } from '@/components/ThemeDbBridge'
 import { resolveWsHint } from '@/hooks/agentWsUrl'
@@ -73,7 +74,9 @@ export default function RootLayout({
               <ProjectProvider>
                 <ToastProvider>
                   <AlertProvider>
-                    <AppLayout>{children}</AppLayout>
+                    <NavigationGuardProvider>
+                      <AppLayout>{children}</AppLayout>
+                    </NavigationGuardProvider>
                   </AlertProvider>
                 </ToastProvider>
               </ProjectProvider>

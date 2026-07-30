@@ -15,10 +15,14 @@ import {
 } from '@/lib/mcp/schema'
 import { MCP_PRESETS, PRESET_CATEGORY_LABELS, type McpPreset } from '@/lib/mcp/presets'
 import { useAlertModal } from '@/components/ui'
+import { useDirtyState } from '@/hooks/useDirtyState'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import styles from './McpServersTab.module.css'
 
 interface Props {
   userId: string
+  /** Reports unsaved-changes state to the parent (drives the tab-switch guard). */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 interface TestResult {
@@ -168,7 +172,7 @@ function transportIcon(t: Transport) {
   return <Globe size={14} />
 }
 
-export default function McpServersTab({ userId }: Props) {
+export default function McpServersTab({ userId, onDirtyChange }: Props) {
   const [servers, setServers] = useState<MCPServer[]>([])
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<MCPServer | null>(null)
@@ -180,6 +184,17 @@ export default function McpServersTab({ userId }: Props) {
   const [topLevelError, setTopLevelError] = useState<string | null>(null)
   const [tokenVisible, setTokenVisible] = useState(false)
   const { dangerConfirm, alertError } = useAlertModal()
+
+  // Dirty tracking only matters in the edit/add view. Baseline is set when
+  // entering that view: an existing server for edit (dirty on any change), or an
+  // empty server for new/preset (so a prefilled preset is dirty and saveable).
+  const { isDirty: editingChanged, setBaseline } = useDirtyState<MCPServer | null>(editing)
+  const dirty = editing != null && editingChanged
+  // Local-only: the parent /settings page owns the global sidebar/beforeunload
+  // guard via onDirtyChange (avoids a duplicate confirm).
+  const { guardedNavigate } = useUnsavedChangesGuard(dirty, { trackGlobal: false })
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -202,6 +217,7 @@ export default function McpServersTab({ userId }: Props) {
 
   const startNew = () => {
     setEditing(emptyServer())
+    setBaseline(emptyServer())
     setIsNew(true)
     setErrors({})
     setTestResult(null)
@@ -222,6 +238,8 @@ export default function McpServersTab({ userId }: Props) {
     const cloned: MCPServer = JSON.parse(JSON.stringify(preset.template))
     cloned.id = id
     setEditing(cloned)
+    // Baseline = empty, so the prefilled preset is immediately dirty/saveable.
+    setBaseline(emptyServer())
     setIsNew(true)
     setErrors({})
     setTestResult(null)
@@ -230,6 +248,7 @@ export default function McpServersTab({ userId }: Props) {
 
   const startEdit = (srv: MCPServer) => {
     setEditing({ ...srv })
+    setBaseline({ ...srv })
     setIsNew(false)
     setErrors({})
     setTestResult(null)
@@ -572,8 +591,8 @@ export default function McpServersTab({ userId }: Props) {
               ? <><Loader2 className={styles.spin} size={14} /> Discovering…</>
               : <><Zap size={14} /> Discover and add new tools</>}
           </button>
-          <button className={styles.secondaryBtn} onClick={cancel} disabled={saving}>Cancel</button>
-          <button className={styles.primaryBtn} onClick={onSave} disabled={saving}>
+          <button className={styles.secondaryBtn} onClick={() => guardedNavigate(cancel)} disabled={saving}>Cancel</button>
+          <button className={styles.primaryBtn} onClick={onSave} disabled={saving || !dirty}>
             {saving ? <><Loader2 className={styles.spin} size={14} /> Saving…</> : 'Save'}
           </button>
         </div>

@@ -1,8 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Network, ShieldCheck, Target, ClipboardList, FolderOpen, ShieldAlert } from 'lucide-react'
+import { GuardedLink } from '@/components/GuardedLink'
 import styles from './NavigationBar.module.css'
 
 interface NavItem {
@@ -74,13 +74,13 @@ export function NavigationBar() {
 
           return (
             <li key={item.href}>
-              <Link
+              <GuardedLink
                 href={item.href}
                 className={`${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
               >
                 <span className={styles.navIcon}>{item.icon}</span>
                 <span className={styles.navLabel}>{item.label}</span>
-              </Link>
+              </GuardedLink>
             </li>
           )
         })}

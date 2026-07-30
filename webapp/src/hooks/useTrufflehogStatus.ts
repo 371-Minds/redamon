@@ -40,6 +40,10 @@ export function useTrufflehogStatus({
 
   const previousStatusRef = useRef<TrufflehogStatus | null>(null)
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // A pause/stop request is in flight. Docker's freeze can take several seconds,
+  // so hold the optimistic status ('pausing' / 'stopping') and skip polling until
+  // the request resolves -- a poll landing mid-freeze would revert the button.
+  const transitionRef = useRef(false)
 
   const onStatusChangeRef = useRef(onStatusChange)
   const onCompleteRef = useRef(onComplete)
@@ -53,6 +57,7 @@ export function useTrufflehogStatus({
 
   const fetchStatus = useCallback(async () => {
     if (!projectId) return
+    if (transitionRef.current) return
 
     try {
       const response = await fetch(`/api/trufflehog/${projectId}/status`)
@@ -119,6 +124,7 @@ export function useTrufflehogStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
     setState(prev => prev ? { ...prev, status: 'stopping' as TrufflehogState['status'] } : prev)
 
     try {
@@ -141,6 +147,7 @@ export function useTrufflehogStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])
@@ -149,6 +156,8 @@ export function useTrufflehogStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
+    setState(prev => prev ? { ...prev, status: 'pausing' as TrufflehogState['status'] } : prev)
 
     try {
       const response = await fetch(`/api/trufflehog/${projectId}/pause`, {
@@ -170,6 +179,7 @@ export function useTrufflehogStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])

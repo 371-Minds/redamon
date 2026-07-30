@@ -63,6 +63,10 @@ export function useReconStatus({
 
   const previousStatusRef = useRef<ReconStatus | null>(null)
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // A pause/stop request is in flight. Docker's freeze can take several seconds,
+  // so hold the optimistic status ('pausing' / 'stopping') and skip polling until
+  // the request resolves -- a poll landing mid-freeze would revert the button.
+  const transitionRef = useRef(false)
   const lastStartErrorRef = useRef<ReconStartError | null>(null)
 
   // Store callbacks in refs to avoid recreating fetchStatus
@@ -78,6 +82,7 @@ export function useReconStatus({
 
   const fetchStatus = useCallback(async () => {
     if (!projectId) return
+    if (transitionRef.current) return
 
     try {
       const response = await fetch(`/api/recon/${projectId}/status`)
@@ -154,6 +159,7 @@ export function useReconStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
     setState(prev => prev ? { ...prev, status: 'stopping' as ReconState['status'] } : prev)
 
     try {
@@ -176,6 +182,7 @@ export function useReconStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])
@@ -184,6 +191,8 @@ export function useReconStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
+    setState(prev => prev ? { ...prev, status: 'pausing' as ReconState['status'] } : prev)
 
     try {
       const response = await fetch(`/api/recon/${projectId}/pause`, {
@@ -205,6 +214,7 @@ export function useReconStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])

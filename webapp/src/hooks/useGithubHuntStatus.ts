@@ -40,6 +40,10 @@ export function useGithubHuntStatus({
 
   const previousStatusRef = useRef<GithubHuntStatus | null>(null)
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // A pause/stop request is in flight. Docker's freeze can take several seconds,
+  // so hold the optimistic status ('pausing' / 'stopping') and skip polling until
+  // the request resolves -- a poll landing mid-freeze would revert the button.
+  const transitionRef = useRef(false)
 
   const onStatusChangeRef = useRef(onStatusChange)
   const onCompleteRef = useRef(onComplete)
@@ -53,6 +57,7 @@ export function useGithubHuntStatus({
 
   const fetchStatus = useCallback(async () => {
     if (!projectId) return
+    if (transitionRef.current) return
 
     try {
       const response = await fetch(`/api/github-hunt/${projectId}/status`)
@@ -119,6 +124,7 @@ export function useGithubHuntStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
     setState(prev => prev ? { ...prev, status: 'stopping' as GithubHuntState['status'] } : prev)
 
     try {
@@ -141,6 +147,7 @@ export function useGithubHuntStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])
@@ -149,6 +156,8 @@ export function useGithubHuntStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
+    setState(prev => prev ? { ...prev, status: 'pausing' as GithubHuntState['status'] } : prev)
 
     try {
       const response = await fetch(`/api/github-hunt/${projectId}/pause`, {
@@ -170,6 +179,7 @@ export function useGithubHuntStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])

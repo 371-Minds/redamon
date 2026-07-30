@@ -16,6 +16,7 @@ let mockPathname = '/graph'
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
+  useRouter: () => ({ push: vi.fn() }),
   redirect: vi.fn(),
 }))
 

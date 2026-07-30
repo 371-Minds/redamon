@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { Loader2, Eye, EyeOff, Search } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal/Modal'
 import { ModelPicker } from '@/components/shared/ModelPicker'
+import { useDirtyState } from '@/hooks/useDirtyState'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import styles from './Settings.module.css'
 
 export interface TradecraftResource {
@@ -206,11 +208,14 @@ export function TradecraftResourceForm({
   resource,
   onSave,
   onCancel,
+  onDirtyChange,
 }: {
   userId: string
   resource: TradecraftResource | null
   onSave: () => void
   onCancel: () => void
+  /** Reports unsaved-changes state to the parent (drives the tab-switch guard). */
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const isEdit = !!resource?.id
   const [name, setName] = useState(resource?.name || '')
@@ -224,6 +229,19 @@ export function TradecraftResourceForm({
   const [error, setError] = useState('')
   const [presetSearch, setPresetSearch] = useState('')
 
+  // Dirty tracking over the editable fields. Baseline captured from `resource`
+  // in the reset effect below (empty for add, resource values for edit).
+  const currentValues = useMemo(
+    () => ({ name, url, githubToken, cacheTtl, enabled, llmModel }),
+    [name, url, githubToken, cacheTtl, enabled, llmModel],
+  )
+  const { isDirty, setBaseline } = useDirtyState(currentValues)
+  // Local-only: the parent /settings page owns the global sidebar/beforeunload
+  // guard via onDirtyChange (avoids a duplicate confirm).
+  const { guardedNavigate } = useUnsavedChangesGuard(isDirty, { trackGlobal: false })
+  useEffect(() => { onDirtyChange?.(isDirty) }, [isDirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
+
   const filteredPresets = useMemo(() => {
     const q = presetSearch.trim().toLowerCase()
     if (!q) return QUICK_ADD_PRESETS
@@ -235,13 +253,23 @@ export function TradecraftResourceForm({
   }, [presetSearch])
 
   useEffect(() => {
-    setName(resource?.name || '')
-    setUrl(resource?.url || '')
-    setGithubToken(resource?.githubTokenOverride || '')
-    setCacheTtl(resource?.cacheTtlSec ?? 0)
-    setEnabled(resource?.enabled ?? true)
-    setLlmModel(resource?.llmModel || '')
-  }, [resource])
+    const next = {
+      name: resource?.name || '',
+      url: resource?.url || '',
+      githubToken: resource?.githubTokenOverride || '',
+      cacheTtl: resource?.cacheTtlSec ?? 0,
+      enabled: resource?.enabled ?? true,
+      llmModel: resource?.llmModel || '',
+    }
+    setName(next.name)
+    setUrl(next.url)
+    setGithubToken(next.githubToken)
+    setCacheTtl(next.cacheTtl)
+    setEnabled(next.enabled)
+    setLlmModel(next.llmModel)
+    // Adopt these loaded values as the dirty baseline (add = empty, edit = resource).
+    setBaseline(next)
+  }, [resource, setBaseline])
 
   const handleQuickAdd = (preset: QuickAdd) => {
     setName(preset.name)
@@ -286,6 +314,7 @@ export function TradecraftResourceForm({
         const data = await resp.json().catch(() => ({}))
         throw new Error(data.error || `HTTP ${resp.status}`)
       }
+      setBaseline(currentValues)
       onSave()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
@@ -297,7 +326,7 @@ export function TradecraftResourceForm({
   return (
     <Modal
       isOpen={true}
-      onClose={onCancel}
+      onClose={() => guardedNavigate(onCancel)}
       title={isEdit ? 'Edit Tradecraft Resource' : 'Add Tradecraft Resource'}
       size="default"
       closeOnOverlayClick={false}
@@ -523,10 +552,10 @@ export function TradecraftResourceForm({
         {error && <div className={styles.testError}>{error}</div>}
 
         <div className={styles.formActions}>
-          <button type="button" className="secondaryButton" onClick={onCancel} disabled={submitting}>
+          <button type="button" className="secondaryButton" onClick={() => guardedNavigate(onCancel)} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" className="primaryButton" disabled={submitting}>
+          <button type="submit" className="primaryButton" disabled={submitting || !isDirty}>
             {submitting && <Loader2 size={14} className={styles.spin} />}
             {isEdit ? 'Save changes' : 'Add Resource'}
           </button>

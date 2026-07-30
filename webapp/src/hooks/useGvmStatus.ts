@@ -40,6 +40,10 @@ export function useGvmStatus({
 
   const previousStatusRef = useRef<GvmStatus | null>(null)
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // A pause/stop request is in flight. Docker's freeze can take several seconds,
+  // so hold the optimistic status ('pausing' / 'stopping') and skip polling until
+  // the request resolves -- a poll landing mid-freeze would revert the button.
+  const transitionRef = useRef(false)
 
   const onStatusChangeRef = useRef(onStatusChange)
   const onCompleteRef = useRef(onComplete)
@@ -53,6 +57,7 @@ export function useGvmStatus({
 
   const fetchStatus = useCallback(async () => {
     if (!projectId) return
+    if (transitionRef.current) return
 
     try {
       const response = await fetch(`/api/gvm/${projectId}/status`)
@@ -119,6 +124,7 @@ export function useGvmStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
     setState(prev => prev ? { ...prev, status: 'stopping' as GvmState['status'] } : prev)
 
     try {
@@ -141,6 +147,7 @@ export function useGvmStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])
@@ -149,6 +156,8 @@ export function useGvmStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    transitionRef.current = true
+    setState(prev => prev ? { ...prev, status: 'pausing' as GvmState['status'] } : prev)
 
     try {
       const response = await fetch(`/api/gvm/${projectId}/pause`, {
@@ -170,6 +179,7 @@ export function useGvmStatus({
       return null
 
     } finally {
+      transitionRef.current = false
       setIsLoading(false)
     }
   }, [projectId])

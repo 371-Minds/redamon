@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import { Loader2, Pin, PinOff, Trash2, Pencil, Play, Save, Check, X } from 'lucide-react'
 import { Modal, useAlertModal, useToast } from '@/components/ui'
+import type { ReconStatus } from '@/lib/recon-types'
 import type { ScanVersionSummary } from '../../hooks/useScanVersions'
 import styles from './VersionManager.module.css'
 
@@ -18,6 +19,26 @@ interface VersionManagerProps {
   /** Currently viewed version (null = the active one). */
   selectedVersionId: string | null
   onSelectVersion: (versionId: string | null) => void
+  /** Live recon status, so the active row says whether a scan is writing to it. */
+  liveScanStatus?: ReconStatus
+}
+
+/** What a running/paused recon means for the row that is the live graph. */
+function liveScanBadge(status: ReconStatus | undefined): { text: string; busy: boolean } | null {
+  switch (status) {
+    case 'starting':
+      return { text: 'Starting', busy: true }
+    case 'running':
+      return { text: 'Running', busy: true }
+    case 'pausing':
+      return { text: 'Pausing', busy: false }
+    case 'paused':
+      return { text: 'Paused', busy: false }
+    case 'stopping':
+      return { text: 'Stopping', busy: false }
+    default:
+      return null
+  }
 }
 
 function formatDate(iso: string): string {
@@ -49,7 +70,9 @@ export function VersionManager({
   onActivated,
   selectedVersionId,
   onSelectVersion,
+  liveScanStatus,
 }: VersionManagerProps) {
+  const liveBadge = liveScanBadge(liveScanStatus)
   const { alertError, dangerConfirm } = useAlertModal()
   const toast = useToast()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -177,7 +200,7 @@ export function VersionManager({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Scan versions" size="large">
+    <Modal isOpen={isOpen} onClose={onClose} title="Scan versions" size="full" className={styles.modal}>
       <div className={styles.content}>
         <div className={styles.intro}>
           <p>
@@ -197,7 +220,6 @@ export function VersionManager({
               <tr>
                 <th>#</th>
                 <th>Label</th>
-                <th>Created</th>
                 <th className={styles.num}>Nodes</th>
                 <th className={styles.num}>Snapshot</th>
                 <th>State</th>
@@ -233,15 +255,26 @@ export function VersionManager({
                           </button>
                         </span>
                       ) : (
-                        <span className={styles.label}>{v.label}</span>
+                        <span className={styles.labelStack}>
+                          <span className={styles.label}>{v.label}</span>
+                          <span className={styles.created}>{formatDate(v.createdAt)}</span>
+                        </span>
                       )}
                     </td>
-                    <td className={styles.muted}>{formatDate(v.createdAt)}</td>
                     <td className={styles.num}>{v.nodeCount?.toLocaleString() ?? '—'}</td>
                     <td className={`${styles.num} ${styles.muted}`}>
                       {v.isCurrent ? 'live' : formatBytes(v.snapshotBytes)}
                     </td>
                     <td>
+                      {v.isCurrent && liveBadge && (
+                        <span
+                          className={liveBadge.busy ? styles.runningBadge : styles.busyBadge}
+                          title={`A recon scan is ${liveBadge.text.toLowerCase()} on this version`}
+                        >
+                          {liveBadge.busy && <span className={styles.runningDot} />}
+                          {liveBadge.text}
+                        </span>
+                      )}
                       {v.isCurrent && <span className={styles.activeBadge}>Active</span>}
                       {v.pinned && <span className={styles.pinBadge}>Pinned</span>}
                       {!v.isCurrent && !v.activatable && (
@@ -274,23 +307,25 @@ export function VersionManager({
                           <span>Activate</span>
                         </button>
                         <button
-                          className={styles.iconBtn}
+                          className={styles.actionBtn}
                           onClick={() => startRename(v)}
                           disabled={busy}
                           title="Rename"
                         >
-                          <Pencil size={13} />
+                          <Pencil size={12} />
+                          <span>Rename</span>
                         </button>
                         <button
-                          className={styles.iconBtn}
+                          className={styles.actionBtn}
                           onClick={() => togglePin(v)}
                           disabled={busy}
                           title={v.pinned ? 'Unpin (allow automatic cleanup)' : 'Pin (protect from automatic cleanup)'}
                         >
-                          {v.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                          {v.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                          <span>{v.pinned ? 'Unpin' : 'Pin'}</span>
                         </button>
                         <button
-                          className={`${styles.iconBtn} ${styles.dangerBtn}`}
+                          className={`${styles.actionBtn} ${styles.dangerBtn}`}
                           onClick={() => remove(v)}
                           disabled={busy || v.isCurrent || v.pinned}
                           title={
@@ -299,7 +334,8 @@ export function VersionManager({
                               : 'Delete this version and its snapshot'
                           }
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={12} />
+                          <span>Delete</span>
                         </button>
                       </div>
                     </td>

@@ -2,7 +2,9 @@
 
 import type { ReactNode } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
+// Guarded drop-in for next/link: consults the unsaved-changes guard before
+// navigating, so header links prompt when a dirty form would lose edits.
+import { GuardedLink as Link } from '@/components/GuardedLink'
 import { usePathname } from 'next/navigation'
 import { Crosshair, FolderOpen, Shield, BookOpen, TrendingUp, FileText, Settings, Users, GitBranch, Network } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'

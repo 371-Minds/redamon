@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, ArrowRight, Plus, Minus, RefreshCw, ShieldAlert, Download, X } from 'lucide-react'
 import type { ScanVersionSummary } from '../../hooks/useScanVersions'
 import type { GraphNode, DeltaState } from '../../types'
@@ -457,6 +457,20 @@ function DeltaOverlay({
     }
   }, [data, changesOnly])
 
+  // The parent re-renders on every recon-status poll (~5s). Force-graph re-heats
+  // its D3 simulation whenever the `graphData` object IDENTITY changes, so an inline
+  // `{ ...filtered, projectId: '' }` here made the overlay jitter every few seconds
+  // even though nothing actually changed. Memoize it (and the click handler) so the
+  // canvas gets a stable reference and the layout stays put between real updates.
+  const overlayData = useMemo(
+    () => (filtered ? { ...filtered, projectId: '' } : undefined),
+    [filtered]
+  )
+  const handleNodeClick = useCallback(
+    (n: GraphNode) => onSelectNode(n as GraphNode & { deltaState: DeltaState }),
+    [onSelectNode]
+  )
+
   const changes = selectedNode ? changedByKey.get(selectedNode.id)?.changes ?? [] : []
 
   if (error) return <div className={styles.error}>{error}</div>
@@ -472,7 +486,7 @@ function DeltaOverlay({
             <div className={styles.overlayLoading}><Loader2 size={18} className={styles.spinner} /></div>
           ) : (
             <GraphCanvas
-              data={filtered ? { ...filtered, projectId: '' } : undefined}
+              data={overlayData}
               isLoading={loading}
               error={null}
               projectId=""
@@ -481,7 +495,7 @@ function DeltaOverlay({
               height={size.height}
               showLabels={false}
               selectedNode={selectedNode}
-              onNodeClick={(n) => onSelectNode(n as GraphNode & { deltaState: DeltaState })}
+              onNodeClick={handleNodeClick}
               isDark={isDark}
             />
           )}

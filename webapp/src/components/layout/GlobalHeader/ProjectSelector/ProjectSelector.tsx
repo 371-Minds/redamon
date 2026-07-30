@@ -1,14 +1,16 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { ChevronDown, FolderOpen, Plus, Settings } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
 import { useProjects, type ProjectListItem } from '@/hooks/useProjects'
+import { useGuardedRouter, useNavigationGuard } from '@/context/NavigationGuardContext'
 import styles from './ProjectSelector.module.css'
 
 export function ProjectSelector() {
-  const router = useRouter()
+  const router = useGuardedRouter()
+  const guard = useNavigationGuard()
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -26,7 +28,10 @@ export function ProjectSelector() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSelectProject = (project: ProjectListItem) => {
+  const handleSelectProject = async (project: ProjectListItem) => {
+    // Switching the active project abandons whatever dirty form is open, so
+    // confirm before mutating context (not just before navigating).
+    if (guard?.hasGuards() && !(await guard.confirmAllGuards())) return
     setCurrentProject({
       id: project.id,
       name: project.name,
@@ -38,9 +43,10 @@ export function ProjectSelector() {
     })
     setIsOpen(false)
 
-    // If on a project settings page, navigate to the new project's settings
+    // If on a project settings page, navigate to the new project's settings.
+    // The guard already ran above, so push directly (avoid a second prompt).
     if (pathname.match(/\/projects\/[^/]+\/settings/)) {
-      router.push(`/projects/${project.id}/settings`)
+      router.pushUnguarded(`/projects/${project.id}/settings`)
     }
   }
 

@@ -108,4 +108,43 @@ describe('ScanScheduleTable', () => {
     await waitFor(() => expect(dangerConfirm).toHaveBeenCalled())
     expect(fetchMock.mock.calls.find(c => c[1]?.method === 'DELETE')).toBeUndefined()
   })
+
+  test('no "Delete selected" button until a run is checked', async () => {
+    render(<ScanScheduleTable projectId="p1" />)
+    await waitFor(() => expect(screen.getByText('deferred_ram')).toBeTruthy())
+    expect(screen.queryByText(/Delete selected/)).toBeNull()
+  })
+
+  test('select-all checks every run and reveals the delete button', async () => {
+    render(<ScanScheduleTable projectId="p1" />)
+    await waitFor(() => expect(screen.getByText('deferred_ram')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Select all runs'))
+    expect(screen.getByText(/Delete selected \(1\)/)).toBeTruthy()
+  })
+
+  test('deleting selected runs posts the ids to the history endpoint', async () => {
+    dangerConfirm.mockResolvedValue(true)
+    render(<ScanScheduleTable projectId="p1" />)
+    await waitFor(() => expect(screen.getByText('deferred_ram')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Select run j1'))
+    fetchMock.mockResolvedValueOnce(ok({ ok: true, deleted: 1 }))
+    fireEvent.click(screen.getByText(/Delete selected \(1\)/))
+    await waitFor(() => {
+      const del = fetchMock.mock.calls.find(c => c[1]?.method === 'DELETE')
+      expect(del).toBeTruthy()
+      expect(String(del![0])).toBe('/api/projects/p1/schedules/history')
+      expect(JSON.parse(del![1].body as string).ids).toEqual(['j1'])
+    })
+    expect(toastInfo).toHaveBeenCalledWith('Deleted 1 run record')
+  })
+
+  test('a checked run is NOT deleted if the confirm is declined', async () => {
+    dangerConfirm.mockResolvedValue(false)
+    render(<ScanScheduleTable projectId="p1" />)
+    await waitFor(() => expect(screen.getByText('deferred_ram')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Select run j1'))
+    fireEvent.click(screen.getByText(/Delete selected \(1\)/))
+    await waitFor(() => expect(dangerConfirm).toHaveBeenCalled())
+    expect(fetchMock.mock.calls.find(c => c[1]?.method === 'DELETE')).toBeUndefined()
+  })
 })

@@ -181,23 +181,27 @@ export function GraphToolbar({
   agentActiveCount = 0,
   agentConversations = [],
 }: GraphToolbarProps) {
-  const isReconBusy = reconStatus === 'running' || reconStatus === 'starting'
+  const isReconBusy = reconStatus === 'running' || reconStatus === 'starting' || reconStatus === 'pausing'
   const isReconStopping = reconStatus === 'stopping'
+  const isReconPausing = reconStatus === 'pausing'
   const isReconRunning = isReconBusy || isReconStopping
   const isReconPaused = reconStatus === 'paused'
   const isReconActive = isReconRunning || isReconPaused
-  const isGvmBusy = gvmStatus === 'running' || gvmStatus === 'starting'
+  const isGvmBusy = gvmStatus === 'running' || gvmStatus === 'starting' || gvmStatus === 'pausing'
   const isGvmStopping = gvmStatus === 'stopping'
+  const isGvmPausing = gvmStatus === 'pausing'
   const isGvmRunning = isGvmBusy || isGvmStopping
   const isGvmPaused = gvmStatus === 'paused'
   const isGvmActive = isGvmRunning || isGvmPaused
-  const isGithubHuntBusy = githubHuntStatus === 'running' || githubHuntStatus === 'starting'
+  const isGithubHuntBusy = githubHuntStatus === 'running' || githubHuntStatus === 'starting' || githubHuntStatus === 'pausing'
   const isGithubHuntStopping = githubHuntStatus === 'stopping'
+  const isGithubHuntPausing = githubHuntStatus === 'pausing'
   const isGithubHuntRunning = isGithubHuntBusy || isGithubHuntStopping
   const isGithubHuntPaused = githubHuntStatus === 'paused'
   const isGithubHuntActive = isGithubHuntRunning || isGithubHuntPaused
-  const isTrufflehogBusy = trufflehogStatus === 'running' || trufflehogStatus === 'starting'
+  const isTrufflehogBusy = trufflehogStatus === 'running' || trufflehogStatus === 'starting' || trufflehogStatus === 'pausing'
   const isTrufflehogStopping = trufflehogStatus === 'stopping'
+  const isTrufflehogPausing = trufflehogStatus === 'pausing'
   const isTrufflehogRunning = isTrufflehogBusy || isTrufflehogStopping
   const isTrufflehogPaused = trufflehogStatus === 'paused'
   const isTrufflehogActive = isTrufflehogRunning || isTrufflehogPaused
@@ -319,16 +323,17 @@ export function GraphToolbar({
                 ) : (
                   <Play size={14} />
                 )}
-                <span>{isReconStopping ? 'Stopping...' : isReconBusy ? 'Running...' : isReconPaused ? 'Resume' : 'Start Recon Pipeline'}</span>
+                <span>{isReconStopping ? 'Stopping...' : isReconPausing ? 'Pausing...' : isReconBusy ? 'Running...' : isReconPaused ? 'Resume' : 'Start Recon Pipeline'}</span>
               </button>
 
               {isReconBusy && (
                 <button
                   className={styles.pauseButton}
                   onClick={onPauseRecon}
-                  title="Pause Recon"
+                  disabled={isReconPausing}
+                  title={isReconPausing ? 'Pausing...' : 'Pause Recon'}
                 >
-                  <Pause size={14} />
+                  {isReconPausing ? <Loader2 size={14} className={styles.spinner} /> : <Pause size={14} />}
                 </button>
               )}
 
@@ -400,16 +405,17 @@ export function GraphToolbar({
                 ) : (
                   <Shield size={14} />
                 )}
-                <span>{isGvmStopping ? 'Stopping...' : isGvmBusy ? 'Scanning...' : isGvmPaused ? 'Resume' : 'GVM Scan'}</span>
+                <span>{isGvmStopping ? 'Stopping...' : isGvmPausing ? 'Pausing...' : isGvmBusy ? 'Scanning...' : isGvmPaused ? 'Resume' : 'GVM Scan'}</span>
               </button>
 
               {isGvmBusy && (
                 <button
                   className={styles.pauseButton}
                   onClick={onPauseGvm}
-                  title="Pause GVM Scan"
+                  disabled={isGvmPausing}
+                  title={isGvmPausing ? 'Pausing...' : 'Pause GVM Scan'}
                 >
-                  <Pause size={14} />
+                  {isGvmPausing ? <Loader2 size={14} className={styles.spinner} /> : <Pause size={14} />}
                 </button>
               )}
 

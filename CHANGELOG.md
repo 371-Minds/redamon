@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-07-30
+
+### Added
+
+- **Scan Timeline is now a first-class part of the Red Zone.** **Recon Delta** and **Scan Schedule** are top-level tabs next to Graph Map (no longer buried), the version switcher sits in the global header, and the Version Manager is reachable from both. Documented in the new [Scan Timeline](https://github.com/RedAmon/redamon/wiki/Scan-Timeline) wiki page.
+- **Recon Delta overlay polish.** The diff canvas fills its container, the legend moved onto the controls bar with per-state counts and a "Show unchanged" toggle, and the node drawer opens at 50% page width so field-level before/after tables are readable.
+- **Unsaved-changes protection on config forms.** Save/Update buttons stay disabled until you actually change something, and leaving a form with unsaved edits (sidebar/header links, project/user switch, tab change, modal close, browser refresh) now prompts before discarding. Covers the recon Project form, `/settings` tabs, and the LLM provider, MCP, and Tradecraft forms. Fixes the case where applying a recon preset did nothing until you clicked Update.
+
+### Fixed
+
+- **Double discard prompt.** Confirming "leave" on a dirty form could re-show the prompt a second time before navigating; the navigation guard now runs each check exactly once.
+- **Scheduled runs blocked by a busy graph vanished from the run history.** A schedule that fired while a scan or a version activation was in progress was skipped silently, so the operator saw a gap with no explanation. Blocked fires are now recorded as `failed` (or `deferred_ram` under memory pressure) with the reason, and the schedule rolls forward to its next slot.
+- **Activating a version left stale snapshot bytes on the promoted row.** The newly-active version renders from the live graph, so its stored snapshot is now cleared on promotion instead of lingering in Postgres.
+- Recon Delta and Scan Schedule tables no longer clip at a narrow fixed width.
+
+---
+
 ## [6.3.0] - 2026-07-30
 
 ### Added

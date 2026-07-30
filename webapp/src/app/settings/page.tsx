@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, Loader2, Eye, EyeOff, Upload, Download, Swords, R
 import { useProject } from '@/providers/ProjectProvider'
 import { useAuth } from '@/providers/AuthProvider'
 import { useVersionCheck } from '@/hooks/useVersionCheck'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { LlmProviderForm } from '@/components/settings/LlmProviderForm'
 import McpServersTab from '@/components/settings/mcp/McpServersTab'
 import type { ProviderData } from '@/components/settings/LlmProviderForm'
@@ -889,6 +890,23 @@ export default function SettingsPage() {
   const initialTab = searchParams.get('tab') || 'providers'
   const [activeTab, setActiveTab] = useState(validTabs.includes(initialTab) ? initialTab : 'providers')
 
+  // Unsaved-changes guard. Each tab hosts a distinct form: the API Keys tab uses
+  // the page-level `settingsDirty`; the providers/mcp/tradecraft tabs have child
+  // forms with local state that unmounts on tab switch, so they report dirtiness
+  // up via `childDirty`. Switching tabs, sidebar nav, and browser refresh all
+  // prompt when the tab being left has unsaved edits.
+  const [childDirty, setChildDirty] = useState(false)
+  const pageDirty = settingsDirty || childDirty
+  const { confirmDiscard } = useUnsavedChangesGuard(pageDirty)
+
+  const switchTab = useCallback(async (next: string) => {
+    if (next === activeTab) return
+    const leavingDirty = (activeTab === 'keys' && settingsDirty) || childDirty
+    if (leavingDirty && !(await confirmDiscard())) return
+    setChildDirty(false)
+    setActiveTab(next)
+  }, [activeTab, settingsDirty, childDirty, confirmDiscard])
+
   // Tradecraft Resources state
   type TcResource = import('@/components/settings/TradecraftResourceForm').TradecraftResource & {
     crawlStoppedBecause?: string
@@ -1009,25 +1027,25 @@ export default function SettingsPage() {
       </p>
 
       <div className={styles.tabBar}>
-        <button className={`${styles.tab} ${activeTab === 'providers' ? styles.tabActive : ''}`} onClick={() => setActiveTab('providers')}>
+        <button className={`${styles.tab} ${activeTab === 'providers' ? styles.tabActive : ''}`} onClick={() => switchTab('providers')}>
           LLM Providers
         </button>
-        <button className={`${styles.tab} ${activeTab === 'skills' ? styles.tabActive : ''}`} onClick={() => setActiveTab('skills')}>
+        <button className={`${styles.tab} ${activeTab === 'skills' ? styles.tabActive : ''}`} onClick={() => switchTab('skills')}>
           <Swords size={14} /> Agent Skills
         </button>
-        <button className={`${styles.tab} ${activeTab === 'chat-skills' ? styles.tabActive : ''}`} onClick={() => setActiveTab('chat-skills')}>
+        <button className={`${styles.tab} ${activeTab === 'chat-skills' ? styles.tabActive : ''}`} onClick={() => switchTab('chat-skills')}>
           <BookOpen size={14} /> Chat Skills
         </button>
-        <button className={`${styles.tab} ${activeTab === 'tradecraft' ? styles.tabActive : ''}`} onClick={() => setActiveTab('tradecraft')}>
+        <button className={`${styles.tab} ${activeTab === 'tradecraft' ? styles.tabActive : ''}`} onClick={() => switchTab('tradecraft')}>
           <BookOpen size={14} /> Tradecraft
         </button>
-        <button className={`${styles.tab} ${activeTab === 'keys' ? styles.tabActive : ''}`} onClick={() => setActiveTab('keys')}>
+        <button className={`${styles.tab} ${activeTab === 'keys' ? styles.tabActive : ''}`} onClick={() => switchTab('keys')}>
           API Keys & Tunneling
         </button>
-        <button className={`${styles.tab} ${activeTab === 'mcp' ? styles.tabActive : ''}`} onClick={() => setActiveTab('mcp')}>
+        <button className={`${styles.tab} ${activeTab === 'mcp' ? styles.tabActive : ''}`} onClick={() => switchTab('mcp')}>
           <Server size={14} /> MCP Tool Plugins
         </button>
-        <button className={`${styles.tab} ${activeTab === 'system' ? styles.tabActive : ''}`} onClick={() => setActiveTab('system')}>
+        <button className={`${styles.tab} ${activeTab === 'system' ? styles.tabActive : ''}`} onClick={() => switchTab('system')}>
           <Info size={14} /> System
         </button>
       </div>
@@ -1055,6 +1073,7 @@ export default function SettingsPage() {
             userId={userId}
             provider={editingProvider}
             existingProviderTypes={providers.map(p => p.providerType)}
+            onDirtyChange={setChildDirty}
             onSave={() => {
               setShowProviderForm(false)
               setEditingProvider(null)
@@ -1279,6 +1298,7 @@ export default function SettingsPage() {
           <TradecraftResourceForm
             userId={userId!}
             resource={tcEditing}
+            onDirtyChange={setChildDirty}
             onSave={tcHandleSave}
             onCancel={tcHandleCancel}
           />
@@ -1703,7 +1723,7 @@ export default function SettingsPage() {
       </div></>}
 
       {/* Tab: System */}
-      {activeTab === 'mcp' && userId && <McpServersTab userId={userId} />}
+      {activeTab === 'mcp' && userId && <McpServersTab userId={userId} onDirtyChange={setChildDirty} />}
 
       {activeTab === 'system' && (
         <>
