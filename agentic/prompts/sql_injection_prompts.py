@@ -87,9 +87,17 @@ value (uses only placeholders + enumerated ranges):
       done
     done
 
-The payload(s) printed as a FLIP are your bypass: replay one, keep the returned session cookie, and
-pivot to the authenticated surface (Step 7). ONLY if the sweep prints nothing across ALL fields, shapes,
-and paren depths may you treat the login as non-bypassable.
+A FLIP printed by the sweep is a CONFIRMED bypass, not a lead to re-derive. Replay it by copying the
+EXACT payload string the sweep emitted, byte-for-byte, into a request that persists cookies (a cookie
+jar), then pivot to the authenticated surface (Step 7). Do NOT retype it, adjust its paren count, or
+"try a similar" always-true / UNION shape — a hand-guessed variant that fails proves nothing about the
+FLIP, because the winning breakout depth/shape is exactly what the sweep already found for you. If a
+replay does NOT reproduce the authenticated / redirect / session-set state, the cause is a mangled or
+guessed payload or a dropped session cookie, NEVER a "false positive": re-run the exact logged payload
+with the cookie jar before you draw any conclusion. Declaring a printed FLIP a non-reproducible false
+positive (and returning to extraction/cracking) is a FORBIDDEN move — it has thrown away winnable runs.
+You may declare the login non-bypassable ONLY if the sweep printed NO FLIP across ALL fields, shapes,
+and paren depths; any FLIP on record forbids that conclusion outright.
 
 **Two inferences FORBIDDEN until that scripted sweep has RUN and printed nothing (each has cost whole runs):**
 - **"The password is verified in application code, so a SQL bypass is impossible."** Not admissible from

@@ -212,7 +212,7 @@ universal SSTI oracle:
 - **Arithmetic-evaluating engines** (Jinja2, Twig, Freemarker, Velocity, ERB,
   Smarty, Mako) evaluate a math probe to `49` (Jinja2 `{{{{7*7}}}}`, Freemarker
   `${{7*7}}`, ERB `<%= 7*7 %>`). Math evaluating -> SSTI confirmed.
-- **When template DELIMITER characters are FILTERED (`{` `}` `%` `$` `<` `>` rejected --
+- **When template DELIMITER characters are FILTERED (`{{` `}}` `%` `$` `<` `>` rejected --
   e.g. a `400`/"forbidden characters" the instant you send one):** a blocked delimiter is
   NOT evidence of "no SSTI," and it is NOT a reason to abandon the parameter or fall back
   to SQLi/other classes. Consider that your input may land INSIDE a template construct the
