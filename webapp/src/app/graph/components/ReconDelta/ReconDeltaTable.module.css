@@ -1,10 +1,15 @@
 .wrap {
+  /* Fill the graph-page table slot (.content is position:relative, NOT flex, so
+     `flex:1` here would be inert — absolute inset:0 is the pattern DataTable uses).
+     The outer box never scrolls; the active section (.tableWrap) scrolls or the
+     overlay flexes to fill. */
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3);
-  overflow: auto;
-  flex: 1;
+  overflow: hidden;
 }
 
 .controls {
@@ -156,7 +161,13 @@
 }
 
 .tableWrap {
+  /* Takes the remaining height under the controls + scorecard + tabs. List
+     sections scroll here; the overlay child flexes to fill it. */
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .table {
@@ -250,10 +261,15 @@
 }
 
 /* --- Recon Delta graph overlay (Section 6.3) --- */
+/* Fills the remaining height instead of a fixed 480px block: min-height:0 on the
+   whole flex chain lets the canvas grow to the bottom of the page, and the force
+   graph (sized via useDimensions on .overlayCanvas) tracks it. A modest min-height
+   keeps it usable on very short viewports. */
 .overlayWrap {
   display: flex;
   flex-direction: column;
-  min-height: 480px;
+  flex: 1;
+  min-height: 320px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-default);
   overflow: hidden;
@@ -262,13 +278,13 @@
 .overlayBody {
   display: flex;
   flex: 1;
-  min-height: 440px;
+  min-height: 0;
 }
 
 .overlayCanvas {
   position: relative;
   flex: 1;
-  min-height: 440px;
+  min-height: 0;
 }
 
 .overlayLoading {
