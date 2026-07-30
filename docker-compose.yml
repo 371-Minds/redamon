@@ -457,6 +457,13 @@ services:
       # "myregistry.local/naabu:latest,myregistry.local/httpx:latest"). Empty =
       # strict shipped-only. Forwarded to the recon pipeline by container_manager.
       RECON_EXTRA_ALLOWED_IMAGES: ${RECON_EXTRA_ALLOWED_IMAGES:-}
+      # Scan Timeline — Scan Scheduler worker (plan Section 7.2). It ticks here
+      # (the orchestrator owns admission + spawn) and asks the webapp to run each
+      # due schedule through the same start path a manual scan uses. Listed
+      # explicitly because the orchestrator has NO env_file: a value set only in
+      # .env would be silently inert here.
+      SCAN_SCHEDULER_ENABLED: ${SCAN_SCHEDULER_ENABLED:-true}
+      SCAN_SCHEDULER_TICK_SECONDS: ${SCAN_SCHEDULER_TICK_SECONDS:-60}
       # D3: global + per-user concurrent-scan ceilings enforced at admission.
       # SAFE, GENEROUS DEFAULTS so unset resolves to a real limit (never "no cap").
       RECON_MAX_CONCURRENT_GLOBAL: ${RECON_MAX_CONCURRENT_GLOBAL:-30}

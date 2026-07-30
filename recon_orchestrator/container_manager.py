@@ -485,8 +485,16 @@ class ContainerManager:
         webapp_api_url: str,
         recon_path: str,
         custom_templates_path: str = "",
+        scan_mode: Optional[str] = None,
     ) -> ReconState:
-        """Start a recon container for a project"""
+        """Start a recon container for a project.
+
+        `scan_mode` ("new" | "overwrite") is Scan Timeline telemetry: the webapp has
+        already decided what happens to the outgoing graph (frozen as a saved
+        version, or discarded) before calling us. It changes NOTHING about the
+        pipeline — a full recon always wipes and rebuilds the live graph — it is
+        only forwarded to the container as SCAN_MODE for logs/telemetry.
+        """
 
         # Check if already running or paused
         current_state = await self.get_status(project_id)
@@ -555,6 +563,8 @@ class ContainerManager:
                     # recon pipeline so air-gapped/private-registry deployments work.
                     "RECON_EXTRA_ALLOWED_IMAGES": os.environ.get("RECON_EXTRA_ALLOWED_IMAGES", ""),
                     "RECON_RUN_ID": recon_run_id,
+                    # Scan Timeline telemetry only (see start_recon docstring).
+                    "SCAN_MODE": scan_mode or "",
                     "UPDATE_GRAPH_DB": "true",
                     # HOST_RECON_OUTPUT_PATH: Required for nested Docker containers (naabu, httpx, etc.)
                     # These run as sibling containers and need host paths for volume mounts

@@ -1,0 +1,317 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { Loader2, Plus, Play, Pause, Trash2, CalendarClock } from 'lucide-react'
+import { useAlertModal, useToast } from '@/components/ui'
+import styles from './ScanScheduleTable.module.css'
+
+interface Schedule {
+  id: string
+  label: string
+  mode: 'once' | 'interval' | 'cron'
+  runAt: string | null
+  intervalMinutes: number | null
+  cronExpr: string | null
+  scanMode: 'new' | 'overwrite'
+  enabled: boolean
+  nextRunAt: string | null
+  lastRunAt: string | null
+}
+
+interface Job {
+  id: string
+  trigger: 'manual' | 'scheduled'
+  mode: 'new' | 'overwrite' | null
+  status: string
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+  nodeCount: number | null
+  ramReason: string | null
+  version: { seq: number; label: string } | null
+}
+
+interface ScanScheduleTableProps {
+  projectId: string | null
+}
+
+function fmt(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+}
+
+function duration(job: Job): string {
+  if (!job.startedAt || !job.finishedAt) return '—'
+  const ms = new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  const mins = Math.floor(ms / 60000)
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
+}
+
+function describeSchedule(s: Schedule): string {
+  if (s.mode === 'once') return `once at ${fmt(s.runAt)}`
+  if (s.mode === 'interval') return `every ${s.intervalMinutes} min`
+  return `cron ${s.cronExpr} (UTC)`
+}
+
+/**
+ * Scan Timeline — Scan Scheduler (Section 7.1).
+ *
+ * Upcoming schedules on top, run history below. The history is the honest record
+ * of what the scheduler did: a run that could not start shows up as `failed` or
+ * `deferred_ram` with the reason, rather than silently not happening.
+ */
+export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
+  const { alertError, dangerConfirm } = useAlertModal()
+  const toast = useToast()
+  const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [loading, setLoading] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  // create form
+  const [mode, setMode] = useState<Schedule['mode']>('interval')
+  const [runAt, setRunAt] = useState('')
+  const [intervalMinutes, setIntervalMinutes] = useState(1440)
+  const [cronExpr, setCronExpr] = useState('0 3 * * *')
+  const [scanMode, setScanMode] = useState<Schedule['scanMode']>('new')
+  const [label, setLabel] = useState('')
+
+  const load = useCallback(async () => {
+    if (!projectId) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/schedules`)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Failed to load schedules')
+      setSchedules(body.schedules ?? [])
+      setJobs(body.jobs ?? [])
+    } catch (err) {
+      alertError(err instanceof Error ? err.message : String(err), 'Schedules')
+    } finally {
+      setLoading(false)
+    }
+  }, [projectId, alertError])
+
+  useEffect(() => { load() }, [load])
+
+  const create = async () => {
+    if (!projectId) return
+    setCreating(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/schedules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode,
+          label,
+          scanMode,
+          ...(mode === 'once' ? { runAt: runAt ? new Date(runAt).toISOString() : null } : {}),
+          ...(mode === 'interval' ? { intervalMinutes: Number(intervalMinutes) } : {}),
+          ...(mode === 'cron' ? { cronExpr } : {}),
+        }),
+      })
+      const body = await res.json()
+      if (!res.ok) {
+        alertError(String(body.error || 'Could not create the schedule'), 'Schedule not created')
+        return
+      }
+      toast.info('Schedule created')
+      setLabel('')
+      load()
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const patch = async (s: Schedule, data: Record<string, unknown>) => {
+    if (!projectId) return
+    setBusyId(s.id)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/schedules/${s.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const body = await res.json()
+      if (!res.ok) {
+        alertError(String(body.error || 'Could not update the schedule'), 'Schedule')
+        return
+      }
+      load()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const remove = async (s: Schedule) => {
+    if (!projectId) return
+    const confirmed = await dangerConfirm(
+      `Delete this schedule (${describeSchedule(s)})? Past runs stay in the history.`,
+      'Delete schedule'
+    )
+    if (!confirmed) return
+    setBusyId(s.id)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/schedules/${s.id}`, { method: 'DELETE' })
+      const body = await res.json()
+      if (!res.ok) {
+        alertError(String(body.error || 'Could not delete the schedule'), 'Schedule')
+        return
+      }
+      toast.info('Schedule deleted')
+      load()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className={styles.wrap}>
+      <section className={styles.section}>
+        <h3 className={styles.heading}>
+          <CalendarClock size={14} /> Scheduled scans
+          {loading && <Loader2 size={12} className={styles.spinner} />}
+        </h3>
+
+        <div className={styles.form}>
+          <label className={styles.field}>
+            When
+            <select className={styles.input} value={mode} onChange={e => setMode(e.target.value as Schedule['mode'])}>
+              <option value="once">Once</option>
+              <option value="interval">Every N minutes</option>
+              <option value="cron">Cron</option>
+            </select>
+          </label>
+          {mode === 'once' && (
+            <label className={styles.field}>
+              Date/time (local)
+              <input className={styles.input} type="datetime-local" value={runAt} onChange={e => setRunAt(e.target.value)} />
+            </label>
+          )}
+          {mode === 'interval' && (
+            <label className={styles.field}>
+              Minutes
+              <input
+                className={styles.input}
+                type="number"
+                min={15}
+                value={intervalMinutes}
+                onChange={e => setIntervalMinutes(Number(e.target.value))}
+              />
+            </label>
+          )}
+          {mode === 'cron' && (
+            <label className={styles.field}>
+              Expression (UTC)
+              <input className={styles.input} value={cronExpr} onChange={e => setCronExpr(e.target.value)} placeholder="0 3 * * *" />
+            </label>
+          )}
+          <label className={styles.field}>
+            Previous graph
+            <select className={styles.input} value={scanMode} onChange={e => setScanMode(e.target.value as Schedule['scanMode'])}>
+              <option value="new">Keep as a new version</option>
+              <option value="overwrite">Overwrite (discard)</option>
+            </select>
+          </label>
+          <label className={styles.field}>
+            Label
+            <input className={styles.input} value={label} maxLength={120} onChange={e => setLabel(e.target.value)} placeholder="optional" />
+          </label>
+          <button className={styles.createBtn} onClick={create} disabled={creating || !projectId}>
+            {creating ? <Loader2 size={13} className={styles.spinner} /> : <Plus size={13} />}
+            <span>Add schedule</span>
+          </button>
+        </div>
+
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Label</th><th>Schedule</th><th>Previous graph</th>
+              <th>Next run</th><th>Last run</th><th>State</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {schedules.length === 0 && (
+              <tr><td colSpan={7} className={styles.empty}>No scheduled scans.</td></tr>
+            )}
+            {schedules.map(s => (
+              <tr key={s.id}>
+                <td>{s.label || '—'}</td>
+                <td>{describeSchedule(s)}</td>
+                <td>{s.scanMode === 'new' ? 'keep as version' : 'overwrite'}</td>
+                <td className={styles.muted}>{s.enabled ? fmt(s.nextRunAt) : '—'}</td>
+                <td className={styles.muted}>{fmt(s.lastRunAt)}</td>
+                <td>
+                  <span className={s.enabled ? styles.badgeOn : styles.badgeOff}>
+                    {s.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
+                <td className={styles.actions}>
+                  <button
+                    className={styles.iconBtn}
+                    disabled={busyId === s.id}
+                    onClick={() => patch(s, { enabled: !s.enabled })}
+                    title={s.enabled ? 'Disable' : 'Enable'}
+                  >
+                    {s.enabled ? <Pause size={13} /> : <Play size={13} />}
+                  </button>
+                  <button
+                    className={`${styles.iconBtn} ${styles.dangerBtn}`}
+                    disabled={busyId === s.id}
+                    onClick={() => remove(s)}
+                    title="Delete schedule"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className={styles.section}>
+        <h3 className={styles.heading}>Run history</h3>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Trigger</th><th>Mode</th><th>Status</th><th>Version</th>
+              <th>Started</th><th>Duration</th><th className={styles.num}>Nodes</th><th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.length === 0 && (
+              <tr><td colSpan={8} className={styles.empty}>No scans recorded yet.</td></tr>
+            )}
+            {jobs.map(j => (
+              <tr key={j.id}>
+                <td>{j.trigger}</td>
+                <td>{j.mode ?? '—'}</td>
+                <td>
+                  <span className={
+                    j.status === 'completed' ? styles.statusOk
+                    : j.status === 'running' ? styles.statusRunning
+                    : j.status === 'deferred_ram' ? styles.statusDeferred
+                    : styles.statusBad
+                  }>
+                    {j.status}
+                  </span>
+                </td>
+                <td className={styles.muted}>{j.version ? `v${j.version.seq}` : '—'}</td>
+                <td className={styles.muted}>{fmt(j.startedAt ?? j.createdAt)}</td>
+                <td className={styles.muted}>{duration(j)}</td>
+                <td className={styles.num}>{j.nodeCount ?? '—'}</td>
+                <td className={styles.muted}>{j.ramReason ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
+export default ScanScheduleTable

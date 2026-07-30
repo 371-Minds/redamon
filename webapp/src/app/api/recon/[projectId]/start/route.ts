@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardProject } from '@/lib/access'
-import prisma from '@/lib/prisma'
-import { orchestratorFetch } from '@/lib/orchestrator'
-
-const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
-const WEBAPP_URL = process.env.WEBAPP_URL || 'http://localhost:3000'
+import { getEffectiveUser } from '@/lib/session'
+import { parseScanMode, type ScanMode } from '@/lib/scanTimeline'
+import { startFullScan } from '@/lib/startFullScan'
 
 interface RouteParams {
   params: Promise<{ projectId: string }>
@@ -16,67 +14,56 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const __denied = await guardProject(projectId)
     if (__denied) return __denied
 
-    // Verify project exists
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true, userId: true, name: true, targetDomain: true, ipMode: true, targetIps: true }
-    })
-
-    if (!project) {
-      return NextResponse.json(
-        { error: 'Project not found' },
-        { status: 404 }
-      )
-    }
-
-    // IP mode needs targetIps; domain mode needs targetDomain
-    if (project.ipMode) {
-      if (!project.targetIps || project.targetIps.length === 0) {
+    // Scan Timeline: `mode` decides what happens to the graph this scan is about
+    // to destroy. Default 'new' (keep the current graph as a saved version) is the
+    // safe choice, so a client that does not send a mode never silently discards.
+    let mode: ScanMode = 'new'
+    const body = await request.json().catch(() => null)
+    if (body && typeof body === 'object' && 'mode' in body) {
+      const parsed = parseScanMode((body as { mode?: unknown }).mode)
+      if (!parsed) {
         return NextResponse.json(
-          { error: 'Project has no target IPs configured' },
+          { error: "Invalid mode: expected 'new' or 'overwrite'" },
           { status: 400 }
         )
       }
-    } else if (!project.targetDomain) {
-      return NextResponse.json(
-        { error: 'Project has no target domain configured' },
-        { status: 400 }
-      )
+      mode = parsed
     }
 
-    // Call recon orchestrator to start the recon
-    const response = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/recon/${projectId}/start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        project_id: projectId,
-        user_id: project.userId,
-        webapp_api_url: WEBAPP_URL,
-      }),
+    const eff = await getEffectiveUser()
+
+    // Same path a scheduled scan takes (lib/startFullScan.ts): activation lock,
+    // freeze-before-start, orchestrator start (RoE + admission), ScanJob history.
+    const result = await startFullScan({
+      projectId,
+      mode,
+      trigger: 'manual',
+      actorUserId: eff?.userId ?? null,
     })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      const detail = errorData.detail
-      // Memory governor (Part 5): a structured limit payload {limitType, ...}
-      // becomes a tailored message + a `limit` field the UI modal keys off.
-      if (detail && typeof detail === 'object' && detail.limitType) {
-        const msg =
-          detail.limitType === 'hard'
-            ? `${detail.detail || 'Configured limit reached'}. This is a configured limit, not a memory issue${detail.settingName ? ` — increase ${detail.settingName} and restart` : ''}.`
-            : `${detail.detail || 'Not enough memory to start this scan now'}. This is a RAM limit — please retry once memory frees (finish or stop other running scans, or lower parallelism).`
-        return NextResponse.json({ error: msg, limit: detail }, { status: response.status })
-      }
+    if (!result.ok) {
       return NextResponse.json(
-        { error: (typeof detail === 'string' ? detail : null) || 'Failed to start recon' },
-        { status: response.status }
+        {
+          error: result.error,
+          ...(result.limit ? { limit: result.limit } : {}),
+          ...(result.snapshotFailed ? { snapshotFailed: true } : {}),
+          ...(result.activationInProgress ? { activationInProgress: true } : {}),
+        },
+        { status: result.status }
       )
     }
 
-    const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json({
+      ...result.state,
+      scanVersion: {
+        id: result.versionId,
+        seq: result.versionSeq,
+        label: result.versionLabel,
+      },
+      frozenVersionId: result.frozenVersionId,
+      frozenNodeCount: result.frozenNodeCount,
+      mode,
+    })
 
   } catch (error) {
     console.error('Error starting recon:', error)

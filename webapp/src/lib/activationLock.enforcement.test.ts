@@ -1,0 +1,131 @@
+/**
+ * Scan Timeline — the OTHER direction of the activation lock (Section 4A.3).
+ *
+ * activate/route.test.ts proves activation is refused while a scan/partial/agent
+ * holds the graph. This file proves the converse for each holder: while an
+ * activation is swapping the live graph, none of them may start.
+ *
+ * @vitest-environment node
+ */
+import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { NextRequest, NextResponse } from 'next/server'
+
+const h = vi.hoisted(() => ({
+  activating: vi.fn(),
+  isActivating: vi.fn(),
+  orchestratorFetch: vi.fn(),
+  prepare: vi.fn(),
+  createTicket: vi.fn(),
+}))
+
+vi.mock('@/lib/activationLock', () => ({
+  assertGraphNotActivating: (...a: unknown[]) => h.activating(...a),
+  // The scan-start path checks the lock through the shared startFullScan helper,
+  // which asks the boolean form.
+  isActivationInProgress: async () => h.isActivating(),
+}))
+vi.mock('@/lib/access', () => ({
+  guardProject: async () => null,
+  requireProjectAccess: async () => ({ project: { id: 'p1', userId: 'owner' } }),
+  requireEffectiveUser: async () => ({ userId: 'owner' }),
+}))
+vi.mock('@/lib/session', () => ({ getEffectiveUser: async () => ({ userId: 'owner' }) }))
+vi.mock('@/lib/orchestrator', () => ({ orchestratorFetch: (...a: unknown[]) => h.orchestratorFetch(...a) }))
+vi.mock('@/lib/prisma', () => ({
+  default: {
+    project: {
+      findUnique: async () => ({ id: 'p1', userId: 'owner', targetDomain: 'x.tld', ipMode: false, targetIps: [] }),
+    },
+  },
+}))
+vi.mock('@/lib/scanTimeline', async orig => ({
+  ...(await orig<typeof import('@/lib/scanTimeline')>()),
+  prepareVersionsForFullScan: (...a: unknown[]) => h.prepare(...a),
+  createScanJob: async () => ({ id: 'job1' }),
+}))
+vi.mock('@/lib/auth', () => ({ createWsTicket: (...a: unknown[]) => h.createTicket(...a) }))
+
+import { POST as startScan } from '@/app/api/recon/[projectId]/start/route'
+import { POST as startPartial } from '@/app/api/recon/[projectId]/partial/route'
+import { POST as wsTicket } from '@/app/api/agent/ws-ticket/route'
+
+const CONFLICT = () => NextResponse.json(
+  { error: 'A version activation is in progress', activationInProgress: true },
+  { status: 409 }
+)
+const params = { params: Promise.resolve({ projectId: 'p1' }) }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  h.activating.mockResolvedValue(null)
+  h.isActivating.mockReturnValue(false)
+  h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'starting' }) })
+  h.prepare.mockResolvedValue({ currentVersion: { id: 'v1', seq: 1, label: 'Scan 1' }, frozenVersionId: null, frozenNodeCount: 0 })
+  h.createTicket.mockResolvedValue('ticket123')
+})
+
+function scanReq() {
+  return new NextRequest('http://x/api/recon/p1/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"mode":"new"}',
+  })
+}
+function partialReq() {
+  return new NextRequest('http://x/api/recon/p1/partial', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"tool_id":"katana"}',
+  })
+}
+function ticketReq() {
+  return new NextRequest('http://x/api/agent/ws-ticket', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: '{"projectId":"p1","sessionId":"s1"}',
+  })
+}
+
+describe('full scan start', () => {
+  test('refused while an activation is swapping the graph', async () => {
+    h.isActivating.mockReturnValue(true)
+    const res = await startScan(scanReq(), params)
+    expect(res.status).toBe(409)
+    expect((await res.json()).activationInProgress).toBe(true)
+    // Neither a snapshot nor a container spawn may happen.
+    expect(h.prepare).not.toHaveBeenCalled()
+    expect(h.orchestratorFetch).not.toHaveBeenCalled()
+  })
+
+  test('allowed when the graph is free', async () => {
+    const res = await startScan(scanReq(), params)
+    expect(res.status).toBe(200)
+    expect(h.orchestratorFetch).toHaveBeenCalled()
+  })
+})
+
+describe('partial recon start', () => {
+  test('refused while an activation is swapping the graph', async () => {
+    h.activating.mockResolvedValue(CONFLICT())
+    const res = await startPartial(partialReq(), params)
+    expect(res.status).toBe(409)
+    expect(h.orchestratorFetch).not.toHaveBeenCalled()
+  })
+
+  test('allowed when the graph is free', async () => {
+    h.orchestratorFetch.mockResolvedValue({ ok: true, json: async () => ({ run_id: 'r1' }) })
+    const res = await startPartial(partialReq(), params)
+    expect(res.status).toBe(200)
+    expect(h.orchestratorFetch).toHaveBeenCalled()
+  })
+})
+
+describe('agent session start (ws ticket)', () => {
+  test('no ticket is minted while an activation is swapping the graph', async () => {
+    h.activating.mockResolvedValue(CONFLICT())
+    const res = await wsTicket(ticketReq())
+    expect(res.status).toBe(409)
+    expect(h.createTicket).not.toHaveBeenCalled()
+  })
+
+  test('a ticket is minted when the graph is free', async () => {
+    const res = await wsTicket(ticketReq())
+    expect(res.status).toBe(200)
+    expect((await res.json()).ticket).toBe('ticket123')
+  })
+})

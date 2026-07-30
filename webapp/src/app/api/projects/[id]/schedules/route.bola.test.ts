@@ -1,0 +1,159 @@
+/**
+ * BOLA + validation — /api/projects/[id]/schedules.
+ *
+ * A schedule is a standing instruction to scan a target unattended, so creating
+ * one on someone else's project would be both a BOLA and an abuse primitive. It
+ * must therefore prove project ownership before anything is written, validate the
+ * timing (scheduler-DoS guard), and honor the static RAM feasibility check.
+ *
+ * @vitest-environment node
+ */
+import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { NextRequest, NextResponse } from 'next/server'
+
+const h = vi.hoisted(() => ({
+  requireEff: vi.fn(),
+  requireProjectAccess: vi.fn(),
+  create: vi.fn(),
+  findMany: vi.fn(),
+  jobFindMany: vi.fn(),
+  envelope: vi.fn(),
+  audit: vi.fn(),
+}))
+
+vi.mock('@/lib/access', () => ({
+  requireEffectiveUser: () => h.requireEff(),
+  requireProjectAccess: (...a: unknown[]) => h.requireProjectAccess(...a),
+}))
+vi.mock('@/lib/prisma', () => ({
+  default: {
+    scanSchedule: {
+      create: (...a: unknown[]) => h.create(...a),
+      findMany: (...a: unknown[]) => h.findMany(...a),
+    },
+    scanJob: { findMany: (...a: unknown[]) => h.jobFindMany(...a) },
+  },
+}))
+vi.mock('@/lib/audit', () => ({ writeAudit: (...a: unknown[]) => h.audit(...a) }))
+vi.mock('@/lib/scanEnvelope', () => ({ fetchScanEnvelope: () => h.envelope() }))
+
+import { GET, POST } from './route'
+
+const NOT_FOUND = NextResponse.json({ error: 'Not found' }, { status: 404 })
+const UNAUTH = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+const params = (id: string) => ({ params: Promise.resolve({ id }) })
+const get = () => new NextRequest('http://x/api/projects/p1/schedules')
+const post = (body: unknown) => new NextRequest('http://x/api/projects/p1/schedules', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+})
+const MB = 1024 * 1024
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  h.requireEff.mockResolvedValue({ userId: 'owner' })
+  h.requireProjectAccess.mockResolvedValue({ project: { id: 'p1', userId: 'owner' } })
+  h.findMany.mockResolvedValue([])
+  h.jobFindMany.mockResolvedValue([])
+  h.envelope.mockResolvedValue({ envelopeBytes: 2000 * MB, scanPoolBytes: 8000 * MB })
+  h.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+    ({ id: 'sched1', ...data }))
+})
+
+describe('GET — BOLA', () => {
+  test('no session → 401 before any query', async () => {
+    h.requireEff.mockResolvedValue(UNAUTH)
+    expect((await GET(get(), params('p1'))).status).toBe(401)
+    expect(h.findMany).not.toHaveBeenCalled()
+  })
+
+  test("another user's project → 404, no history leaked", async () => {
+    h.requireProjectAccess.mockResolvedValue(NOT_FOUND)
+    expect((await GET(get(), params('victimProj'))).status).toBe(404)
+    expect(h.findMany).not.toHaveBeenCalled()
+    expect(h.jobFindMany).not.toHaveBeenCalled()
+  })
+
+  test('owner → schedules + run history, BigInt safely serialized', async () => {
+    h.findMany.mockResolvedValue([
+      { id: 's1', projectId: 'p1', mode: 'cron', estimatedEnvelopeBytes: BigInt(2000 * MB) },
+    ])
+    h.jobFindMany.mockResolvedValue([
+      { id: 'j1', trigger: 'scheduled', mode: 'new', status: 'completed', startedAt: null,
+        finishedAt: null, createdAt: new Date(), nodeCount: 5, ramReason: null,
+        scheduleId: 's1', version: { seq: 2, label: 'Scan 2' } },
+    ])
+    const res = await GET(get(), params('p1'))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.schedules[0].estimatedEnvelopeBytes).toBe(2000 * MB)
+    expect(body.jobs[0].version).toEqual({ seq: 2, label: 'Scan 2' })
+  })
+})
+
+describe('POST — BOLA', () => {
+  test("EXPLOIT: scheduling a scan on another user's project → 404, nothing created", async () => {
+    h.requireProjectAccess.mockResolvedValue(NOT_FOUND)
+    const res = await POST(post({ mode: 'interval', intervalMinutes: 60 }), params('victimProj'))
+    expect(res.status).toBe(404)
+    expect(h.create).not.toHaveBeenCalled()
+  })
+
+  test('the schedule is owned by the EFFECTIVE user, not a body-supplied id', async () => {
+    await POST(post({ mode: 'interval', intervalMinutes: 60, userId: 'someone-else' }), params('p1'))
+    expect(h.create.mock.calls[0][0].data.userId).toBe('owner')
+  })
+})
+
+describe('POST — validation', () => {
+  test.each([
+    ['unknown mode', { mode: 'hourly' }],
+    ['a past one-off', { mode: 'once', runAt: '2000-01-01T00:00:00Z' }],
+    ['an interval below the minimum', { mode: 'interval', intervalMinutes: 1 }],
+    ['an every-minute cron', { mode: 'cron', cronExpr: '* * * * *' }],
+    ['a malformed cron', { mode: 'cron', cronExpr: 'whenever' }],
+  ])('rejects %s with 400 and creates nothing', async (_d, body) => {
+    const res = await POST(post(body), params('p1'))
+    expect(res.status).toBe(400)
+    expect(h.create).not.toHaveBeenCalled()
+  })
+
+  test('creates a valid cron schedule and audits it', async () => {
+    const res = await POST(post({ mode: 'cron', cronExpr: '0 3 * * *', scanMode: 'new' }), params('p1'))
+    expect(res.status).toBe(200)
+    const data = h.create.mock.calls[0][0].data
+    expect(data).toMatchObject({ projectId: 'p1', mode: 'cron', cronExpr: '0 3 * * *', scanMode: 'new' })
+    expect(data.nextRunAt).toBeInstanceOf(Date)
+    expect(data.estimatedEnvelopeBytes).toBe(BigInt(2000 * MB))
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'scan-schedule.create' }))
+  })
+})
+
+describe('POST — static RAM feasibility (Section 7.3)', () => {
+  test('rejects a schedule whose envelope alone exceeds the pool', async () => {
+    h.envelope.mockResolvedValue({ envelopeBytes: 9000 * MB, scanPoolBytes: 8000 * MB })
+    const res = await POST(post({ mode: 'interval', intervalMinutes: 60 }), params('p1'))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.limit).toMatchObject({ limitType: 'ram', reason: 'never-admittable' })
+    expect(h.create).not.toHaveBeenCalled()
+  })
+
+  test('rejects a run that overlaps others beyond the pool, naming the conflicts', async () => {
+    h.envelope.mockResolvedValue({ envelopeBytes: 4000 * MB, scanPoolBytes: 6000 * MB })
+    // Overlap is GLOBAL: other projects' schedules count against the same pool.
+    h.findMany.mockResolvedValue([
+      { id: 'other1', nextRunAt: new Date(Date.now() + 60 * 60_000), estimatedEnvelopeBytes: BigInt(4000 * MB) },
+    ])
+    const res = await POST(post({ mode: 'interval', intervalMinutes: 60 }), params('p1'))
+    expect(res.status).toBe(409)
+    expect((await res.json()).limit).toMatchObject({ reason: 'overlap', conflictingScheduleIds: ['other1'] })
+    expect(h.create).not.toHaveBeenCalled()
+  })
+
+  test('an unavailable envelope skips the courtesy check rather than blocking creation', async () => {
+    h.envelope.mockResolvedValue(null)
+    const res = await POST(post({ mode: 'interval', intervalMinutes: 60 }), params('p1'))
+    expect(res.status).toBe(200)
+    expect(h.create.mock.calls[0][0].data.estimatedEnvelopeBytes).toBeNull()
+  })
+})

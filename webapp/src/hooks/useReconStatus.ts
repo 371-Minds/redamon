@@ -25,12 +25,19 @@ export interface ReconStartError {
   limit?: ReconStartLimit
 }
 
+/**
+ * Scan Timeline: what happens to the graph this scan is about to rebuild.
+ *   'new'       keep it as a saved previous version (frozen before the scan starts)
+ *   'overwrite' discard it, no snapshot kept
+ */
+export type ScanMode = 'new' | 'overwrite'
+
 interface UseReconStatusReturn {
   state: ReconState | null
   isLoading: boolean
   error: string | null
   refetch: () => Promise<void>
-  startRecon: () => Promise<ReconState | null>
+  startRecon: (mode?: ScanMode) => Promise<ReconState | null>
   stopRecon: () => Promise<ReconState | null>
   pauseRecon: () => Promise<ReconState | null>
   resumeRecon: () => Promise<ReconState | null>
@@ -102,7 +109,7 @@ export function useReconStatus({
     }
   }, [projectId]) // Only depends on projectId now
 
-  const startRecon = useCallback(async (): Promise<ReconState | null> => {
+  const startRecon = useCallback(async (mode: ScanMode = 'new'): Promise<ReconState | null> => {
     if (!projectId) return null
 
     setIsLoading(true)
@@ -112,6 +119,8 @@ export function useReconStatus({
     try {
       const response = await fetch(`/api/recon/${projectId}/start`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
       })
 
       if (!response.ok) {

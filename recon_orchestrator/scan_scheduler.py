@@ -1,0 +1,194 @@
+"""
+Scan Timeline — the Scan Scheduler worker (plan Section 7.2).
+
+The orchestrator owns admission and the container spawn, so it owns the TICK; the
+webapp owns the version freeze and the ScanJob history, so it owns the RUN. On
+each tick the worker:
+
+  1. asks the webapp which schedules are due
+     (``GET /api/internal/scan-schedules/due``),
+  2. defers any whose project is mid-activation (F3: never spawn into an in-flight
+     graph swap) — the deferral is recorded as a ``deferred_ram``-style ScanJob
+     with a "graph busy" reason and retried on a later tick,
+  3. defers any that clearly cannot be admitted right now, using a NON-RESERVING
+     read of the ledger (``remaining_for_new()`` vs ``envelope_for()``). The real,
+     authoritative reservation still happens inside ``start_recon``'s
+     ``_admit_scan`` when the webapp calls us back — pre-reserving here would leak
+     an envelope whenever the spawn is then rejected for another reason,
+  4. otherwise asks the webapp to run it
+     (``POST /api/internal/scan-schedules/{id}/run``), which goes through exactly
+     the same start path as a manual scan: activation lock, freeze-before-start,
+     RoE time window / hard guardrail, admission, ScanJob history.
+
+Never raises into the event loop: every iteration is wrapped, because a scheduler
+that dies silently is worse than one that skips a tick.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import urllib.error
+import urllib.request
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_TICK_SECONDS = 60.0
+# Below this, a tick costs more than it can possibly gain (a scan runs for minutes).
+MIN_TICK_SECONDS = 10.0
+
+
+def scheduler_enabled() -> bool:
+    raw = (os.environ.get("SCAN_SCHEDULER_ENABLED", "true") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def tick_seconds() -> float:
+    try:
+        value = float(os.environ.get("SCAN_SCHEDULER_TICK_SECONDS", "") or DEFAULT_TICK_SECONDS)
+    except (TypeError, ValueError):
+        return DEFAULT_TICK_SECONDS
+    return max(MIN_TICK_SECONDS, value)
+
+
+def _webapp_base() -> str:
+    return (os.environ.get("WEBAPP_API_URL", "http://webapp:3000") or "").rstrip("/")
+
+
+def _internal_key() -> str:
+    return os.environ.get("INTERNAL_API_KEY", "")
+
+
+def _request(url: str, key: str, method: str = "GET", payload: Optional[dict] = None,
+             timeout: float = 15.0) -> Optional[dict]:
+    """Blocking JSON request to the webapp's internal API. None on any failure —
+    the caller treats that as "skip this tick" rather than guessing."""
+    data = None
+    headers = {"x-internal-key": key}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            if getattr(r, "status", 200) not in (200, 201):
+                return None
+            body = r.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        logger.warning("[scanScheduler] %s %s -> HTTP %s", method, url, e.code)
+        return None
+    except Exception as e:  # noqa: BLE001 - a scheduler must never die on I/O
+        logger.warning("[scanScheduler] %s %s failed: %s", method, url, e)
+        return None
+
+
+def _admission_headroom(container_manager) -> Optional[tuple]:
+    """(remaining_bytes, envelope_bytes) for a full recon, or None if unknown.
+
+    Deliberately non-reserving: this is a pre-check so the worker can defer with a
+    clear reason instead of burning a start attempt. `try_admit` inside
+    `start_recon` remains the authoritative gate."""
+    try:
+        ledger = getattr(container_manager, "ledger", None)
+        if ledger is None:
+            return None
+        return ledger.remaining_for_new(), ledger.envelope_for("full_recon")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[scanScheduler] could not read admission headroom: %s", e)
+        return None
+
+
+async def run_scheduler_tick(container_manager) -> dict:
+    """One pass. Returns a small summary (used by the tests)."""
+    base, key = _webapp_base(), _internal_key()
+    summary = {"due": 0, "started": 0, "deferred": 0, "failed": 0}
+    if not key:
+        # Without the internal key we cannot talk to the webapp at all.
+        return summary
+
+    due = await asyncio.to_thread(_request, f"{base}/api/internal/scan-schedules/due", key)
+    if not due:
+        return summary
+
+    schedules = due.get("schedules") or []
+    summary["due"] = len(schedules)
+
+    for sched in schedules:
+        sched_id = sched.get("id")
+        project_id = sched.get("projectId")
+        if not sched_id:
+            continue
+
+        # F3: an activation is swapping this project's live graph — defer.
+        if sched.get("activationInProgress"):
+            await asyncio.to_thread(
+                _request, f"{base}/api/internal/scan-schedules/{sched_id}/defer", key,
+                "POST", {"reason": "graph busy: a version activation is in progress"},
+            )
+            summary["deferred"] += 1
+            logger.info("[scanScheduler] deferred %s (graph busy) for project %s", sched_id, project_id)
+            continue
+
+        # RAM pre-check (non-reserving). The ledger is the authority at spawn time.
+        headroom = _admission_headroom(container_manager)
+        if headroom is not None:
+            remaining, envelope = headroom
+            if envelope > 0 and remaining < envelope:
+                await asyncio.to_thread(
+                    _request, f"{base}/api/internal/scan-schedules/{sched_id}/defer", key,
+                    "POST", {
+                        "reason": (
+                            f"not enough free memory to start now "
+                            f"({remaining // (1024 ** 2)} MB available, "
+                            f"{envelope // (1024 ** 2)} MB needed)"
+                        )
+                    },
+                )
+                summary["deferred"] += 1
+                logger.info("[scanScheduler] deferred %s (RAM) for project %s", sched_id, project_id)
+                continue
+
+        result = await asyncio.to_thread(
+            _request, f"{base}/api/internal/scan-schedules/{sched_id}/run", key, "POST", {},
+        )
+        if result is None:
+            summary["failed"] += 1
+            logger.warning("[scanScheduler] run request failed for schedule %s", sched_id)
+        elif result.get("ok"):
+            summary["started"] += 1
+        else:
+            # The webapp already recorded a failed/deferred ScanJob with the reason.
+            summary["failed"] += 1
+            logger.info("[scanScheduler] schedule %s did not start: %s", sched_id, result.get("error"))
+
+    return summary
+
+
+async def scan_scheduler_loop(get_container_manager) -> None:
+    """Background task: tick forever. `get_container_manager` is a callable so the
+    loop picks up the manager once lifespan startup has created it."""
+    if not scheduler_enabled():
+        logger.info("[scanScheduler] disabled (SCAN_SCHEDULER_ENABLED=false)")
+        return
+    interval = tick_seconds()
+    logger.info("[scanScheduler] started (tick=%ss)", interval)
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                cm = get_container_manager()
+                if cm is None:
+                    continue
+                summary = await run_scheduler_tick(cm)
+                if summary["due"]:
+                    logger.info(
+                        "[scanScheduler] tick: %s due, %s started, %s deferred, %s failed",
+                        summary["due"], summary["started"], summary["deferred"], summary["failed"],
+                    )
+            except Exception as e:  # noqa: BLE001 - never let one tick kill the loop
+                logger.warning("[scanScheduler] tick failed: %s", e)
+    except asyncio.CancelledError:
+        pass

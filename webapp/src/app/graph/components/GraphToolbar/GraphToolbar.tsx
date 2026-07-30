@@ -5,6 +5,8 @@ import { StealthIcon } from '@/components/icons/StealthIcon'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { ReconStatus, GvmStatus, GithubHuntStatus, TrufflehogStatus, PartialReconState } from '@/lib/recon-types'
 import { PartialReconBadges } from '@/components/PartialReconBadges'
+import { VersionSwitch } from '../VersionSwitch'
+import type { ScanVersionSummary } from '../../hooks/useScanVersions'
 import styles from './GraphToolbar.module.css'
 
 interface GraphToolbarProps {
@@ -78,6 +80,14 @@ interface GraphToolbarProps {
   isEmergencyPausing?: boolean
   // Tunnel status (displayed next to Pause All)
   tunnelStatus?: { ngrok?: { active: boolean; host?: string; port?: number }; chisel?: { active: boolean; host?: string; port?: number; srvPort?: number } }
+  // Scan Timeline (version switch)
+  scanVersions?: ScanVersionSummary[]
+  selectedVersionId?: string | null
+  onSelectVersion?: (versionId: string | null) => void
+  onManageVersions?: () => void
+  isActivatingVersion?: boolean
+  /** True while a PAST version is being viewed: live-graph actions are disabled. */
+  viewingPastVersion?: boolean
   // Agent status
   agentActiveCount?: number
   agentConversations?: Array<{
@@ -160,6 +170,13 @@ export function GraphToolbar({
   isAnyPipelineRunning = false,
   isEmergencyPausing = false,
   tunnelStatus,
+  // Scan Timeline (version switch)
+  scanVersions = [],
+  selectedVersionId = null,
+  onSelectVersion,
+  onManageVersions,
+  isActivatingVersion = false,
+  viewingPastVersion = false,
   // Agent status
   agentActiveCount = 0,
   agentConversations = [],
@@ -239,6 +256,19 @@ export function GraphToolbar({
         </>
       )}
 
+      {onSelectVersion && scanVersions.length > 0 && (
+        <>
+          <div className={styles.divider} />
+          <VersionSwitch
+            versions={scanVersions}
+            selectedVersionId={selectedVersionId}
+            onSelect={onSelectVersion}
+            onManage={onManageVersions}
+            activating={isActivatingVersion}
+          />
+        </>
+      )}
+
       <div className={styles.divider} />
       <button
         className={`${styles.emergencyPauseButton} ${isEmergencyPausing ? styles.emergencyPauseButtonActive : ''}`}
@@ -281,8 +311,8 @@ export function GraphToolbar({
               <button
                 className={`${styles.reconButton} ${isReconActive ? styles.reconButtonActive : ''}`}
                 onClick={isReconPaused ? onResumeRecon : onStartRecon}
-                disabled={isReconRunning || hasActivePartialRecons}
-                title={hasActivePartialRecons ? 'Partial recon is running -- stop it first' : isReconStopping ? 'Stopping...' : isReconRunning ? 'Recon in progress...' : isReconPaused ? 'Resume Recon' : 'Start Reconnaissance'}
+                disabled={isReconRunning || hasActivePartialRecons || viewingPastVersion || isActivatingVersion}
+                title={viewingPastVersion ? 'You are viewing a saved version -- switch back to the active version to scan' : isActivatingVersion ? 'A version activation is in progress' : hasActivePartialRecons ? 'Partial recon is running -- stop it first' : isReconStopping ? 'Stopping...' : isReconRunning ? 'Recon in progress...' : isReconPaused ? 'Resume Recon' : 'Start Reconnaissance'}
               >
                 {isReconRunning ? (
                   <Loader2 size={14} className={styles.spinner} />

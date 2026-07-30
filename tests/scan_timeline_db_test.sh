@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Scan Timeline — Postgres integration test (schema + referential actions)
+# =============================================================================
+# Verifies at the DATABASE level what the Prisma models promise, because the
+# Scan Timeline's data-loss guarantees rest on them:
+#   - the three tables exist with the expected shape
+#   - (project_id, seq) is unique  -> version numbering can't fork
+#   - project delete cascades      -> no orphan versions/jobs/schedules, and a
+#                                     deleted project's snapshot bytes go away
+#   - version delete cascades jobs -> Section 5 delete semantics
+#   - schedule delete NULLs jobs   -> run history survives losing its schedule
+#
+# Requires the stack's postgres container to be up:
+#   docker compose up -d postgres
+# Usage: tests/scan_timeline_db_test.sh
+# =============================================================================
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+PSQL=(docker compose exec -T postgres psql -U redamon -d redamon -qtAX)
+
+pass=0
+fail=0
+
+ok()   { echo "  PASS  $1"; pass=$((pass + 1)); }
+bad()  { echo "  FAIL  $1"; echo "        $2"; fail=$((fail + 1)); }
+
+q() { "${PSQL[@]}" -c "$1" 2>&1; }
+
+expect_eq() { # desc expected actual
+  if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$2' got '$3'"; fi
+}
+
+echo "== Scan Timeline DB integration =="
+
+if ! q "select 1" >/dev/null 2>&1; then
+  echo "  SKIP  postgres container not reachable (docker compose up -d postgres)"
+  exit 0
+fi
+
+# ---------------------------------------------------------------- fixtures ---
+SUF="st_$(date +%s)_$$"
+U="user_$SUF"
+P="proj_$SUF"
+
+q "insert into users (id, name, email, password, role, created_at, updated_at)
+   values ('$U', 'timeline test', '$U@example.invalid', '', 'standard', now(), now())" >/dev/null
+q "insert into projects (id, user_id, name, created_at, updated_at)
+   values ('$P', '$U', 'timeline test', now(), now())" >/dev/null
+
+cleanup() {
+  q "delete from projects where id = '$P'" >/dev/null 2>&1
+  q "delete from users where id = '$U'" >/dev/null 2>&1
+}
+trap cleanup EXIT
+
+# ------------------------------------------------------------------ tables ---
+for t in scan_versions scan_jobs scan_schedules; do
+  got=$(q "select count(*) from information_schema.tables where table_name = '$t'")
+  expect_eq "table $t exists" "1" "$got"
+done
+
+got=$(q "select data_type from information_schema.columns
+         where table_name='scan_versions' and column_name='snapshot'")
+expect_eq "scan_versions.snapshot is bytea" "bytea" "$got"
+
+got=$(q "select count(*) from information_schema.columns
+         where table_name='projects' and column_name='activation_state'")
+expect_eq "projects.activation_state exists (activation lock)" "1" "$got"
+
+# --------------------------------------------------------- unique(pid, seq) ---
+q "insert into scan_versions (id, project_id, seq, label, is_current, pinned, created_at, updated_at)
+   values ('v1_$SUF', '$P', 1, 'Scan 1', false, false, now(), now())" >/dev/null
+dup=$(q "insert into scan_versions (id, project_id, seq, label, is_current, pinned, created_at, updated_at)
+         values ('vdup_$SUF', '$P', 1, 'dupe', false, false, now(), now())")
+if echo "$dup" | grep -qi "duplicate key\|unique constraint"; then
+  ok "unique(project_id, seq) rejects a duplicate seq"
+else
+  bad "unique(project_id, seq) rejects a duplicate seq" "insert unexpectedly succeeded: $dup"
+fi
+
+# ------------------------------------------------- version delete cascades ---
+q "insert into scan_versions (id, project_id, seq, label, is_current, pinned, created_at, updated_at)
+   values ('v2_$SUF', '$P', 2, 'Scan 2', true, false, now(), now())" >/dev/null
+q "insert into scan_schedules (id, project_id, user_id, label, mode, scan_mode, enabled, created_at, updated_at)
+   values ('s1_$SUF', '$P', '$U', '', 'once', 'new', true, now(), now())" >/dev/null
+q "insert into scan_jobs (id, project_id, version_id, schedule_id, trigger, status, created_at, updated_at)
+   values ('j1_$SUF', '$P', 'v1_$SUF', 's1_$SUF', 'manual', 'completed', now(), now())" >/dev/null
+
+q "delete from scan_versions where id = 'v1_$SUF'" >/dev/null
+got=$(q "select count(*) from scan_jobs where id = 'j1_$SUF'")
+expect_eq "deleting a version cascade-deletes its jobs" "0" "$got"
+
+# ------------------------------------------------ schedule delete NULLs job ---
+q "insert into scan_jobs (id, project_id, version_id, schedule_id, trigger, status, created_at, updated_at)
+   values ('j2_$SUF', '$P', 'v2_$SUF', 's1_$SUF', 'scheduled', 'completed', now(), now())" >/dev/null
+q "delete from scan_schedules where id = 's1_$SUF'" >/dev/null
+got=$(q "select count(*) from scan_jobs where id = 'j2_$SUF' and schedule_id is null")
+expect_eq "deleting a schedule keeps its run history (schedule_id -> NULL)" "1" "$got"
+
+# --------------------------------------------- snapshot bytes round-trip ------
+q "update scan_versions set snapshot = decode('1f8b0800', 'hex') where id = 'v2_$SUF'" >/dev/null
+got=$(q "select length(snapshot) from scan_versions where id = 'v2_$SUF'")
+expect_eq "snapshot bytes persist" "4" "$got"
+
+# -------------------------------------------------- project delete cascades ---
+q "insert into scan_schedules (id, project_id, user_id, label, mode, scan_mode, enabled, created_at, updated_at)
+   values ('s2_$SUF', '$P', '$U', '', 'interval', 'new', true, now(), now())" >/dev/null
+q "delete from projects where id = '$P'" >/dev/null
+for t in scan_versions scan_jobs scan_schedules; do
+  got=$(q "select count(*) from $t where project_id = '$P'")
+  expect_eq "project delete cascades $t (snapshot bytes go with it)" "0" "$got"
+done
+
+echo
+echo "  $pass passed, $fail failed"
+[ "$fail" -eq 0 ] || exit 1

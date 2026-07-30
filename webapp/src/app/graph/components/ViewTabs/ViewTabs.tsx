@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Waypoints, Table2, Terminal, Shield, Search, Download, Loader2, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code, Target, Zap, Flag, Key, Server, Boxes, LockKeyhole, Bug, Network, Mail, ShieldAlert, Package, History, Layers, Bot, Radiation, Swords, Droplets } from 'lucide-react'
+import { CalendarClock, GitCompare, Waypoints, Table2, Terminal, Shield, Search, Download, Loader2, SquareTerminal, Filter, Plus, Trash2, X, ChevronDown, Code, Target, Zap, Flag, Key, Server, Boxes, LockKeyhole, Bug, Network, Mail, ShieldAlert, Package, History, Layers, Bot, Radiation, Swords, Droplets } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import { AUTO_2D_THRESHOLD } from '../GraphCanvas'
 import styles from './ViewTabs.module.css'
@@ -29,6 +29,8 @@ export type TableViewMode =
   | 'supplyChain'
   | 'dnsDrift'
   | 'webCachePoison'
+  | 'reconDelta'
+  | 'scanSchedule'
 
 const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   nodeDetails: 'Node Inspector',
@@ -50,6 +52,8 @@ const TABLE_MODE_LABELS: Record<TableViewMode, string> = {
   supplyChain: 'Supply-Chain',
   dnsDrift: 'DNS Drift',
   webCachePoison: 'Web Cache Poisoning',
+  reconDelta: 'Recon Delta',
+  scanSchedule: 'Scan Schedule',
 }
 
 export interface TunnelInfo {
@@ -304,6 +308,8 @@ export const ViewTabs = memo(function ViewTabs({
                 : mode === 'supplyChain' ? Package
                 : mode === 'dnsDrift' ? History
                 : mode === 'webCachePoison' ? Droplets
+                : mode === 'reconDelta' ? GitCompare
+                : mode === 'scanSchedule' ? CalendarClock
                 : Table2
               return <Icon size={14} />
             })()}
@@ -328,6 +334,18 @@ export const ViewTabs = memo(function ViewTabs({
                 onClick={() => { onTableViewModeChange?.('all'); setTableMenuOpen(false); onViewChange('table') }}
               >
                 <Table2 size={12} /> All Nodes
+              </button>
+              <button
+                className={`${styles.tableDropdownItem} ${tableViewMode === 'reconDelta' ? styles.tableDropdownItemActive : ''}`}
+                onClick={() => { onTableViewModeChange?.('reconDelta'); setTableMenuOpen(false); onViewChange('table') }}
+              >
+                <GitCompare size={12} /> Recon Delta
+              </button>
+              <button
+                className={`${styles.tableDropdownItem} ${tableViewMode === 'scanSchedule' ? styles.tableDropdownItemActive : ''}`}
+                onClick={() => { onTableViewModeChange?.('scanSchedule'); setTableMenuOpen(false); onViewChange('table') }}
+              >
+                <CalendarClock size={12} /> Scan Schedule
               </button>
               <button
                 className={`${styles.tableDropdownItem} ${tableViewMode === 'jsRecon' ? styles.tableDropdownItemActive : ''}`}

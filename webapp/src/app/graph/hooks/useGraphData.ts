@@ -47,28 +47,52 @@ async function fetchGraphData(projectId: string, fresh = false): Promise<GraphDa
   return data
 }
 
-export function useGraphData(projectId: string | null) {
+/**
+ * Scan Timeline: render a PAST version from its stored snapshot. Same
+ * `{nodes, links}` shape as the live payload, so every downstream consumer
+ * (canvas, clustering, node/link tables) is unchanged. Immutable, so no ETag
+ * negotiation is needed — react-query's cache is enough.
+ */
+async function fetchVersionGraphData(projectId: string, versionId: string): Promise<GraphData> {
+  const response = await fetch(`/api/projects/${projectId}/versions/${versionId}/graph`)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.error || 'Failed to fetch version graph data')
+  }
+  return response.json()
+}
+
+/**
+ * @param versionId when set (and not the current version), the graph is read from
+ * that version's stored snapshot instead of the live graph.
+ */
+export function useGraphData(projectId: string | null, versionId?: string | null) {
   const queryClient = useQueryClient()
+  const isPastVersion = !!versionId
 
   // No timer-based polling. Refetches are driven by events (SSE log activity from
   // full/partial recon, agent tool-completion websockets, pipeline completion).
   const query = useQuery({
-    queryKey: ['graph', projectId],
-    queryFn: () => fetchGraphData(projectId!),
+    queryKey: isPastVersion ? ['graph', projectId, versionId] : ['graph', projectId],
+    queryFn: () => isPastVersion
+      ? fetchVersionGraphData(projectId!, versionId!)
+      : fetchGraphData(projectId!),
     enabled: !!projectId,
     refetchInterval: false,
-    staleTime: 30000,
+    // A past version is immutable — never re-fetch it.
+    staleTime: isPastVersion ? Infinity : 30000,
     // Only re-render the component when data or error actually change
     notifyOnChangeProps: ['data', 'error', 'isLoading'],
   })
 
   // Bypass all three cache layers (browser, server, client ETag) and
   // update react-query cache directly. Used after pipeline completion.
+  // A past version has nothing to refresh.
   const refetchFresh = useCallback(async () => {
-    if (!projectId) return
+    if (!projectId || isPastVersion) return
     const data = await fetchGraphData(projectId, true)
     queryClient.setQueryData(['graph', projectId], data)
-  }, [projectId, queryClient])
+  }, [projectId, isPastVersion, queryClient])
 
   return { ...query, refetchFresh }
 }

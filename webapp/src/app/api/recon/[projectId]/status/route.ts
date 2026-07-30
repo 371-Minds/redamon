@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { guardProject } from '@/lib/access'
 import { orchestratorFetch } from '@/lib/orchestrator'
+import { reconcileScanJobStatus } from '@/lib/scanTimeline'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
 
@@ -31,6 +32,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const data = await response.json()
+
+    // Scan Timeline: mirror a terminal orchestrator status onto the open ScanJob
+    // history row. The orchestrator remains the source of truth for liveness;
+    // this is best-effort bookkeeping and never affects the response.
+    await reconcileScanJobStatus(projectId, data?.status)
+
     return NextResponse.json(data)
 
   } catch (error) {

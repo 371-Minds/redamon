@@ -1,0 +1,232 @@
+/**
+ * Scan Timeline — full-scan version bookkeeping (server-side).
+ *
+ * A full scan always wipes and rebuilds the live Neo4j graph, and the live graph
+ * IS the current version. So there is no pointer to flip and no completion
+ * detection needed for correctness: the only decision is what happens to the
+ * graph that is about to be destroyed.
+ *
+ *   mode = 'new'       keep it. Freeze the current version (capture live graph ->
+ *                      gzip -> ScanVersion.snapshot), demote it to a past version,
+ *                      and mint the next version as the new current. FAIL CLOSED:
+ *                      if the freeze fails we throw and the caller must NOT start
+ *                      the scan, so the graph is never lost.
+ *   mode = 'overwrite' discard it. No snapshot; the current version row is reused.
+ *
+ * `ScanJob` rows are the run history the timeline/scheduler tables read.
+ */
+import prisma from '@/lib/prisma'
+import { writeAudit } from '@/lib/audit'
+import { applyRetentionSafe } from '@/lib/scanRetention'
+import {
+  captureGraphSnapshot,
+  storeSnapshot,
+  ensureCurrentVersion,
+  defaultVersionLabel,
+  type ScanVersionRow,
+} from '@/lib/scanSnapshot'
+
+export type ScanMode = 'new' | 'overwrite'
+export type ScanTrigger = 'manual' | 'scheduled'
+
+export const SCAN_MODES: ScanMode[] = ['new', 'overwrite']
+
+export function parseScanMode(value: unknown): ScanMode | null {
+  return value === 'new' || value === 'overwrite' ? value : null
+}
+
+/** Auto-generated labels are refreshed on overwrite; user-renamed ones are kept. */
+const AUTO_LABEL = /^Scan \d+ — \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/
+
+export interface PrepareResult {
+  /** The version the scan about to start will populate (the new current). */
+  currentVersion: ScanVersionRow
+  /** The version that was frozen as a past version, if any. */
+  frozenVersionId: string | null
+  /** Nodes captured into the frozen snapshot (0 when nothing was kept). */
+  frozenNodeCount: number
+}
+
+export class SnapshotFreezeError extends Error {
+  constructor(message: string, public cause?: unknown) {
+    super(message)
+    this.name = 'SnapshotFreezeError'
+  }
+}
+
+/**
+ * Apply the version-side effects of starting a full scan. MUST be called before
+ * the scan is actually started, and its rejection MUST abort the start.
+ */
+export async function prepareVersionsForFullScan(
+  projectId: string,
+  mode: ScanMode,
+  actorId?: string | null
+): Promise<PrepareResult> {
+  const current = await ensureCurrentVersion(projectId)
+
+  if (mode === 'overwrite') {
+    const label = AUTO_LABEL.test(current.label)
+      ? defaultVersionLabel(current.seq)
+      : current.label
+    const updated = await prisma.scanVersion.update({
+      where: { id: current.id },
+      data: { label },
+      select: VERSION_SELECT,
+    })
+    await writeAudit({
+      actorId: actorId ?? null,
+      action: 'scan-version.overwrite',
+      targetType: 'scanVersion',
+      targetId: current.id,
+      before: { seq: current.seq, label: current.label, nodeCount: current.nodeCount },
+      after: { seq: current.seq, label, discardedSnapshot: true },
+    })
+    return { currentVersion: updated, frozenVersionId: null, frozenNodeCount: 0 }
+  }
+
+  // mode === 'new': freeze the outgoing graph first. Anything that throws here
+  // must propagate — the caller aborts the start rather than risk losing it.
+  let captured
+  try {
+    captured = await captureGraphSnapshot(projectId)
+  } catch (err) {
+    throw new SnapshotFreezeError(
+      'Could not snapshot the current graph, so the scan was not started (no data was lost). ' +
+      (err instanceof Error ? err.message : String(err)),
+      err
+    )
+  }
+
+  // An empty live graph has nothing worth keeping: reuse the current version
+  // rather than filling the timeline with empty snapshots.
+  if (captured.nodeCount === 0) {
+    return { currentVersion: current, frozenVersionId: null, frozenNodeCount: 0 }
+  }
+
+  try {
+    await storeSnapshot(current.id, captured)
+  } catch (err) {
+    throw new SnapshotFreezeError(
+      'Could not store the snapshot of the current graph, so the scan was not started ' +
+      '(no data was lost). ' + (err instanceof Error ? err.message : String(err)),
+      err
+    )
+  }
+
+  const nextSeq = await nextVersionSeq(projectId)
+  const created = await prisma.$transaction(async tx => {
+    await tx.scanVersion.update({ where: { id: current.id }, data: { isCurrent: false } })
+    return tx.scanVersion.create({
+      data: {
+        projectId,
+        seq: nextSeq,
+        label: defaultVersionLabel(nextSeq),
+        isCurrent: true,
+        snapshot: null,
+      },
+      select: VERSION_SELECT,
+    })
+  })
+
+  // A version was just added to the timeline — trim it back to the policy.
+  await applyRetentionSafe(projectId)
+
+  return {
+    currentVersion: created,
+    frozenVersionId: current.id,
+    frozenNodeCount: captured.nodeCount,
+  }
+}
+
+export async function nextVersionSeq(projectId: string): Promise<number> {
+  const top = await prisma.scanVersion.findFirst({
+    where: { projectId },
+    orderBy: { seq: 'desc' },
+    select: { seq: true },
+  })
+  return (top?.seq ?? 0) + 1
+}
+
+export interface CreateScanJobInput {
+  projectId: string
+  versionId?: string | null
+  trigger: ScanTrigger
+  mode: ScanMode | null
+  status?: string
+  initiatedByUserId?: string | null
+  scheduleId?: string | null
+  ramReason?: string | null
+}
+
+export async function createScanJob(input: CreateScanJobInput): Promise<{ id: string }> {
+  const status = input.status ?? 'running'
+  return prisma.scanJob.create({
+    data: {
+      projectId: input.projectId,
+      versionId: input.versionId ?? null,
+      trigger: input.trigger,
+      mode: input.mode,
+      status,
+      initiatedByUserId: input.initiatedByUserId ?? null,
+      scheduleId: input.scheduleId ?? null,
+      ramReason: input.ramReason ?? null,
+      startedAt: status === 'running' ? new Date() : null,
+    },
+    select: { id: true },
+  })
+}
+
+/**
+ * Close out the project's open ScanJob from an observed orchestrator status.
+ *
+ * The orchestrator owns scan liveness; we only mirror terminal states onto the
+ * history row. Non-terminal states ('starting', 'running', 'paused', 'stopping')
+ * are left alone. Best-effort: this runs inside a status poll and must never
+ * break it.
+ */
+export async function reconcileScanJobStatus(
+  projectId: string,
+  reconStatus: string | undefined | null
+): Promise<void> {
+  const mapped =
+    reconStatus === 'completed' ? 'completed'
+    : reconStatus === 'error' ? 'failed'
+    : reconStatus === 'idle' ? 'canceled'
+    : null
+  if (!mapped) return
+
+  try {
+    const open = await prisma.scanJob.findFirst({
+      where: { projectId, status: { in: ['queued', 'running'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, versionId: true },
+    })
+    if (!open) return
+
+    const nodeCount = open.versionId
+      ? (await prisma.scanVersion.findUnique({
+          where: { id: open.versionId },
+          select: { nodeCount: true },
+        }))?.nodeCount ?? null
+      : null
+
+    await prisma.scanJob.update({
+      where: { id: open.id },
+      data: { status: mapped, finishedAt: new Date(), nodeCount },
+    })
+  } catch (err) {
+    console.error('[scanTimeline] scan-job reconcile failed (continuing):', err)
+  }
+}
+
+export const VERSION_SELECT = {
+  id: true,
+  seq: true,
+  label: true,
+  isCurrent: true,
+  pinned: true,
+  nodeCount: true,
+  linkCount: true,
+  createdAt: true,
+} as const

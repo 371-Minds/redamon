@@ -40,6 +40,11 @@ import { KaliTerminal } from './components/KaliTerminal'
 import { GraphViews } from './components/GraphViews'
 import { GitHubStarBanner } from './components/GitHubStarBanner'
 import { useGraphData, useDimensions, useNodeSelection, useTableData, useGraphViews } from './hooks'
+import { useScanVersions } from './hooks/useScanVersions'
+import { ActiveVersionOnlyNotice } from './components/VersionSwitch'
+import { VersionManager } from './components/VersionManager'
+import { ReconDeltaTable } from './components/ReconDelta'
+import { ScanScheduleTable } from './components/ScanSchedule'
 import { useStableGraphData } from './hooks/useStableGraphData'
 import { exportToCsv, exportToJson, exportToMarkdown } from './utils/exportCsv'
 import { clusterGraphData } from './utils/clusterNodes'
@@ -51,6 +56,7 @@ import { useProject } from '@/providers/ProjectProvider'
 import { GVM_PHASES, GITHUB_HUNT_PHASES, TRUFFLEHOG_PHASES, PARTIAL_RECON_PHASE_MAP } from '@/lib/recon-types'
 import { WORKFLOW_TOOLS } from '@/components/projects/ProjectForm/WorkflowView/workflowDefinition'
 import type { ReconStatus } from '@/lib/recon-types'
+import type { ScanMode } from '@/hooks/useReconStatus'
 import { OtherScansModal } from './components/OtherScansModal/OtherScansModal'
 import { useAlertModal, useToast } from '@/components/ui'
 import styles from './page.module.css'
@@ -58,7 +64,7 @@ import styles from './page.module.css'
 export default function GraphPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { alertError } = useAlertModal()
+  const { alertError, confirm: confirmModal } = useAlertModal()
   const toast = useToast()
   const { projectId, userId, currentProject, setCurrentProject, isLoading: projectLoading } = useProject()
 
@@ -266,7 +272,32 @@ export default function GraphPage() {
   //  - partial recon SSE log events (via useMultiPartialReconSSE onLog)
   //  - agent tool-completion websocket events (via AIAssistantDrawer onRefetchGraph)
   //  - pipeline completion (refetchAfterCompletion)
-  const { data, isLoading, error, refetch: refetchGraph, refetchFresh } = useGraphData(projectId)
+  // Scan Timeline: which version the screen RENDERS. null = the current (active)
+  // version, i.e. the live graph — the default, per the default-is-latest rule.
+  // A non-null id renders that version's stored snapshot, read-only.
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
+  const [isVersionManagerOpen, setIsVersionManagerOpen] = useState(false)
+  const {
+    versions: scanVersions,
+    currentVersion: activeVersion,
+    activating: isActivatingVersion,
+    refresh: refreshScanVersions,
+  } = useScanVersions(projectId)
+  // A selection is dropped when the project changes or that version disappears
+  // (deleted, or it just became the active one after an activation).
+  useEffect(() => { setSelectedVersionId(null) }, [projectId])
+  useEffect(() => {
+    if (!selectedVersionId) return
+    const still = scanVersions.find(v => v.id === selectedVersionId)
+    if (!still || still.isCurrent) setSelectedVersionId(null)
+  }, [scanVersions, selectedVersionId])
+  const viewedVersion = selectedVersionId
+    ? scanVersions.find(v => v.id === selectedVersionId) ?? null
+    : activeVersion
+  /** True while the screen shows a saved snapshot instead of the live graph. */
+  const isViewingPastVersion = !!selectedVersionId
+
+  const { data, isLoading, error, refetch: refetchGraph, refetchFresh } = useGraphData(projectId, selectedVersionId)
 
   // Debounced refetch: SSE log events fire rapidly during a scan; we only need
   // to re-pull the graph at most once per ~1.5s to pick up newly written nodes.
@@ -920,9 +951,21 @@ export default function GraphPage() {
     }
   }, [allPartialReconRuns, refetchAfterCompletion])
 
-  const handleToggleAI = useCallback(() => {
+  const handleToggleAI = useCallback(async () => {
+    // Section 4.2: the agent ALWAYS runs against the current (active) version —
+    // it only ever queries the live graph. Say so before opening the drawer over
+    // a past-version view, so the user is never confused about what it sees.
+    if (!isAIOpen && isViewingPastVersion) {
+      const proceed = await confirmModal(
+        `The graph is showing an older version (${viewedVersion?.label ?? 'a saved snapshot'}). ` +
+        `The agent will run against the active version${activeVersion ? ` (${activeVersion.label})` : ''}. ` +
+        'To have the agent work on this older version, activate it first.',
+        'Agent runs on the active version'
+      )
+      if (!proceed) return
+    }
     setIsAIOpen((prev) => !prev)
-  }, [])
+  }, [isAIOpen, isViewingPastVersion, viewedVersion, activeVersion, confirmModal])
 
   const handleCloseAI = useCallback(() => {
     setIsAIOpen(false)
@@ -986,13 +1029,16 @@ export default function GraphPage() {
     }
   }, [searchParams, projectId, router])
 
-  const handleConfirmRecon = useCallback(async () => {
+  const handleConfirmRecon = useCallback(async (mode: ScanMode = 'new') => {
     clearLogs()
-    const result = await startRecon()
+    const result = await startRecon(mode)
     if (result) {
+      refreshScanVersions()
       setIsReconModalOpen(false)
       setActiveLogsDrawer('recon')
-      toast.info('Recon scan started')
+      toast.info(mode === 'new'
+        ? 'Previous graph saved as a version — recon scan started'
+        : 'Recon scan started (previous graph discarded)')
       return
     }
     // Failed to start — surface a tailored modal (Part 5). Memory-governor
@@ -1009,7 +1055,7 @@ export default function GraphPage() {
             : 'Could not start scan'
       alertError(startErr.message, title)
     }
-  }, [startRecon, clearLogs, toast, getLastStartError, alertError])
+  }, [startRecon, clearLogs, toast, getLastStartError, alertError, refreshScanVersions])
 
   const handleDownloadJSON = useCallback(async () => {
     if (!projectId) return
@@ -1018,6 +1064,15 @@ export default function GraphPage() {
 
   const handleDeleteNode = useCallback(async (nodeId: string) => {
     if (!projectId) return
+    // A past version is an immutable saved snapshot: no mutation affordance may
+    // act on it (and node delete would otherwise silently hit the LIVE graph).
+    if (isViewingPastVersion) {
+      alertError(
+        'You are viewing a saved version, which is read-only. Switch back to the active version to delete nodes.',
+        'Read-only version'
+      )
+      return
+    }
     const res = await fetch(`/api/graph?nodeId=${nodeId}&projectId=${projectId}`, {
       method: 'DELETE',
     })
@@ -1028,7 +1083,7 @@ export default function GraphPage() {
     }
     toast.success('Node deleted')
     refetchGraph()
-  }, [projectId, refetchGraph, toast])
+  }, [projectId, refetchGraph, toast, isViewingPastVersion, alertError])
 
   const handleToggleLogs = useCallback(() => {
     setActiveLogsDrawer(prev => prev === 'recon' ? null : 'recon')
@@ -1264,6 +1319,13 @@ export default function GraphPage() {
         isAnyPipelineRunning={isAnyPipelineRunning}
         isEmergencyPausing={isEmergencyPausing}
         tunnelStatus={tunnelStatus}
+        // Scan Timeline (version switch)
+        scanVersions={scanVersions}
+        selectedVersionId={selectedVersionId}
+        onSelectVersion={setSelectedVersionId}
+        onManageVersions={() => setIsVersionManagerOpen(true)}
+        isActivatingVersion={isActivatingVersion}
+        viewingPastVersion={isViewingPastVersion}
         // Agent status
         agentActiveCount={agentSummary.activeCount}
         agentConversations={agentSummary.conversations}
@@ -1347,7 +1409,7 @@ export default function GraphPage() {
             node={selectedNode}
             isOpen={drawerOpen}
             onClose={clearSelection}
-            onDeleteNode={handleDeleteNode}
+            onDeleteNode={isViewingPastVersion ? undefined : handleDeleteNode}
             expandedChild={expandedChild}
             onExpandChild={expandChild}
             onCollapseChild={collapseChild}
@@ -1392,7 +1454,25 @@ export default function GraphPage() {
               onFilterCreatedAndSelect={handleFilterCreatedAndSelect}
             />
           ) : activeView === 'table' ? (
-            tableViewMode === 'nodeDetails' ? (
+            // F0: the graph map, Node Inspector and All Nodes render the SELECTED
+            // version's payload; every analytics/RedZone panel below runs Cypher
+            // against the live graph, so it always reflects the ACTIVE version.
+            tableViewMode === 'scanSchedule' ? (
+              // Schedules + run history are project-level, not version-scoped.
+              <ScanScheduleTable projectId={projectId} />
+            ) : tableViewMode === 'reconDelta' ? (
+              // Recon Delta compares two stored versions, so it works regardless
+              // of which version is being viewed.
+              <ReconDeltaTable projectId={projectId} versions={scanVersions} isDark={isDark} />
+            ) : isViewingPastVersion && tableViewMode !== 'nodeDetails' && tableViewMode !== 'all' ? (
+              <div className={styles.pastVersionPanel}>
+                <ActiveVersionOnlyNotice
+                  activeVersionLabel={activeVersion?.label ?? 'the active version'}
+                  viewedVersionLabel={viewedVersion?.label ?? 'a saved snapshot'}
+                  onOpenManager={() => setIsVersionManagerOpen(true)}
+                />
+              </div>
+            ) : tableViewMode === 'nodeDetails' ? (
               <NodeDetailsTable
                 data={filterGraphData ?? data}
                 isLoading={filterLoading || isLoading}
@@ -1588,6 +1668,18 @@ export default function GraphPage() {
         targetIps={currentProject?.targetIps}
         stats={graphStats}
         isLoading={isReconLoading}
+        currentVersionLabel={activeVersion?.label ?? null}
+      />
+
+      <VersionManager
+        isOpen={isVersionManagerOpen}
+        onClose={() => setIsVersionManagerOpen(false)}
+        projectId={projectId || ''}
+        versions={scanVersions}
+        onChanged={refreshScanVersions}
+        onActivated={() => { refetchFresh(); refetchGraph() }}
+        selectedVersionId={selectedVersionId}
+        onSelectVersion={setSelectedVersionId}
       />
 
       <GvmConfirmModal

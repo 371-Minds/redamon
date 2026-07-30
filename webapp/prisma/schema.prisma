@@ -1051,10 +1051,107 @@ model Project {
   // the other per-project enable flags (webCachePoisonEnabled / zapAjaxSpiderEnabled).
   captureProxyEnabled         Boolean  @default(false) @map("capture_proxy_enabled")
 
+  // ========== SCAN TIMELINE (graph activation lock) ==========
+  // Project-scoped mutual-exclusion flag for "the live graph is being swapped".
+  // "idle" | "activating". While "activating", scan-start / partial-start /
+  // agent-session-start are rejected, and vice-versa (see lib/activationLock.ts).
+  activationState             String   @default("idle") @map("activation_state")
+  activationStartedAt         DateTime? @map("activation_started_at")
+  activationVersionId         String?  @map("activation_version_id")
+
   remediations                      Remediation[]
   reports                           Report[]
+  scanVersions                      ScanVersion[]
+  scanJobs                          ScanJob[]
+  scanSchedules                     ScanSchedule[]
 
   @@map("projects")
+}
+
+// ========== SCAN TIMELINE ==========
+// A ScanVersion is a point-in-time identity for the recon graph of a project.
+// The CURRENT version (isCurrent=true, exactly one per project) IS the live Neo4j
+// graph and therefore carries no bytes (snapshot=null); it renders from /api/graph.
+// A PAST version is frozen: `snapshot` holds the gzipped export-fidelity payload
+// ({nodes, relationships}) so it can be both rendered and restored back into Neo4j
+// (activation). The Neo4j schema itself is unchanged — history lives in Postgres.
+model ScanVersion {
+  id         String   @id @default(cuid())
+  projectId  String   @map("project_id")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  seq        Int
+  label      String
+  isCurrent  Boolean  @default(false) @map("is_current")
+  pinned     Boolean  @default(false)
+  nodeCount  Int?     @map("node_count")
+  linkCount  Int?     @map("link_count")
+  summary    Json?
+  // gzip(JSON.stringify({nodes, relationships})) — null for the live/current version.
+  snapshot   Bytes?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  scanJobs   ScanJob[]
+
+  @@unique([projectId, seq])
+  @@index([projectId])
+  @@map("scan_versions")
+}
+
+// Run history for the timeline table + scheduler. One row per full-scan attempt.
+model ScanJob {
+  id                 String       @id @default(cuid())
+  projectId          String       @map("project_id")
+  project            Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionId          String?      @map("version_id")
+  version            ScanVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  // "manual" | "scheduled"
+  trigger            String       @default("manual")
+  // "new" | "overwrite" | null
+  mode               String?
+  // "queued" | "running" | "completed" | "failed" | "canceled" | "deferred_ram"
+  status             String       @default("queued")
+  initiatedByUserId  String?      @map("initiated_by_user_id")
+  startedAt          DateTime?    @map("started_at")
+  finishedAt         DateTime?    @map("finished_at")
+  scheduleId         String?      @map("schedule_id")
+  schedule           ScanSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  ramReason          String?      @map("ram_reason")
+  nodeCount          Int?         @map("node_count")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  @@index([projectId, createdAt])
+  @@index([status])
+  @@map("scan_jobs")
+}
+
+// A future/recurring full scan. The orchestrator worker polls due rows.
+model ScanSchedule {
+  id                     String   @id @default(cuid())
+  projectId              String   @map("project_id")
+  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId                 String   @map("user_id")
+  label                  String   @default("")
+  // "once" | "interval" | "cron"
+  mode                   String   @default("once")
+  runAt                  DateTime? @map("run_at")
+  intervalMinutes        Int?     @map("interval_minutes")
+  cronExpr               String?  @map("cron_expr")
+  // "new" | "overwrite"
+  scanMode               String   @default("new") @map("scan_mode")
+  enabled                Boolean  @default(true)
+  nextRunAt              DateTime? @map("next_run_at")
+  lastRunAt              DateTime? @map("last_run_at")
+  estimatedEnvelopeBytes BigInt?  @map("estimated_envelope_bytes")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  scanJobs               ScanJob[]
+
+  @@index([enabled, nextRunAt])
+  @@index([projectId])
+  @@map("scan_schedules")
 }
 
 model Conversation {

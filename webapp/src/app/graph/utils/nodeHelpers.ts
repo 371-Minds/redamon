@@ -96,7 +96,20 @@ export const isGoalFinding = (node: GraphNode): boolean => {
 /**
  * Get node color based on type and severity
  */
+/**
+ * Recon Delta overlay palette (Section 6.3): green = new, red = removed,
+ * amber = changed, grey = unchanged.
+ */
+export const DELTA_STATE_COLORS: Record<string, string> = {
+  added: '#059669',
+  removed: '#ef4444',
+  changed: '#f59e0b',
+  stable: '#6b7280',
+}
+
 export const getNodeColor = (node: GraphNode): string => {
+  // In compare mode the delta state is the ONLY thing the color should convey.
+  if (node.deltaState) return DELTA_STATE_COLORS[node.deltaState] ?? DELTA_STATE_COLORS.stable
   if (node.isCluster && node.clusterColor) return node.clusterColor
   if (node.type === 'Vulnerability') {
     const severity = getNodeSeverity(node)

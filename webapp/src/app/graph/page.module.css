@@ -74,3 +74,10 @@
   max-width: 480px;
   line-height: 1.6;
 }
+
+/* Scan Timeline: placeholder shown instead of an analytics/RedZone panel while a
+   past version is selected (those panels always reflect the active version). */
+.pastVersionPanel {
+  flex: 1;
+  overflow-y: auto;
+}

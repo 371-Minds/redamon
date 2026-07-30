@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { guardProject } from '@/lib/access'
 import prisma from '@/lib/prisma'
 import { orchestratorFetch } from '@/lib/orchestrator'
+import { assertGraphNotActivating } from '@/lib/activationLock'
 import { normalizeOrchestratorStartError } from '@/lib/orchestratorError'
 
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
@@ -16,6 +17,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { projectId } = await params
     const __denied = await guardProject(projectId)
     if (__denied) return __denied
+
+    // Scan Timeline 4A.3: a partial recon writes the live graph, so it must not
+    // start while a version activation is swapping it.
+    const activating = await assertGraphNotActivating(projectId)
+    if (activating) return activating
+
     const body = await request.json()
 
     // Verify project exists

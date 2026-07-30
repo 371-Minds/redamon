@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getEffectiveUser } from '@/lib/session'
 import { requireProjectAccess } from '@/lib/access'
 import { createWsTicket } from '@/lib/auth'
+import { assertGraphNotActivating } from '@/lib/activationLock'
 
 // POST /api/agent/ws-ticket
 //
@@ -31,6 +32,12 @@ export async function POST(request: NextRequest) {
   // The effective user must own the project the ticket is scoped to.
   const access = await requireProjectAccess(eff, projectId)
   if (access instanceof NextResponse) return access
+
+  // Scan Timeline 4A.3: the ticket is the chokepoint for starting an agent
+  // session. Refuse to mint one while the project's live graph is being swapped —
+  // the agent reasons over that graph, so it must not attach mid-swap.
+  const activating = await assertGraphNotActivating(projectId)
+  if (activating) return activating
 
   // Null when AGENT_WS_TICKET_SECRET is unset (dev) — the agent fails open.
   const ticket = await createWsTicket(eff.userId, projectId, sessionId)

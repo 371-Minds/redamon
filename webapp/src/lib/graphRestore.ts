@@ -1,0 +1,166 @@
+/**
+ * Shared Neo4j restore — rebuild a project subgraph from the export/snapshot
+ * format `{labels, properties}` + `{startExportId, endExportId, type, properties}`.
+ *
+ * Extracted from the project import route so version activation (Scan Timeline
+ * Section 4A) reuses the exact same, already-proven code path. That is also why
+ * snapshots are stored in export fidelity rather than the lossy render shape.
+ *
+ * Strategy (unchanged from import):
+ *   - group nodes by primary label,
+ *   - MERGE on the label's uniqueness constraint keys when it has any (avoids
+ *     IndexEntryConflictException), CREATE otherwise,
+ *   - batch with UNWIND,
+ *   - recreate relationships by the temporary `_exportId`, then strip it.
+ *
+ * Tenancy: `project_id` is ALWAYS stamped from the caller's argument (never taken
+ * from the payload), so a restore can only ever write into the target project.
+ */
+import type { Session } from 'neo4j-driver'
+
+export interface RestorableNode {
+  labels: string[]
+  properties: Record<string, unknown>
+  _exportId: string
+}
+
+export interface RestorableRelationship {
+  startExportId: string
+  endExportId: string
+  type: string
+  properties: Record<string, unknown>
+}
+
+export interface RestoreOptions {
+  /** Target project. Always stamped onto every restored node. */
+  projectId: string
+  /** When set, re-owns every node (import). When omitted, each node keeps its own user_id. */
+  userId?: string
+  nodeBatchSize?: number
+  relBatchSize?: number
+}
+
+export interface RestoreResult {
+  nodes: number
+  relationships: number
+}
+
+const DEFAULT_NODE_BATCH = 500
+const DEFAULT_REL_BATCH = 500
+
+/**
+ * Delete a project's graph. `excludeLabels` keeps nodes that are NOT part of the
+ * recon version — notably the AttackChain family, which is agent-session state
+ * and must survive a version swap (F1).
+ */
+export async function clearProjectGraph(
+  session: Session,
+  projectId: string,
+  excludeLabels: readonly string[] = []
+): Promise<void> {
+  if (excludeLabels.length === 0) {
+    await session.run('MATCH (n {project_id: $pid}) DETACH DELETE n', { pid: projectId })
+    return
+  }
+  await session.run(
+    `MATCH (n {project_id: $pid})
+     WHERE NONE(l IN labels(n) WHERE l IN $excluded)
+     DETACH DELETE n`,
+    { pid: projectId, excluded: [...excludeLabels] }
+  )
+}
+
+/** Uniqueness-constraint keys per label, used to choose MERGE vs CREATE. */
+async function loadUniqueKeys(session: Session): Promise<Map<string, string[]>> {
+  const result = await session.run(
+    `SHOW CONSTRAINTS YIELD labelsOrTypes, properties, type
+     WHERE type = 'UNIQUENESS'
+     RETURN labelsOrTypes[0] AS label, properties`
+  )
+  const map = new Map<string, string[]>()
+  for (const record of result.records) {
+    map.set(record.get('label') as string, record.get('properties') as string[])
+  }
+  return map
+}
+
+/**
+ * Recreate `nodes` + `relationships` for `projectId`. The caller owns clearing
+ * (so it can choose what to preserve) and owns the session lifecycle.
+ */
+export async function restoreGraph(
+  session: Session,
+  nodes: RestorableNode[],
+  relationships: RestorableRelationship[],
+  opts: RestoreOptions
+): Promise<RestoreResult> {
+  if (nodes.length === 0) return { nodes: 0, relationships: 0 }
+
+  const nodeBatchSize = opts.nodeBatchSize ?? DEFAULT_NODE_BATCH
+  const relBatchSize = opts.relBatchSize ?? DEFAULT_REL_BATCH
+  const uniqueKeyMap = await loadUniqueKeys(session)
+
+  const prepared = nodes.map(node => ({
+    labels: node.labels,
+    properties: {
+      ...node.properties,
+      ...(opts.userId ? { user_id: opts.userId } : {}),
+      project_id: opts.projectId,
+      _exportId: node._exportId,
+    },
+  }))
+
+  const byLabel = new Map<string, typeof prepared>()
+  for (const node of prepared) {
+    const primaryLabel = node.labels[0] || '__no_label__'
+    if (!byLabel.has(primaryLabel)) byLabel.set(primaryLabel, [])
+    byLabel.get(primaryLabel)!.push(node)
+  }
+
+  for (const [label, labelNodes] of byLabel) {
+    const uniqueKeys = uniqueKeyMap.get(label)
+    for (let i = 0; i < labelNodes.length; i += nodeBatchSize) {
+      const batch = labelNodes.slice(i, i + nodeBatchSize)
+      if (uniqueKeys && uniqueKeys.length > 0) {
+        const identExpr = uniqueKeys
+          .map(k => `\`${k}\`: node.properties.\`${k}\``)
+          .join(', ')
+        await session.run(
+          `UNWIND $nodes AS node
+           CALL apoc.merge.node(node.labels, {${identExpr}}, node.properties, node.properties) YIELD node AS n
+           RETURN count(n)`,
+          { nodes: batch }
+        )
+      } else {
+        await session.run(
+          `UNWIND $nodes AS node
+           CALL apoc.create.node(node.labels, node.properties) YIELD node AS n
+           RETURN count(n)`,
+          { nodes: batch }
+        )
+      }
+    }
+  }
+
+  if (relationships.length > 0) {
+    for (let i = 0; i < relationships.length; i += relBatchSize) {
+      const batch = relationships.slice(i, i + relBatchSize)
+      await session.run(
+        `UNWIND $rels AS rel
+         MATCH (a {_exportId: rel.startExportId, project_id: $pid})
+         MATCH (b {_exportId: rel.endExportId, project_id: $pid})
+         CALL apoc.create.relationship(a, rel.type, rel.properties, b) YIELD rel AS r
+         RETURN count(r)`,
+        { rels: batch, pid: opts.projectId }
+      )
+    }
+  }
+
+  // Strip the temporary correlation id so it never leaks into the graph.
+  await session.run(
+    'MATCH (n {project_id: $pid}) WHERE n._exportId IS NOT NULL REMOVE n._exportId',
+    { pid: opts.projectId }
+  )
+
+  return { nodes: nodes.length, relationships: relationships.length }
+}

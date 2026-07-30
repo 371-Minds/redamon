@@ -3004,6 +3004,86 @@ Documented here so the prefix convention stays coherent as later laps land. Empt
 
 ---
 
+## 🕰️ Scan Timeline (versions live in Postgres, NOT in the graph)
+
+**The Neo4j schema does not change for the Scan Timeline.** There is no version
+node, no version property, and no `:VERSION_OF` relationship — nothing in this
+document is modified by the feature.
+
+### The model
+
+- The **live Neo4j graph IS the current version.** It behaves exactly as before:
+  a full recon wipes and rebuilds it. Everything that reads or writes the graph
+  (the agent, partial recon, the ~30 RedZone/analytics endpoints, saved views)
+  therefore sees whichever version is *active*, unchanged.
+- A **past version is a saved snapshot**: the project's subgraph, serialized and
+  gzipped into Postgres. Past versions are read-only and never present in Neo4j,
+  so old data can never reach the agent or an analytics query.
+- Snapshots are taken **before** a new full scan overwrites the graph — and only
+  when the user chooses to keep it (the "new version vs overwrite" modal).
+
+### Postgres models
+
+| Model | Purpose |
+|---|---|
+| `ScanVersion` | One point-in-time identity for the recon graph. `isCurrent = true` on exactly one row per project — that row IS the live graph and has `snapshot = null`. A frozen (past) version carries `snapshot` bytes. `@@unique([projectId, seq])` keeps numbering from forking. |
+| `ScanJob` | Run history: `trigger` (manual/scheduled), `mode`, `status` (queued/running/completed/failed/canceled/deferred_ram), who started it, timings, `ramReason`. |
+| `ScanSchedule` | A future/recurring full scan: `once` / `interval` / `cron` (UTC), plus the `scanMode` to use for the previous graph. |
+
+`Project` also gains the activation lock columns `activation_state`,
+`activation_started_at`, `activation_version_id` (see below).
+
+### Snapshot payload shape
+
+Snapshots are stored in the **export (restore-fidelity) format**, not the UI
+render shape, because a snapshot must be restorable back into Neo4j:
+
+```jsonc
+// gzip( JSON ) in ScanVersion.snapshot
+{
+  "nodes": [
+    { "labels": ["Subdomain"], "properties": { /* ALL properties, incl. project_id/user_id */ },
+      "_exportId": "<uuid>" }
+  ],
+  "relationships": [
+    { "startExportId": "<uuid>", "endExportId": "<uuid>", "type": "RESOLVES_TO", "properties": {} }
+  ]
+}
+```
+
+The graph screen renders a version by converting this to the same
+`{ nodes, links }` payload `/api/graph` returns, so the canvas, the clustering and
+the node/link tables are unchanged.
+
+**Agent session nodes are excluded.** The AttackChain family (`AttackChain`,
+`ChainStep`, `ChainFinding`, `ChainDecision`, `ChainFailure`) is *agent-run* state,
+not recon state: it is filtered out of every capture, and preserved (not deleted)
+when a version is activated. Chains stay conversation-scoped exactly as documented
+in the Attack Chain Graph section above.
+
+### Activation (switching the active version)
+
+Viewing a version only renders its bytes. **Activating** it swaps the live graph:
+
+1. freeze the outgoing current version *from the live graph* (not from its old
+   stored bytes — partial recon may have edited it since),
+2. delete the live recon graph **excluding the AttackChain family**, and restore
+   the target version through the same code path the project import uses,
+3. only then move the `isCurrent` pointer, and invalidate the graph cache.
+
+A failure in step 1 aborts before anything is deleted; a failure in step 2 leaves
+both endpoints intact in Postgres, so the activation is simply retriable.
+
+Activation holds a **project activation lock** (`Project.activation_state`) and is
+mutually exclusive with a full scan, a partial recon run, an agent session, and the
+scan scheduler — in both directions.
+
+**Only the recon graph is versioned.** GVM/secret-scan output files, remediations,
+reports and captured HTTP traffic are project-level and always reflect the latest
+scan, whichever version is active.
+
+---
+
 ## 🔮 Future Extensions (Not Implemented Yet)
 - GVMScan, GVMVulnerability, DetectedProduct, OSFingerprint nodes (GVM integration - designed but not yet created by code; GVM vulns currently stored as Vulnerability nodes with source="gvm"; Traceroute nodes now implemented)
 - `Screenshot` nodes linking to stored images

@@ -29,6 +29,7 @@ def _value_error_http(e: ValueError) -> "HTTPException":
         return _HTTPException(status_code=409, detail=e.result.payload())
     return _HTTPException(status_code=409, detail=str(e))
 from local_llm_manager import LocalLlmManager
+from scan_scheduler import scan_scheduler_loop
 from models import (
     HealthResponse,
     CaptureProxyConfig,
@@ -280,10 +281,15 @@ async def lifespan(app: FastAPI):
     container_manager.codefix_work_host_base = CODEFIX_WORK_PATH
     reaper = asyncio.create_task(_ai_attack_reaper())
     capture_reconciler = asyncio.create_task(_capture_config_reconcile())
+    # Scan Timeline (Section 7.2): the scheduler worker lives here because the
+    # orchestrator owns admission + the spawn. It only ticks; the webapp performs
+    # the run through the same start path a manual scan uses.
+    scan_scheduler = asyncio.create_task(scan_scheduler_loop(lambda: container_manager))
     yield
     logger.info("Shutting down Recon Orchestrator...")
     reaper.cancel()
     capture_reconciler.cancel()
+    scan_scheduler.cancel()
     if local_llm_manager:
         local_llm_manager.shutdown()
     await container_manager.cleanup()
@@ -354,6 +360,23 @@ async def health_check():
         running_ai_attack_scans=container_manager.get_ai_attack_running_count() if container_manager else 0,
         gvm_available=container_manager.is_gvm_available() if container_manager else False,
     )
+
+
+@app.get("/system/scan-envelope")
+async def system_scan_envelope(scan_type: str = "full_recon"):
+    """Scan Timeline (Section 7.3): the RAM envelope a scan of `scan_type` reserves
+    and the total pool available to scans, so the webapp can do the STATIC schedule
+    feasibility check at creation time. Read-only, no reservation is taken — the
+    authoritative gate stays `try_admit` at execution."""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    ledger = container_manager.ledger
+    return {
+        "scan_type": scan_type,
+        "envelope_bytes": ledger.envelope_for(scan_type),
+        "scan_pool_bytes": ledger.scan_pool(),
+        "remaining_for_new_bytes": ledger.remaining_for_new(),
+    }
 
 
 @app.get("/system/stats")
@@ -679,6 +702,7 @@ async def start_recon(project_id: str, request: ReconStartRequest):
             webapp_api_url=_spawned_webapp_url(),
             recon_path=RECON_PATH,
             custom_templates_path=CUSTOM_TEMPLATES_PATH,
+            scan_mode=request.mode,
         )
         return state
     except ValueError as e:

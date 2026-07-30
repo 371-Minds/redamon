@@ -7,6 +7,7 @@ import archiver from 'archiver'
 import { Readable } from 'stream'
 import { randomUUID } from 'crypto'
 import { requireEffectiveUser, requireProjectAccess } from '@/lib/access'
+import { serializeGraphProperties } from '@/lib/graphSerialize'
 
 const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/data/recon-output'
 const GVM_OUTPUT_PATH = process.env.GVM_OUTPUT_PATH || '/data/gvm-output'
@@ -16,46 +17,9 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-function serializeValue(value: unknown): unknown {
-  if (value === null || value === undefined) return value
-
-  // Neo4j DateTime: has year/month/day fields (check before integer check)
-  if (typeof value === 'object' && 'year' in value && 'month' in value && 'day' in value) {
-    const v = value as Record<string, unknown>
-    const get = (k: string): number => {
-      const f = v[k]
-      if (f && typeof f === 'object' && 'low' in f) return (f as { low: number }).low
-      return typeof f === 'number' ? f : 0
-    }
-    const year = get('year')
-    const month = String(get('month')).padStart(2, '0')
-    const day = String(get('day')).padStart(2, '0')
-    const hour = String(get('hour')).padStart(2, '0')
-    const minute = String(get('minute')).padStart(2, '0')
-    const second = String(get('second')).padStart(2, '0')
-    return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`
-  }
-
-  // Neo4j Integer: has low/high fields (driver Integer objects)
-  if (typeof value === 'object' && 'low' in value && 'high' in value) {
-    return (value as { low: number }).low
-  }
-
-  // Arrays: recurse into elements
-  if (Array.isArray(value)) {
-    return value.map(v => serializeValue(v))
-  }
-
-  return value
-}
-
-function serializeProperties(props: Record<string, unknown>): Record<string, unknown> {
-  const serialized: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(props)) {
-    serialized[key] = serializeValue(value)
-  }
-  return serialized
-}
+// Shared with lib/scanSnapshot.ts so exports and Scan Timeline snapshots are the
+// same restore-fidelity format (a snapshot must be re-importable into Neo4j).
+const serializeProperties = serializeGraphProperties
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -95,6 +59,22 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // 2c. Fetch reports
     const reports = await prisma.report.findMany({
+      where: { projectId: id },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    // 2c-bis. Scan Timeline (plan Section 9): versions + run history + schedules
+    // travel with the project so its history survives a round-trip. Snapshot
+    // bytes are base64'd because Bytes cannot survive JSON.stringify.
+    const scanVersions = await prisma.scanVersion.findMany({
+      where: { projectId: id },
+      orderBy: { seq: 'asc' },
+    })
+    const scanJobs = await prisma.scanJob.findMany({
+      where: { projectId: id },
+      orderBy: { createdAt: 'asc' },
+    })
+    const scanSchedules = await prisma.scanSchedule.findMany({
       where: { projectId: id },
       orderBy: { createdAt: 'asc' },
     })
@@ -170,6 +150,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         neo4jNodes: neo4jNodes.length,
         neo4jRelationships: neo4jRelationships.length,
         userPresets: userPresets.length,
+        scanVersions: scanVersions.length,
+        scanJobs: scanJobs.length,
+        scanSchedules: scanSchedules.length,
         artifacts: 0,
       },
     }
@@ -227,6 +210,33 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         archive.append(createReadStream(r.filePath), { name: `reports/${r.filename}` })
       }
     }
+
+    // Scan Timeline history (Section 9).
+    archive.append(
+      Buffer.from(JSON.stringify(
+        scanVersions.map(v => {
+          const { snapshot, ...rest } = v
+          return {
+            ...rest,
+            snapshotBase64: snapshot ? Buffer.from(snapshot).toString('base64') : null,
+          }
+        }),
+        null, 2
+      )),
+      { name: 'timeline/versions.json' }
+    )
+    archive.append(Buffer.from(JSON.stringify(scanJobs, null, 2)), { name: 'timeline/jobs.json' })
+    archive.append(
+      Buffer.from(JSON.stringify(
+        scanSchedules.map(s => ({
+          ...s,
+          // BigInt is not JSON-serializable.
+          estimatedEnvelopeBytes: s.estimatedEnvelopeBytes === null ? null : String(s.estimatedEnvelopeBytes),
+        })),
+        null, 2
+      )),
+      { name: 'timeline/schedules.json' }
+    )
 
     archive.append(Buffer.from(JSON.stringify(neo4jNodes, null, 2)), { name: 'neo4j/nodes.json' })
     archive.append(Buffer.from(JSON.stringify(neo4jRelationships, null, 2)), { name: 'neo4j/relationships.json' })

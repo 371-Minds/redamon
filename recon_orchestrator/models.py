@@ -23,6 +23,11 @@ class ReconStartRequest(BaseModel):
     project_id: str
     user_id: str
     webapp_api_url: str
+    # Scan Timeline: "new" (the webapp already froze the outgoing graph as a saved
+    # version) or "overwrite" (it was discarded). Telemetry/history ONLY — the
+    # pipeline behaves identically either way, because a full recon always wipes
+    # and rebuilds the live graph. Forwarded to the container as SCAN_MODE.
+    mode: Optional[str] = None
 
 
 class CaptureProxyConfig(BaseModel):

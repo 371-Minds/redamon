@@ -12,7 +12,12 @@ export interface GraphNode {
   clusterChildren?: GraphNode[]
   clusterChildType?: string
   clusterColor?: string
+  // Scan Timeline (Recon Delta overlay): how this asset differs between the two
+  // compared versions. Set only in compare mode; drives the node color.
+  deltaState?: DeltaState
 }
+
+export type DeltaState = 'added' | 'removed' | 'changed' | 'stable'
 
 export interface GraphLink {
   source: string | GraphNode

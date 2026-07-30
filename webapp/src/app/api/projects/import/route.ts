@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getGraphSession } from '@/app/api/graph/neo4j'
+import { clearProjectGraph, restoreGraph } from '@/lib/graphRestore'
 import { requireEffectiveUser } from '@/lib/access'
 import JSZip from 'jszip'
 import { randomUUID } from 'crypto'
@@ -332,6 +333,94 @@ export async function POST(request: NextRequest) {
       (stats as Record<string, number>).userPresets = presets.length
     }
 
+    // Import Scan Timeline history (plan Section 9). Ids are regenerated and
+    // everything is re-owned under the effective user + the new project, so an
+    // import can never resurrect another project's rows or ids.
+    const versionIdMap = new Map<string, string>()
+    const scheduleIdMap = new Map<string, string>()
+    const versionsFile = zip.file('timeline/versions.json')
+    if (versionsFile) {
+      const versions: Array<Record<string, unknown>> = JSON.parse(await versionsFile.async('text'))
+      for (const v of versions) {
+        const created = await prisma.scanVersion.create({
+          data: {
+            projectId: newProject.id,
+            seq: Number(v.seq ?? 1),
+            label: String(v.label ?? ''),
+            isCurrent: Boolean(v.isCurrent),
+            pinned: Boolean(v.pinned),
+            nodeCount: v.nodeCount === null || v.nodeCount === undefined ? null : Number(v.nodeCount),
+            linkCount: v.linkCount === null || v.linkCount === undefined ? null : Number(v.linkCount),
+            summary: (v.summary ?? undefined) as never,
+            snapshot: typeof v.snapshotBase64 === 'string' && v.snapshotBase64
+              ? new Uint8Array(Buffer.from(v.snapshotBase64, 'base64'))
+              : null,
+          },
+          select: { id: true },
+        })
+        versionIdMap.set(String(v.id), created.id)
+        ;(stats as Record<string, number>).scanVersions =
+          ((stats as Record<string, number>).scanVersions ?? 0) + 1
+      }
+    }
+
+    const schedulesFile = zip.file('timeline/schedules.json')
+    if (schedulesFile) {
+      const schedules: Array<Record<string, unknown>> = JSON.parse(await schedulesFile.async('text'))
+      for (const sc of schedules) {
+        const created = await prisma.scanSchedule.create({
+          data: {
+            projectId: newProject.id,
+            userId,
+            label: String(sc.label ?? ''),
+            mode: String(sc.mode ?? 'once'),
+            runAt: sc.runAt ? new Date(sc.runAt as string) : null,
+            intervalMinutes: sc.intervalMinutes === null || sc.intervalMinutes === undefined
+              ? null : Number(sc.intervalMinutes),
+            cronExpr: sc.cronExpr ? String(sc.cronExpr) : null,
+            scanMode: String(sc.scanMode ?? 'new'),
+            // An imported schedule arrives DISABLED: importing a project must never
+            // silently start scanning someone's target on the old cadence.
+            enabled: false,
+            nextRunAt: null,
+            lastRunAt: sc.lastRunAt ? new Date(sc.lastRunAt as string) : null,
+            estimatedEnvelopeBytes: sc.estimatedEnvelopeBytes
+              ? BigInt(String(sc.estimatedEnvelopeBytes))
+              : null,
+          },
+          select: { id: true },
+        })
+        scheduleIdMap.set(String(sc.id), created.id)
+        ;(stats as Record<string, number>).scanSchedules =
+          ((stats as Record<string, number>).scanSchedules ?? 0) + 1
+      }
+    }
+
+    const jobsFile = zip.file('timeline/jobs.json')
+    if (jobsFile) {
+      const jobs: Array<Record<string, unknown>> = JSON.parse(await jobsFile.async('text'))
+      for (const j of jobs) {
+        await prisma.scanJob.create({
+          data: {
+            projectId: newProject.id,
+            versionId: j.versionId ? versionIdMap.get(String(j.versionId)) ?? null : null,
+            scheduleId: j.scheduleId ? scheduleIdMap.get(String(j.scheduleId)) ?? null : null,
+            trigger: String(j.trigger ?? 'manual'),
+            mode: j.mode ? String(j.mode) : null,
+            // A run that was in flight in the source project is not running here.
+            status: j.status === 'running' || j.status === 'queued' ? 'canceled' : String(j.status ?? 'completed'),
+            initiatedByUserId: userId,
+            startedAt: j.startedAt ? new Date(j.startedAt as string) : null,
+            finishedAt: j.finishedAt ? new Date(j.finishedAt as string) : null,
+            ramReason: j.ramReason ? String(j.ramReason) : null,
+            nodeCount: j.nodeCount === null || j.nodeCount === undefined ? null : Number(j.nodeCount),
+          },
+        })
+        ;(stats as Record<string, number>).scanJobs =
+          ((stats as Record<string, number>).scanJobs ?? 0) + 1
+      }
+    }
+
     // Import Neo4j data
     const nodesFile = zip.file('neo4j/nodes.json')
     const relsFile = zip.file('neo4j/relationships.json')
@@ -346,113 +435,24 @@ export async function POST(request: NextRequest) {
         const session = getGraphSession()
         try {
           // Clear any existing data for the new project ID (safety)
-          await session.run(
-            'MATCH (n {project_id: $pid}) DETACH DELETE n',
-            { pid: newProject.id }
-          )
+          await clearProjectGraph(session, newProject.id)
 
           // Also clear the original project's Neo4j data to prevent duplicates.
           // With global unique constraints, nodes from the old project would conflict
           // or create stale relationships pointing to orphaned unconstrained nodes.
           if (_oldProjectId && _oldProjectId !== newProject.id) {
-            await session.run(
-              'MATCH (n {project_id: $pid}) DETACH DELETE n',
-              { pid: _oldProjectId }
-            )
+            await clearProjectGraph(session, _oldProjectId)
           }
 
-          // Query unique constraints so we can MERGE instead of CREATE
-          // for labels that have them (avoids IndexEntryConflictException)
-          const constraintResult = await session.run(
-            `SHOW CONSTRAINTS YIELD labelsOrTypes, properties, type
-             WHERE type = 'UNIQUENESS'
-             RETURN labelsOrTypes[0] AS label, properties`
-          )
-          const uniqueKeyMap = new Map<string, string[]>()
-          for (const record of constraintResult.records) {
-            const label = record.get('label') as string
-            const props = record.get('properties') as string[]
-            uniqueKeyMap.set(label, props)
-          }
-
-          // Remap user_id and project_id in node properties, add _exportId
-          const remappedNodes = nodes.map(node => ({
-            labels: node.labels,
-            properties: {
-              ...node.properties,
-              user_id: userId,
-              project_id: newProject.id,
-              _exportId: node._exportId,
-            },
-          }))
-
-          // Group nodes by primary label to apply correct merge strategy
-          const nodesByLabel = new Map<string, typeof remappedNodes>()
-          for (const node of remappedNodes) {
-            const primaryLabel = node.labels[0] || '__no_label__'
-            if (!nodesByLabel.has(primaryLabel)) {
-              nodesByLabel.set(primaryLabel, [])
-            }
-            nodesByLabel.get(primaryLabel)!.push(node)
-          }
-
-          // Create/merge nodes per label group
-          const NODE_BATCH_SIZE = 500
-          for (const [label, labelNodes] of nodesByLabel) {
-            // Check if this label (or any label on nodes in this group) has a unique constraint
-            const uniqueKeys = uniqueKeyMap.get(label)
-
-            for (let i = 0; i < labelNodes.length; i += NODE_BATCH_SIZE) {
-              const batch = labelNodes.slice(i, i + NODE_BATCH_SIZE)
-
-              if (uniqueKeys && uniqueKeys.length > 0) {
-                // Has unique constraint — use MERGE to avoid conflict
-                // Build identity expression from constraint keys
-                const identExpr = uniqueKeys
-                  .map(k => `\`${k}\`: node.properties.\`${k}\``)
-                  .join(', ')
-
-                await session.run(
-                  `UNWIND $nodes AS node
-                   CALL apoc.merge.node(node.labels, {${identExpr}}, node.properties, node.properties) YIELD node AS n
-                   RETURN count(n)`,
-                  { nodes: batch }
-                )
-              } else {
-                // No unique constraint — safe to CREATE
-                await session.run(
-                  `UNWIND $nodes AS node
-                   CALL apoc.create.node(node.labels, node.properties) YIELD node AS n
-                   RETURN count(n)`,
-                  { nodes: batch }
-                )
-              }
-            }
-          }
-          stats.neo4jNodes = nodes.length
-
-          // Create relationships using _exportId references
-          if (relationships.length > 0) {
-            const REL_BATCH_SIZE = 500
-            for (let i = 0; i < relationships.length; i += REL_BATCH_SIZE) {
-              const batch = relationships.slice(i, i + REL_BATCH_SIZE)
-              await session.run(
-                `UNWIND $rels AS rel
-                 MATCH (a {_exportId: rel.startExportId, project_id: $pid})
-                 MATCH (b {_exportId: rel.endExportId, project_id: $pid})
-                 CALL apoc.create.relationship(a, rel.type, rel.properties, b) YIELD rel AS r
-                 RETURN count(r)`,
-                { rels: batch, pid: newProject.id }
-              )
-            }
-            stats.neo4jRelationships = relationships.length
-          }
-
-          // Clean up temporary _exportId property
-          await session.run(
-            'MATCH (n {project_id: $pid}) WHERE n._exportId IS NOT NULL REMOVE n._exportId',
-            { pid: newProject.id }
-          )
+          // Shared with Scan Timeline version activation (lib/graphRestore.ts):
+          // same MERGE-vs-CREATE-by-constraint, batching and _exportId wiring.
+          // Nodes are re-owned under the importing user and the new project.
+          const restored = await restoreGraph(session, nodes, relationships, {
+            projectId: newProject.id,
+            userId,
+          })
+          stats.neo4jNodes = restored.nodes
+          stats.neo4jRelationships = restored.relationships
         } finally {
           await session.close()
         }

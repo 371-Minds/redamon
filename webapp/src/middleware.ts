@@ -27,6 +27,10 @@ const INTERNAL_ALLOWLIST: { method: string; pattern: RegExp }[] = [
   { method: 'POST', pattern: /^\/api\/traffic\/[^/]+\/ingest$/ },
   // Periodic traffic housekeeping (retention/quota/orphan GC), internal cron only.
   { method: 'POST', pattern: /^\/api\/traffic\/maintenance$/ },
+  // Scan Timeline scheduler: the orchestrator worker polls for due schedules and
+  // asks the webapp to run or defer them (the webapp owns the version freeze).
+  { method: 'GET', pattern: /^\/api\/internal\/scan-schedules\/due$/ },
+  { method: 'POST', pattern: /^\/api\/internal\/scan-schedules\/[^/]+\/(run|defer)$/ },
 ]
 
 // Fail-open rollout: default log-only (never blocks), so an omitted route shows

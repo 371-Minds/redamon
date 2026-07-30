@@ -1,0 +1,158 @@
+/**
+ * Scan Timeline — version list for a project.
+ *
+ * GET  /api/projects/[id]/versions   list versions (newest first)
+ * POST /api/projects/[id]/versions   freeze the live graph as a new past version
+ *                                    ("Save current as a version", Section 5)
+ */
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { requireEffectiveUser, requireProjectAccess } from '@/lib/access'
+import { writeAudit } from '@/lib/audit'
+import {
+  captureGraphSnapshot,
+  storeSnapshot,
+  ensureCurrentVersion,
+  defaultVersionLabel,
+} from '@/lib/scanSnapshot'
+import { nextVersionSeq } from '@/lib/scanTimeline'
+import { isActivationInProgress } from '@/lib/activationLock'
+import { applyRetentionSafe } from '@/lib/scanRetention'
+import { sanitizeVersionLabel } from '@/lib/scanVersionLabel'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+export async function GET(_request: NextRequest, { params }: RouteParams) {
+  const { id } = await params
+  const eff = await requireEffectiveUser()
+  if (eff instanceof NextResponse) return eff
+  const access = await requireProjectAccess(eff, id)
+  if (access instanceof NextResponse) return access
+
+  try {
+    // A project that predates the Scan Timeline gets its v1 (= the live graph)
+    // on first read, so the switch is never empty for an existing project.
+    await ensureCurrentVersion(id)
+
+    const rows = await prisma.$queryRaw<Array<{
+      id: string
+      seq: number
+      label: string
+      is_current: boolean
+      pinned: boolean
+      node_count: number | null
+      link_count: number | null
+      created_at: Date
+      snapshot_bytes: number | null
+    }>>`
+      SELECT id, seq, label, is_current, pinned, node_count, link_count, created_at,
+             octet_length(snapshot) AS snapshot_bytes
+      FROM scan_versions
+      WHERE project_id = ${id}
+      ORDER BY seq DESC
+    `
+
+    return NextResponse.json({
+      versions: rows.map(r => ({
+        id: r.id,
+        seq: r.seq,
+        label: r.label,
+        isCurrent: r.is_current,
+        pinned: r.pinned,
+        nodeCount: r.node_count,
+        linkCount: r.link_count,
+        createdAt: r.created_at,
+        snapshotBytes: r.snapshot_bytes ?? 0,
+        // A version with no bytes cannot be restored into Neo4j (4A.6). The
+        // current version is the live graph, so it is never "activatable".
+        activatable: !r.is_current && (r.snapshot_bytes ?? 0) > 0,
+      })),
+      activating: await isActivationInProgress(id),
+    }, { headers: { 'Cache-Control': 'private, no-cache' } })
+  } catch (error) {
+    console.error('[scanTimeline] version list failed:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to list versions' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  const { id } = await params
+  const eff = await requireEffectiveUser()
+  if (eff instanceof NextResponse) return eff
+  const access = await requireProjectAccess(eff, id)
+  if (access instanceof NextResponse) return access
+
+  // Freezing reads the whole live graph; refuse while it is being swapped.
+  if (await isActivationInProgress(id)) {
+    return NextResponse.json(
+      { error: 'A version activation is in progress for this project. Try again once it finishes.' },
+      { status: 409 }
+    )
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const label = sanitizeVersionLabel((body as { label?: unknown })?.label)
+  if (label instanceof Error) {
+    return NextResponse.json({ error: label.message }, { status: 400 })
+  }
+
+  try {
+    const captured = await captureGraphSnapshot(id)
+    if (captured.nodeCount === 0) {
+      return NextResponse.json(
+        { error: 'The graph is empty — there is nothing to save as a version.' },
+        { status: 400 }
+      )
+    }
+
+    // "Save current as a version" freezes NOW as a past version and immediately
+    // opens the next version for the live graph, so the live graph keeps being
+    // the current version (the model's single invariant).
+    const current = await ensureCurrentVersion(id)
+    await storeSnapshot(current.id, captured)
+    if (label) {
+      await prisma.scanVersion.update({ where: { id: current.id }, data: { label } })
+    }
+
+    const nextSeq = await nextVersionSeq(id)
+    const created = await prisma.$transaction(async tx => {
+      await tx.scanVersion.update({ where: { id: current.id }, data: { isCurrent: false } })
+      return tx.scanVersion.create({
+        data: {
+          projectId: id,
+          seq: nextSeq,
+          label: defaultVersionLabel(nextSeq),
+          isCurrent: true,
+          snapshot: null,
+        },
+        select: { id: true, seq: true, label: true },
+      })
+    })
+
+    await applyRetentionSafe(id)
+
+    await writeAudit({
+      actorId: eff.userId,
+      action: 'scan-version.save-current',
+      targetType: 'scanVersion',
+      targetId: current.id,
+      after: { seq: current.seq, nodeCount: captured.nodeCount, linkCount: captured.linkCount },
+    })
+
+    return NextResponse.json({
+      savedVersion: { id: current.id, seq: current.seq, nodeCount: captured.nodeCount },
+      currentVersion: created,
+    })
+  } catch (error) {
+    console.error('[scanTimeline] save-current failed:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to save the current graph as a version' },
+      { status: 500 }
+    )
+  }
+}
