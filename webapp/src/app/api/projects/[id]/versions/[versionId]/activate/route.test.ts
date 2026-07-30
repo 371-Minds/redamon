@@ -240,7 +240,14 @@ describe('the swap', () => {
     expect(h.txUpdateMany).toHaveBeenCalledWith({
       where: { projectId: 'p1', isCurrent: true }, data: { isCurrent: false },
     })
-    expect(h.txUpdate).toHaveBeenCalledWith({ where: { id: 'v1' }, data: { isCurrent: true } })
+    // The promoted version becomes the live graph, so it must SHED its snapshot
+    // bytes (the invariant is "the current version has snapshot=null"). Keeping
+    // them leaves a full duplicate of the graph in Postgres and a stale copy that
+    // future readers could trust. Regression: activation used to set only
+    // isCurrent:true, leaving the activated version current WITH bytes.
+    expect(h.txUpdate).toHaveBeenCalledWith({
+      where: { id: 'v1' }, data: { isCurrent: true, snapshot: null },
+    })
   })
 
   test('an empty outgoing graph is not stored as an empty snapshot', async () => {

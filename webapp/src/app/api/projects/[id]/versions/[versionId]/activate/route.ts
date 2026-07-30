@@ -154,12 +154,16 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     }
 
     // --- 3. move the pointer (only after the restore succeeded) --------------
+    // The promoted version IS the live graph now, so it must shed its snapshot
+    // bytes: the invariant is "the current version has snapshot=null" and it
+    // renders from /api/graph. Keeping the bytes would leave a full duplicate of
+    // the graph in Postgres and a stale copy a future reader could trust.
     await prisma.$transaction(async tx => {
       await tx.scanVersion.updateMany({
         where: { projectId: id, isCurrent: true },
         data: { isCurrent: false },
       })
-      await tx.scanVersion.update({ where: { id: versionId }, data: { isCurrent: true } })
+      await tx.scanVersion.update({ where: { id: versionId }, data: { isCurrent: true, snapshot: null } })
     })
 
     // --- 4. the next read must see X ----------------------------------------
