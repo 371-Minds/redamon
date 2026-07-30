@@ -100,6 +100,11 @@ export const SECTION_WIKI: Record<string, { page: string; anchor?: string }> = {
   GvmScan:          { page: 'GVM-Vulnerability-Scanning' },
   Fireteam:         { page: 'Fireteam-Parallel-Specialists' },
   Lats:             { page: 'Exploit-Path-Search-LATS' },
+  // Scan Timeline (versioned recon graphs) — one page, three deep links.
+  ScanTimeline:     { page: 'Scan-Timeline' },
+  ReconDelta:       { page: 'Scan-Timeline', anchor: 'recon-delta-comparing-two-versions' },
+  ScanSchedule:     { page: 'Scan-Timeline', anchor: 'scan-scheduler' },
+  VersionManager:   { page: 'Scan-Timeline', anchor: 'version-manager' },
   // Tool sections that have a TOOL_WIKI entry are also exposed here for convenience.
   ...({} as Record<string, { page: string; anchor?: string }>),
 }

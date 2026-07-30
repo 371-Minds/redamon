@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Plus, Play, Pause, Trash2, CalendarClock } from 'lucide-react'
-import { useAlertModal, useToast } from '@/components/ui'
+import { useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import styles from './ScanScheduleTable.module.css'
 
 interface Schedule {
@@ -225,6 +225,7 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
       <section className={styles.section}>
         <h3 className={styles.heading}>
           <CalendarClock size={14} /> Scheduled scans
+          <WikiInfoButton target="ScanSchedule" title="Open the Scan Scheduler wiki page" />
           {loading && <Loader2 size={12} className={styles.spinner} />}
         </h3>
 

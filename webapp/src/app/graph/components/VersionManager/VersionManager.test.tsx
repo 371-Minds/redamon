@@ -14,8 +14,12 @@ const dangerConfirm = vi.fn()
 const toastInfo = vi.fn()
 
 vi.mock('@/components/ui', () => ({
-  Modal: ({ isOpen, children, title }: { isOpen: boolean; children: React.ReactNode; title?: string }) =>
-    isOpen ? <div role="dialog" aria-label={title}>{children}</div> : null,
+  Modal: ({ isOpen, children, title, headerActions }: {
+    isOpen: boolean; children: React.ReactNode; title?: string; headerActions?: React.ReactNode
+  }) =>
+    isOpen ? <div role="dialog" aria-label={title}>{headerActions}{children}</div> : null,
+  WikiInfoButton: ({ target, title }: { target: string; title?: string }) =>
+    <a href={`#${target}`} aria-label={title}>wiki</a>,
   useAlertModal: () => ({ alertError, dangerConfirm }),
   useToast: () => ({ info: toastInfo }),
 }))

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { Loader2, Pin, PinOff, Trash2, Pencil, Play, Save, Check, X } from 'lucide-react'
-import { Modal, useAlertModal, useToast } from '@/components/ui'
+import { Modal, useAlertModal, useToast, WikiInfoButton } from '@/components/ui'
 import type { ReconStatus } from '@/lib/recon-types'
 import type { ScanVersionSummary } from '../../hooks/useScanVersions'
 import styles from './VersionManager.module.css'
@@ -200,7 +200,14 @@ export function VersionManager({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Scan versions" size="full" className={styles.modal}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Scan versions"
+      size="full"
+      className={styles.modal}
+      headerActions={<WikiInfoButton target="VersionManager" title="Open the Version Manager wiki page" />}
+    >
       <div className={styles.content}>
         <div className={styles.intro}>
           <p>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, ArrowRight, Plus, Minus, RefreshCw, ShieldAlert, Download, X } from 'lucide-react'
 import type { ScanVersionSummary } from '../../hooks/useScanVersions'
 import type { GraphNode, DeltaState } from '../../types'
+import { WikiInfoButton } from '@/components/ui'
 import { GraphCanvas } from '../GraphCanvas'
 import { useDimensions } from '../../hooks'
 import styles from './ReconDeltaTable.module.css'
@@ -230,6 +231,13 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
             <Download size={12} /> JSON
           </button>
         )}
+        {/* Recon Delta has no section heading of its own, so the wiki link anchors
+            to the right edge of the controls bar. */}
+        <WikiInfoButton
+          target="ReconDelta"
+          title="Open the Recon Delta wiki page"
+          className={styles.wikiLink}
+        />
       </div>
 
       {from === to && <div className={styles.note}>Pick two different versions to compare.</div>}

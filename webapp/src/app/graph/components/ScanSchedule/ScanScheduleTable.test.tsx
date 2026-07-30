@@ -23,6 +23,8 @@ vi.mock('@/components/ui', () => ({
     dangerConfirm: (...a: unknown[]) => dangerConfirm(...a),
   }),
   useToast: () => ({ info: (...a: unknown[]) => toastInfo(...a) }),
+  WikiInfoButton: ({ target, title }: { target: string; title?: string }) =>
+    <a href={`#${target}`} aria-label={title}>wiki</a>,
 }))
 
 import { ScanScheduleTable } from './ScanScheduleTable'

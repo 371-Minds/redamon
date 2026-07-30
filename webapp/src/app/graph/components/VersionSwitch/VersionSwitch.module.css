@@ -118,14 +118,24 @@
 .activeBadge {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 var(--space-1);
+  gap: 3px;
+  padding: 2px var(--space-1);
   border-radius: var(--radius-sm);
   background: rgba(5, 150, 105, 0.15);
   color: #059669;
   font-size: 9px;
+  /* The inherited line-height leaves descender space under uppercase text, which
+     pushes the glyphs off the badge's optical centre and away from the icon. */
+  line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Lucide renders inline SVGs, so the baseline gap under the icon knocks it out of
+   line with the label. Block-level removes the gap; centring then holds. */
+.activeBadge svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .itemMeta {
