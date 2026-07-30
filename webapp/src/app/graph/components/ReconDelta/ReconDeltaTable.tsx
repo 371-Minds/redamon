@@ -208,6 +208,15 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
         </label>
         {loading && <Loader2 size={14} className={styles.spinner} />}
         {data && (
+          <div className={styles.totalsBar}>
+            <span className={styles.totalAdded}><Plus size={12} />{data.totals.added} added</span>
+            <span className={styles.totalRemoved}><Minus size={12} />{data.totals.removed} removed</span>
+            <span className={styles.totalChanged}><RefreshCw size={12} />{data.totals.changed} changed</span>
+            <span className={styles.totalStable}>{data.totals.stable} unchanged</span>
+            <span className={styles.totalStable}>{data.totals.fromNodes} → {data.totals.toNodes} nodes</span>
+          </div>
+        )}
+        {data && (
           <button className={styles.exportBtn} onClick={exportJson} title="Export this diff as JSON">
             <Download size={12} /> JSON
           </button>
@@ -220,15 +229,6 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
       {data && (
         <>
           <div className={styles.scorecard}>
-            <div className={styles.totals}>
-              <span className={styles.totalAdded}><Plus size={12} />{data.totals.added} added</span>
-              <span className={styles.totalRemoved}><Minus size={12} />{data.totals.removed} removed</span>
-              <span className={styles.totalChanged}><RefreshCw size={12} />{data.totals.changed} changed</span>
-              <span className={styles.totalStable}>{data.totals.stable} unchanged</span>
-              <span className={styles.totalStable}>
-                {data.totals.fromNodes} → {data.totals.toNodes} nodes
-              </span>
-            </div>
             <div className={styles.chips}>
               {data.scorecard
                 .filter(s => s.added || s.removed || s.changed)
