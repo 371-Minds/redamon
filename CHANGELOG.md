@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **"not enough free memory to start this scan" on an 8 GB host with RAM to spare.** Scan admission charged every scan type the same worst-case 4 GB envelope, and it requires `envelope + OS headroom` free RAM, so an 8 GB Docker Desktop VM needed 6 GB free and no scan of any type could ever start once the core services were up (reported with 3.8 GB free and a partial recon, whose real peak is ~150 MB). Envelopes are now **per scan type** (full recon 2 GB, partial recon 768 MB, gvm 2.5 GB, ai-attack 1 GB, github-hunt / trufflehog 768 MB) and ship in git as [recon_orchestrator/resource_profile.default.json](recon_orchestrator/resource_profile.default.json), merged under the host-specific `resource_profile.json` so a calibrated host still wins. 6.0.2 announced this same right-sizing but only ever applied it to the gitignored, host-local profile, so every fresh clone kept running on the 4 GB placeholder. Malformed/hand-edited profile figures (scalar-where-a-map-belongs, negative, zero, `"768m"` strings, garbage) now fail soft to the built-in table instead of crashing admission or reserving 0 bytes. Covered by [tests/test_resource_governor.py](tests/test_resource_governor.py) (per-type table, three-layer merge, robustness, drift guard across both governor copies and the shipped JSON), [tests/test_admission_ledger.py](tests/test_admission_ledger.py) (the reported 8 GB / 3.8 GB-free case) and [tests/test_scan_envelope_integration.py](tests/test_scan_envelope_integration.py) (full admission path per scan type per host size).
+- **Memory-governor tuning knobs were silently inert.** The recon-orchestrator service has no `env_file`, so a variable only reaches it if listed in its compose `environment:` block. `RECON_JOB_ENVELOPE_MEM`, `OS_HEADROOM_MEM`, `SERVICE_BASELINE_MEM`, `REDAMON_MEM_GOVERNOR`, `RESOURCE_PROFILE_PATH` and the `MEM_*` fractions were documented in `.env.example` but never wired, so a small-host operator following the "lower `RECON_JOB_ENVELOPE_MEM`" advice above (from the docs and the rejection message) saw no effect. Now wired in [docker-compose.yml](docker-compose.yml) alongside the D1 CPU/PID knobs, all passed through empty so unset keeps the safe defaults.
+
+---
+
 ## [6.2.6] - 2026-07-29
 
 ### Fixed

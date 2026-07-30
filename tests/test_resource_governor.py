@@ -3,18 +3,38 @@
 Pure-stdlib, host-runnable: injects synthetic memory via set_mem_override so it
 never depends on the real host. Run: python3 -m unittest tests.test_resource_governor
 """
+import importlib.util
 import io
 import os
 import sys
 import unittest
 from contextlib import redirect_stdout
 
-# Import the module directly (bypass graph_db/__init__.py, which pulls in neo4j).
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'graph_db'))
+ROOT = os.path.join(os.path.dirname(__file__), '..')
 
-import resource_governor as g
+
+def _load_governor(pkg_dir, mod_name):
+    """Load one copy of the governor by explicit path, under a UNIQUE module name.
+
+    There are two maintained copies (graph_db and recon_orchestrator) and three test
+    modules that `import resource_governor` after putting a DIFFERENT directory on
+    sys.path. Whichever ran first won the `sys.modules` slot for the whole process,
+    so in a combined run this file silently tested the recon_orchestrator twin and
+    the drift test compared that copy against itself. Loading by path pins it.
+    Bypasses graph_db/__init__.py, which pulls in neo4j.
+    """
+    path = os.path.join(ROOT, pkg_dir, 'resource_governor.py')
+    spec = importlib.util.spec_from_file_location(mod_name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+g = _load_governor('graph_db', '_graphdb_resource_governor')
 
 GB = 1024 ** 3
+_F = g._FALLBACK_PROFILE
 
 
 class GovernorTestBase(unittest.TestCase):
@@ -22,7 +42,8 @@ class GovernorTestBase(unittest.TestCase):
         # Clean, deterministic env for every test.
         for k in ("REDAMON_MEM_GOVERNOR", "MEM_SCALE_HIGH", "MEM_SCALE_LOW",
                   "MEM_SCALE_FLOOR", "MEM_BUDGET_FRACTION", "MEM_SAFETY_TOLERANCE",
-                  "MEM_READ_TTL_S", "RESOURCE_PROFILE_PATH"):
+                  "MEM_READ_TTL_S", "RESOURCE_PROFILE_PATH",
+                  "RESOURCE_PROFILE_DEFAULT_PATH"):
             os.environ.pop(k, None)
         g.set_mem_override(None, None)
         g.reset_profile_cache()
@@ -271,6 +292,166 @@ class TestCapLogging(GovernorTestBase):
             out = g.budget_logged(300000, 500, "katana", "KATANA_MAX_URLS", 1000, 0.10)
         self.assertEqual(out, 300000)
         self.assertNotIn(g.RESOURCE_CAP_MARKER, buf.getvalue())
+
+
+class TestScanJobEnvelopes(GovernorTestBase):
+    """Per-scan-type envelopes. One 4 GB number for every scan type made small
+    hosts unable to admit ANY scan (an 8 GB box needs envelope + OS headroom free),
+    so each type now carries its own figure in three places that must not drift."""
+
+    SCAN_TYPES = ("full_recon", "partial_recon", "ai_attack", "gvm",
+                  "github_hunt", "trufflehog")
+
+    def test_every_scan_type_has_its_own_fallback(self):
+        env = g._FALLBACK_PROFILE["scan_job_envelope_bytes"]
+        for kind in self.SCAN_TYPES:
+            self.assertIn(kind, env, f"{kind} would silently use _default")
+            self.assertGreater(env[kind], 0)
+            # Must stay under the old blanket 4 GB, or the small-host fix is undone.
+            self.assertLess(env[kind], 4 * GB, f"{kind} envelope is back to worst-case")
+
+    def test_partial_recon_is_cheaper_than_full(self):
+        # A single discovery step must never be charged like a dozen-tool pipeline.
+        self.assertLess(g.scan_job_envelope("partial_recon"),
+                        g.scan_job_envelope("full_recon"))
+
+    def test_unknown_type_uses_default(self):
+        env = g._FALLBACK_PROFILE["scan_job_envelope_bytes"]
+        self.assertEqual(g.scan_job_envelope("not_a_real_scan_type"), env["_default"])
+
+    def test_shipped_default_json_matches_builtin_fallback(self):
+        """resource_profile.default.json (git-tracked) and _FALLBACK_PROFILE are two
+        copies of the same numbers on purpose (the file can be missing). Drift here
+        means a host with the file behaves differently from one without it."""
+        import json
+        path = os.path.join(ROOT, 'recon_orchestrator', 'resource_profile.default.json')
+        with open(path) as fh:
+            shipped = json.load(fh)
+        self.assertEqual(shipped["scan_job_envelope_bytes"],
+                         g._FALLBACK_PROFILE["scan_job_envelope_bytes"])
+
+    def test_module_under_test_is_the_graph_db_copy(self):
+        # Guards the fix above: if sys.modules ordering ever hijacks this module
+        # again, every test in this file would silently exercise the wrong file.
+        self.assertIn(os.path.join('graph_db', 'resource_governor.py'), g.__file__)
+
+    def test_orchestrator_governor_copy_agrees(self):
+        """graph_db/resource_governor.py (this module) and its recon_orchestrator
+        twin are maintained copies; the envelope tables must match."""
+        orch = _load_governor('recon_orchestrator', '_orch_resource_governor')
+        self.assertNotEqual(orch.__file__, g.__file__, "not comparing two real copies")
+        self.assertEqual(orch._FALLBACK_PROFILE["scan_job_envelope_bytes"],
+                         g._FALLBACK_PROFILE["scan_job_envelope_bytes"])
+        # The whole fallback table, not just the envelopes: the copies must not
+        # diverge on bytes_per_unit or the agent/session envelopes either.
+        self.assertEqual(orch._FALLBACK_PROFILE, g._FALLBACK_PROFILE)
+
+
+class TestProfileLayering(GovernorTestBase):
+    """fallback < shipped default < host-specific (measured) profile."""
+
+    def _write(self, obj):
+        import json
+        import tempfile
+        fh = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(obj, fh)
+        fh.close()
+        self.addCleanup(os.unlink, fh.name)
+        return fh.name
+
+    def test_default_layer_applies_when_no_host_profile(self):
+        default_path = self._write({"scan_job_envelope_bytes": {"partial_recon": 111}})
+        os.environ["RESOURCE_PROFILE_DEFAULT_PATH"] = default_path
+        os.environ["RESOURCE_PROFILE_PATH"] = "/tmp/nonexistent-profile-xyz.json"
+        g.reset_profile_cache()
+        self.assertEqual(g.scan_job_envelope("partial_recon"), 111)
+
+    def test_host_profile_wins_over_default_layer(self):
+        default_path = self._write({"scan_job_envelope_bytes": {"partial_recon": 111,
+                                                                "gvm": 222}})
+        host_path = self._write({"scan_job_envelope_bytes": {"partial_recon": 999}})
+        os.environ["RESOURCE_PROFILE_DEFAULT_PATH"] = default_path
+        os.environ["RESOURCE_PROFILE_PATH"] = host_path
+        g.reset_profile_cache()
+        self.assertEqual(g.scan_job_envelope("partial_recon"), 999)  # measured wins
+        self.assertEqual(g.scan_job_envelope("gvm"), 222)            # default kept
+        # A partial host profile must not wipe types it never measured.
+        self.assertEqual(g.scan_job_envelope("full_recon"),
+                         g._FALLBACK_PROFILE["scan_job_envelope_bytes"]["full_recon"])
+
+    def test_corrupt_layer_degrades_instead_of_breaking(self):
+        import tempfile
+        fh = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        fh.write("{ not json at all")
+        fh.close()
+        self.addCleanup(os.unlink, fh.name)
+        os.environ["RESOURCE_PROFILE_DEFAULT_PATH"] = fh.name
+        os.environ["RESOURCE_PROFILE_PATH"] = fh.name
+        g.reset_profile_cache()
+        self.assertEqual(g.scan_job_envelope("partial_recon"),
+                         g._FALLBACK_PROFILE["scan_job_envelope_bytes"]["partial_recon"])
+
+
+class TestProfileRobustness(GovernorTestBase):
+    """A profile file is now SHIPPED and documented as tunable, so hand edits are
+    expected. Every malformed shape must fail SOFT (fall back), never crash the
+    caller and never yield a zero/negative envelope, which would admit every scan."""
+
+    def _profile(self, obj):
+        import json
+        import tempfile
+        fh = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(obj, fh)
+        fh.close()
+        self.addCleanup(os.unlink, fh.name)
+        os.environ["RESOURCE_PROFILE_PATH"] = fh.name
+        g.reset_profile_cache()
+
+    def test_docker_style_size_string_accepted(self):
+        # The env knobs take '768m'; a hand-edited profile must not crash on it.
+        self._profile({"scan_job_envelope_bytes": {"partial_recon": "768m"}})
+        self.assertEqual(g.scan_job_envelope("partial_recon"), 768 * 1024 ** 2)
+
+    def test_scalar_where_a_map_belongs_is_ignored(self):
+        # Would previously raise AttributeError out of admission -> 500 on start.
+        self._profile({"scan_job_envelope_bytes": 12345, "bytes_per_unit": 5})
+        self.assertEqual(g.scan_job_envelope("partial_recon"),
+                         g._FALLBACK_PROFILE["scan_job_envelope_bytes"]["partial_recon"])
+        self.assertEqual(g.bytes_per_unit("url"), 600)
+
+    def test_unusable_values_never_produce_a_free_pass(self):
+        # A 0/negative envelope sails through admission and admits every scan.
+        for bad in (0, -1, -5_000_000, None, "lots", "-5g", True, [1, 2], {"a": 1}):
+            with self.subTest(bad=bad):
+                self._profile({"scan_job_envelope_bytes": {"partial_recon": bad}})
+                self.assertGreater(g.scan_job_envelope("partial_recon"), 0)
+
+    def test_bad_tool_envelope_falls_back(self):
+        self._profile({"tool_container_envelope_bytes": {"naabu": -1}})
+        self.assertGreater(g.tool_container_envelope("naabu"), 0)
+
+    def test_bad_scalar_envelope_falls_back(self):
+        self._profile({"agent_session_envelope_bytes": "not a size"})
+        self.assertEqual(g.envelope("agent_session_envelope_bytes"),
+                         _F["agent_session_envelope_bytes"])
+
+    def test_unknown_scalar_key_still_returns_zero(self):
+        # Pre-existing contract for a key nobody defines.
+        self._profile({})
+        self.assertEqual(g.envelope("no_such_envelope_bytes"), 0)
+
+    def test_partial_layer_does_not_erase_sibling_types(self):
+        self._profile({"scan_job_envelope_bytes": {"full_recon": 111}})
+        self.assertEqual(g.scan_job_envelope("full_recon"), 111)
+        for kind in ("partial_recon", "gvm", "ai_attack", "github_hunt", "trufflehog"):
+            self.assertEqual(g.scan_job_envelope(kind),
+                             _F["scan_job_envelope_bytes"][kind], kind)
+
+    def test_fallback_table_is_never_mutated_by_a_layer(self):
+        before = dict(_F["scan_job_envelope_bytes"])
+        self._profile({"scan_job_envelope_bytes": {"partial_recon": 42}})
+        g.scan_job_envelope("partial_recon")
+        self.assertEqual(_F["scan_job_envelope_bytes"], before)
 
 
 if __name__ == "__main__":

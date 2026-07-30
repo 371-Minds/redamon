@@ -343,6 +343,13 @@ def pressure() -> str:
 # Conservative built-in fallbacks (bytes). Calibration TIGHTENS these from real
 # measurements; they are intentionally generous so pre-calibration behavior is
 # safe, not aggressive.
+#
+# scan_job_envelope_bytes is PER SCAN TYPE, not one number for all of them: a
+# partial recon runs a single step (observed peak ~150 MB) while a full pipeline
+# runs a dozen tools, and charging both the worst case made small hosts unable to
+# admit ANY scan (8 GB host: 4 GB envelope + 2 GB OS headroom > free RAM, forever).
+# Keep these in sync with resource_profile.default.json — tests/test_resource_governor.py
+# asserts they match, so a drift is a test failure rather than a silent surprise.
 _FALLBACK_PROFILE = {
     "bytes_per_unit": {
         "url": 600,
@@ -354,7 +361,13 @@ _FALLBACK_PROFILE = {
         "_default": 1_500_000_000,
     },
     "scan_job_envelope_bytes": {
-        "_default": 4_000_000_000,
+        "full_recon": 2_147_483_648,      # 2 GB   container + a dozen sibling tools
+        "partial_recon": 805_306_368,     # 768 MB one step, few or no siblings
+        "ai_attack": 1_073_741_824,       # 1 GB   probe workers (the local LLM is separate)
+        "gvm": 2_684_354_560,             # 2.5 GB openvas is the heaviest scanner
+        "github_hunt": 805_306_368,       # 768 MB clone + regex sweep
+        "trufflehog": 805_306_368,        # 768 MB clone + verifier sweep
+        "_default": 2_147_483_648,        # 2 GB   unknown type: assume full-pipeline size
     },
     "agent_session_envelope_bytes": 512_000_000,
     "fireteam_member_envelope_bytes": 512_000_000,
@@ -375,25 +388,57 @@ def _profile_path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource_profile.json")
 
 
+def _default_profile_path() -> str:
+    """The SHIPPED profile (tracked in git), one layer under the host-specific one."""
+    p = os.environ.get("RESOURCE_PROFILE_DEFAULT_PATH")
+    if p and p.strip():
+        return p.strip()
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource_profile.default.json")
+
+
+def _read_profile_file(path: str) -> Optional[dict]:
+    """Parse one profile layer; None if absent or unreadable (fail soft)."""
+    try:
+        with open(path, "r") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _merge_profile(base: dict, layer: dict) -> None:
+    """Apply `layer` over `base` in place. Nested dicts update key-by-key, so a
+    layer that measured only `full_recon` does not wipe the other scan types."""
+    for k, v in layer.items():
+        if isinstance(base.get(k), dict):
+            # A section that is a MAP stays a map: a hand-edited scalar must not
+            # replace (and so erase) the whole known-good section.
+            if isinstance(v, dict):
+                base[k].update(v)
+        else:
+            base[k] = v
+
+
 def load_profile() -> dict:
-    """Measured profile merged over the built-in fallback. Cached."""
+    """Effective profile, lowest precedence first (cached):
+
+      1. _FALLBACK_PROFILE           built-in, safe on any host, no file needed
+      2. resource_profile.default.json  shipped in git; sane defaults for a fresh clone
+      3. resource_profile.json       host-specific (gitignored, written by
+                                     mem_calibrate.py); wins because it is MEASURED
+                                     on this host
+
+    Layers 2 and 3 are optional and fail soft, so a missing or corrupt file
+    degrades to the layer below instead of breaking the governor.
+    """
     global _profile_cache
     if _profile_cache is not None:
         return _profile_cache
     merged = json.loads(json.dumps(_FALLBACK_PROFILE))  # deep copy
-    try:
-        with open(_profile_path(), "r") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            # shallow-merge top-level keys; measured values (already inflated by
-            # tolerance during calibration) win over fallbacks.
-            for k, v in data.items():
-                if isinstance(v, dict) and isinstance(merged.get(k), dict):
-                    merged[k].update(v)
-                else:
-                    merged[k] = v
-    except (OSError, ValueError):
-        pass
+    for path in (_default_profile_path(), _profile_path()):
+        layer = _read_profile_file(path)
+        if layer is not None:
+            _merge_profile(merged, layer)
     _profile_cache = merged
     return merged
 
@@ -403,31 +448,67 @@ def reset_profile_cache() -> None:
     _profile_cache = None
 
 
+def _profile_map(key: str) -> dict:
+    """A map-valued profile section, always a dict. A layer that put a scalar here
+    is ignored rather than crashing every caller with AttributeError."""
+    d = load_profile().get(key)
+    return d if isinstance(d, dict) else {}
+
+
+def _profile_bytes(value) -> Optional[int]:
+    """Coerce one profile figure to a POSITIVE byte count, else None.
+
+    Accepts plain numbers and Docker-style strings ('768m'), so a hand-edited
+    profile behaves like the env knobs it mirrors. None/garbage/zero/negative all
+    return None so the caller falls through to the next candidate: a negative or
+    zero envelope would sail through admission and admit every scan, which is the
+    one failure mode this module exists to prevent.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        n = int(value)
+        return n if n > 0 else None
+    if isinstance(value, str):
+        n = parse_size(value)
+        return n if n and n > 0 else None
+    return None
+
+
+def _first_bytes(*candidates) -> int:
+    """First candidate that coerces to a positive byte count, else 0."""
+    for c in candidates:
+        val = _profile_bytes(c)
+        if val is not None:
+            return val
+    return 0
+
+
 def bytes_per_unit(family: str) -> int:
-    d = load_profile().get("bytes_per_unit", {})
-    return int(d.get(family) or _FALLBACK_PROFILE["bytes_per_unit"].get(family, 1024))
+    return _first_bytes(_profile_map("bytes_per_unit").get(family),
+                        _FALLBACK_PROFILE["bytes_per_unit"].get(family),
+                        1024)
 
 
 def tool_container_envelope(tool: str) -> int:
-    d = load_profile().get("tool_container_envelope_bytes", {})
-    return int(d.get(tool) or d.get("_default") or _FALLBACK_PROFILE["tool_container_envelope_bytes"]["_default"])
+    d = _profile_map("tool_container_envelope_bytes")
+    return _first_bytes(d.get(tool), d.get("_default"),
+                        _FALLBACK_PROFILE["tool_container_envelope_bytes"]["_default"])
 
 
 def scan_job_envelope(scan_type: str) -> int:
-    d = load_profile().get("scan_job_envelope_bytes", {})
-    return int(d.get(scan_type) or d.get("_default") or _FALLBACK_PROFILE["scan_job_envelope_bytes"]["_default"])
+    d = _profile_map("scan_job_envelope_bytes")
+    return _first_bytes(d.get(scan_type), d.get("_default"),
+                        _FALLBACK_PROFILE["scan_job_envelope_bytes"]["_default"])
 
 
 def envelope(key: str) -> int:
     """Top-level scalar envelope (e.g. 'agent_session_envelope_bytes').
 
-    A profile value of 0 (or any falsy) is treated as missing so a bad/zero
-    measurement can't silently reserve 0 bytes — fall back to the built-in.
+    A profile value of 0 (or any falsy/unparseable) is treated as missing so a
+    bad measurement can't silently reserve 0 bytes: fall back to the built-in.
     """
-    val = load_profile().get(key)
-    if not val:  # None or 0 -> use fallback
-        val = _FALLBACK_PROFILE.get(key)
-    return int(val) if val else 0
+    return _first_bytes(load_profile().get(key), _FALLBACK_PROFILE.get(key))
 
 
 # ---------------------------------------------------------------------------

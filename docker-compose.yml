@@ -469,6 +469,21 @@ services:
       CONTAINER_CPU_FRACTION: ${CONTAINER_CPU_FRACTION:-}
       PER_CONTAINER_CPUS: ${PER_CONTAINER_CPUS:-}
       CONTAINER_PIDS_MAX: ${CONTAINER_PIDS_MAX:-}
+      # Memory-governor admission knobs (scan reservation ledger). Same rationale
+      # as the D1 CPU/PID caps above: the orchestrator has NO env_file, so these
+      # are wired explicitly or setting them in .env is silently inert. All pass
+      # through empty, so unset keeps the safe code/profile defaults
+      # (resource_governor.py + resource_profile.default.json). RECON_JOB_ENVELOPE_MEM
+      # is the documented lever a small host lowers when a scan is wrongly refused
+      # for "not enough free memory" — it MUST reach the orchestrator to work.
+      REDAMON_MEM_GOVERNOR: ${REDAMON_MEM_GOVERNOR:-}
+      OS_HEADROOM_MEM: ${OS_HEADROOM_MEM:-}
+      SERVICE_BASELINE_MEM: ${SERVICE_BASELINE_MEM:-}
+      RECON_JOB_ENVELOPE_MEM: ${RECON_JOB_ENVELOPE_MEM:-}
+      RESOURCE_PROFILE_PATH: ${RESOURCE_PROFILE_PATH:-}
+      RESOURCE_PROFILE_DEFAULT_PATH: ${RESOURCE_PROFILE_DEFAULT_PATH:-}
+      MEM_SAFETY_TOLERANCE: ${MEM_SAFETY_TOLERANCE:-}
+      MEM_BUDGET_FRACTION: ${MEM_BUDGET_FRACTION:-}
       # Forwarded to spawned recon containers (host network, so localhost)
       NEO4J_URI: bolt://localhost:7687
       NEO4J_USER: neo4j

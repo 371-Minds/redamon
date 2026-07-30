@@ -4,15 +4,39 @@ Deterministic: injects synthetic host memory via the governor override and fixed
 env sizes, so no Docker/host dependency. Run:
     python3 -m unittest tests.test_admission_ledger
 """
+import importlib.util
 import os
 import sys
 import unittest
 
-# Import the orchestrator module + its governor copy directly.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'recon_orchestrator'))
+# Import the orchestrator module + its governor copy directly, pinned BY PATH.
+# A bare `import resource_governor` would resolve to whichever copy another test
+# module already put in sys.modules (tests/test_agent_mem_governor.py and
+# tests/test_recon_mem_governor.py put the graph_db twin on sys.path), so the copy
+# under test used to depend on test ORDER.
+_ORCH = os.path.join(os.path.dirname(__file__), '..', 'recon_orchestrator')
 
-import resource_governor as rg
-import admission_ledger as al
+
+def _load(mod_name, filename):
+    spec = importlib.util.spec_from_file_location(mod_name, os.path.join(_ORCH, filename))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+rg = _load('_orch_rg_ledger_ut', 'resource_governor.py')
+_saved = sys.modules.get('resource_governor')
+sys.modules['resource_governor'] = rg   # admission_ledger imports it by name
+try:
+    al = _load('_orch_ledger_ut', 'admission_ledger.py')
+finally:
+    if _saved is None:
+        sys.modules.pop('resource_governor', None)
+    else:
+        sys.modules['resource_governor'] = _saved
+
+assert al.rg is rg, "ledger bound a different resource_governor copy"
 
 GB = 1024 ** 3
 
@@ -276,6 +300,52 @@ class TestScanCaps(LedgerTestBase):
         led.reconcile(set())
         self.assertEqual(led.user_active_count("u1"), 0)
         self.assertTrue((await led.try_admit("fresh", 1 * GB, user_id="u1")).admitted)
+
+
+class TestSmallHostFreshInstall(unittest.IsolatedAsyncioTestCase):
+    """Regression: an 8 GB host (Docker Desktop default) with no calibration.
+
+    A single blanket 4 GB envelope meant admission demanded 4 + 2 GB of free RAM,
+    so NO scan could ever start on such a host no matter how much RAM was free.
+    Per-scan-type envelopes bring a partial recon back inside reach.
+    """
+
+    def setUp(self):
+        for k in ("REDAMON_MEM_GOVERNOR", "OS_HEADROOM_MEM", "SERVICE_BASELINE_MEM",
+                  "RECON_JOB_ENVELOPE_MEM", "RECON_MAX_CONCURRENT_GLOBAL",
+                  "RECON_MAX_CONCURRENT_PER_USER", "RESOURCE_PROFILE_DEFAULT_PATH"):
+            os.environ.pop(k, None)
+        # Fresh clone: no host-specific (calibrated) profile on disk.
+        os.environ["RESOURCE_PROFILE_PATH"] = "/tmp/nonexistent-profile-xyz.json"
+        # The reported case: 8 GB VM, 4.2 GB used by the core services, 3.8 GB free.
+        rg.set_mem_override(8 * GB, int(3.8 * GB))
+        rg.reset_profile_cache()
+
+    def tearDown(self):
+        rg.set_mem_override(None, None)
+        os.environ.pop("RESOURCE_PROFILE_PATH", None)
+        rg.reset_profile_cache()
+
+    async def test_partial_recon_admitted_with_38gb_free(self):
+        led = al.ReservationLedger()
+        envelope = led.envelope_for("partial_recon")
+        self.assertLess(envelope + led.os_headroom(), led.available(),
+                        "partial recon must fit in the RAM this host actually has free")
+        r = await led.try_admit("partial_recon:p1:r1", envelope, user_id="u1")
+        self.assertTrue(r.admitted, r.detail)
+
+    async def test_full_recon_envelope_fits_the_free_ram(self):
+        # The envelope itself no longer exceeds what this host has free (4 GB did).
+        # Whether it is ADMITTED also depends on OS_HEADROOM_MEM, which is a flat
+        # 2 GB (25% of an 8 GB VM) and is tuned separately.
+        led = al.ReservationLedger()
+        self.assertLess(led.envelope_for("full_recon"), led.available())
+
+    async def test_envelope_is_per_type_not_blanket(self):
+        led = al.ReservationLedger()
+        self.assertLess(led.envelope_for("partial_recon"),
+                        led.envelope_for("full_recon"))
+        self.assertLess(led.envelope_for("partial_recon"), 1 * GB)
 
 
 if __name__ == "__main__":
