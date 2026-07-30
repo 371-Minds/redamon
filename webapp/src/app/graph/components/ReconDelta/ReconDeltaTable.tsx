@@ -99,8 +99,6 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
   const overlayAttemptRef = useRef<string | null>(null)
   const [changesOnly, setChangesOnly] = useState(true)
   const [selectedNode, setSelectedNode] = useState<(GraphNode & { deltaState: DeltaState }) | null>(null)
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const canvasSize = useDimensions(canvasRef)
 
   useEffect(() => { setFrom(defaultFrom) }, [defaultFrom])
   // A new comparison invalidates whatever overlay was on screen.
@@ -304,8 +302,6 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
                 onToggleChangesOnly={setChangesOnly}
                 fromLabel={data.from.label}
                 toLabel={data.to.label}
-                containerRef={canvasRef}
-                size={canvasSize}
                 isDark={isDark}
                 selectedNode={selectedNode}
                 onSelectNode={setSelectedNode}
@@ -425,8 +421,6 @@ interface DeltaOverlayProps {
   onToggleChangesOnly: (v: boolean) => void
   fromLabel: string
   toLabel: string
-  containerRef: React.RefObject<HTMLDivElement | null>
-  size: { width: number; height: number }
   isDark: boolean
   selectedNode: (GraphNode & { deltaState: DeltaState }) | null
   onSelectNode: (n: (GraphNode & { deltaState: DeltaState }) | null) => void
@@ -440,8 +434,15 @@ interface DeltaOverlayProps {
  */
 function DeltaOverlay({
   data, loading, error, changesOnly, onToggleChangesOnly, fromLabel, toLabel,
-  containerRef, size, isDark, selectedNode, onSelectNode, changedByKey,
+  isDark, selectedNode, onSelectNode, changedByKey,
 }: DeltaOverlayProps) {
+  // Measure the canvas HERE, not in the parent: the ref only exists while the
+  // overlay tab is open, so a useDimensions() call in ReconDeltaTable would set up
+  // its ResizeObserver on a null ref and the canvas would stay stuck at the 800x600
+  // default. Mounting the hook with the div makes it observe the real box.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const size = useDimensions(containerRef)
+
   const counts = useMemo(() => {
     const c = { added: 0, removed: 0, changed: 0, stable: 0 }
     for (const n of data?.nodes ?? []) c[n.deltaState] += 1
