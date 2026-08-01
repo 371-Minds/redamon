@@ -1,9 +1,9 @@
 /**
- * Prefilled MCP server templates — 10 publicly-available, security-relevant
+ * Prefilled MCP server templates - 10 publicly-available, security-relevant
  * MCP servers chosen for RedAmon's pentest workflow.
  *
  * Each preset fills `id, name, description, transport, url/command/args,
- * default_phases, auth structure, env structure` — but leaves `token` and
+ * default_phases, auth structure, env structure` - but leaves `token` and
  * any user-specific values empty so the user just pastes their key (if
  * needed) and clicks Test → "+ add all" to auto-import discovered tools.
  *
@@ -37,7 +37,7 @@ export interface McpPreset {
 
 const ALL_PHASES = ['informational', 'exploitation', 'post_exploitation'] as const
 
-/** Stub helper — the form's `emptyServer()` shape we extend per preset. */
+/** Stub helper - the form's `emptyServer()` shape we extend per preset. */
 const baseTemplate = (overrides: Partial<MCPServer>): MCPServer => ({
   id: '',
   name: '',
@@ -62,7 +62,7 @@ const baseTemplate = (overrides: Partial<MCPServer>): MCPServer => ({
 
 export const MCP_PRESETS: McpPreset[] = [
   // -------------------------------------------------------------------------
-  // 1) DeepWiki — anonymous, easiest first test
+  // 1) DeepWiki - anonymous, easiest first test
   // -------------------------------------------------------------------------
   {
     key: 'deepwiki',
@@ -84,13 +84,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 2) GitHub MCP (official) — code search, vulnerable-repo hunting
+  // 2) GitHub MCP (official) - code search, vulnerable-repo hunting
   // -------------------------------------------------------------------------
   {
     key: 'github',
     label: 'GitHub',
     category: 'osint',
-    blurb: 'Official GitHub MCP — code/issue/PR search across all of GitHub.',
+    blurb: 'Official GitHub MCP - code/issue/PR search across all of GitHub.',
     whyForRedamon: 'Find exploit PoCs, search for credentials in public repos, identify vulnerable code patterns, supply-chain analysis.',
     docsUrl: 'https://github.com/github/github-mcp-server',
     authRequired: true,
@@ -98,7 +98,7 @@ export const MCP_PRESETS: McpPreset[] = [
     template: baseTemplate({
       id: 'github',
       name: 'GitHub',
-      description: 'Official GitHub MCP — code, issues, PRs, security advisories',
+      description: 'Official GitHub MCP - code, issues, PRs, security advisories',
       transport: 'streamable_http',
       url: 'https://api.githubcopilot.com/mcp/',
       default_phases: ['informational', 'exploitation'],
@@ -108,7 +108,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 3) Hugging Face — research papers, security ML, datasets
+  // 3) Hugging Face - research papers, security ML, datasets
   // -------------------------------------------------------------------------
   {
     key: 'huggingface',
@@ -132,13 +132,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 4) Context7 — up-to-date library documentation (Upstash)
+  // 4) Context7 - up-to-date library documentation (Upstash)
   // -------------------------------------------------------------------------
   {
     key: 'context7',
     label: 'Context7',
     category: 'research',
-    blurb: 'Up-to-date library/framework documentation — Upstash hosted.',
+    blurb: 'Up-to-date library/framework documentation - Upstash hosted.',
     whyForRedamon: 'Look up current API surface of libraries you\'re probing (e.g., to understand authentication flows or find deprecated/removed protections).',
     docsUrl: 'https://github.com/upstash/context7',
     authRequired: false,
@@ -155,14 +155,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 5) Brave Search — OSINT search alternative to Tavily/Google
+  // 5) Brave Search - OSINT search alternative to Tavily/Google
   // -------------------------------------------------------------------------
   {
     key: 'brave_search',
     label: 'Brave Search',
     category: 'osint',
     blurb: 'Web + local search via Brave Search API.',
-    whyForRedamon: 'Independent OSINT search engine — useful when Tavily/Google rate limits hit during recon, or for cross-checking results from a different index.',
+    whyForRedamon: 'Independent OSINT search engine - useful when Tavily/Google rate limits hit during recon, or for cross-checking results from a different index.',
     docsUrl: 'https://api.search.brave.com/',
     authRequired: true,
     authHint: 'Free tier 2k req/month at https://api.search.brave.com/app/keys',
@@ -180,14 +180,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 6) Fetch — fetch arbitrary URLs (HTTP body extraction, no auth)
+  // 6) Fetch - fetch arbitrary URLs (HTTP body extraction, no auth)
   // -------------------------------------------------------------------------
   {
     key: 'fetch',
     label: 'Web Fetch',
     category: 'web',
     blurb: 'Fetch arbitrary URLs and extract structured content.',
-    whyForRedamon: 'Scrape target pages, fetch CVE advisories, pull from blog posts/changelogs/release notes — agent-side equivalent of curl with content extraction.',
+    whyForRedamon: 'Scrape target pages, fetch CVE advisories, pull from blog posts/changelogs/release notes - agent-side equivalent of curl with content extraction.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
     authRequired: false,
     template: baseTemplate({
@@ -203,7 +203,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 7) Memory — persistent knowledge graph across sessions
+  // 7) Memory - persistent knowledge graph across sessions
   // -------------------------------------------------------------------------
   {
     key: 'memory',
@@ -227,13 +227,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 8) Sequential Thinking — explicit step-by-step reasoning tool
+  // 8) Sequential Thinking - explicit step-by-step reasoning tool
   // -------------------------------------------------------------------------
   {
     key: 'sequential_thinking',
     label: 'Sequential Thinking',
     category: 'utility',
-    blurb: 'Structured multi-step reasoning tool — externalizes the agent\'s chain-of-thought.',
+    blurb: 'Structured multi-step reasoning tool - externalizes the agent\'s chain-of-thought.',
     whyForRedamon: 'Force the LLM to plan exploit chains explicitly: enumerate steps, revise hypothesis, document decision points. Audit-trail-friendly.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking',
     authRequired: false,
@@ -250,7 +250,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 9) Filesystem — read/write within a sandboxed agent-local dir
+  // 9) Filesystem - read/write within a sandboxed agent-local dir
   // -------------------------------------------------------------------------
   {
     key: 'filesystem',
@@ -273,7 +273,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 10) Time — timezone + timestamps (zero-friction smoke test)
+  // 10) Time - timezone + timestamps (zero-friction smoke test)
   // -------------------------------------------------------------------------
   {
     key: 'time',
@@ -296,7 +296,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 11) Shodan — internet-wide host/port intel (heavy pentest staple)
+  // 11) Shodan - internet-wide host/port intel (heavy pentest staple)
   // -------------------------------------------------------------------------
   {
     key: 'shodan',
@@ -321,7 +321,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 12) VirusTotal — file/URL/IP threat intel
+  // 12) VirusTotal - file/URL/IP threat intel
   // -------------------------------------------------------------------------
   {
     key: 'virustotal',
@@ -346,13 +346,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 13) OSINT Toolkit (badchars) — 37 tools across 12 sources
+  // 13) OSINT Toolkit (badchars) - 37 tools across 12 sources
   // -------------------------------------------------------------------------
   {
     key: 'osint_toolkit',
     label: 'OSINT Toolkit',
     category: 'osint',
-    blurb: '37-tool OSINT suite: DNS, WHOIS, crt.sh, GeoIP, BGP, Wayback, Hackertarget — works without API keys.',
+    blurb: '37-tool OSINT suite: DNS, WHOIS, crt.sh, GeoIP, BGP, Wayback, Hackertarget - works without API keys.',
     whyForRedamon: 'Single-call DNS recon (lookups, reverse, SPF chain, DMARC, wildcards, SRV), CT log search (crt.sh), passive ASN/BGP analysis. Fills gaps the kali-sandbox tools don\'t cover natively.',
     docsUrl: 'https://github.com/badchars/osint-mcp-server',
     authRequired: false,
@@ -384,7 +384,7 @@ export const MCP_PRESETS: McpPreset[] = [
     label: 'Threat Intel (AbuseIPDB + GreyNoise + OTX)',
     category: 'security',
     blurb: 'Unified threat feed: AbuseIPDB, GreyNoise, AlienVault OTX, abuse.ch.',
-    whyForRedamon: 'IP reputation enrichment — distinguish opportunistic scanners from targeted attackers, validate exfil destinations, check WAF blocklists. Multiple feeds cross-corroborate.',
+    whyForRedamon: 'IP reputation enrichment - distinguish opportunistic scanners from targeted attackers, validate exfil destinations, check WAF blocklists. Multiple feeds cross-corroborate.',
     docsUrl: 'https://github.com/aplaceforallmystuff/mcp-threatintel',
     authRequired: false,
     authHint: 'Most feeds require free API keys (AbuseIPDB, GreyNoise, OTX). abuse.ch Feodo Tracker works without auth.',
@@ -407,7 +407,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 15) Semgrep — static code analysis for vulnerability discovery
+  // 15) Semgrep - static code analysis for vulnerability discovery
   // -------------------------------------------------------------------------
   {
     key: 'semgrep',
@@ -432,14 +432,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 16) Tavily Search — web search alternative
+  // 16) Tavily Search - web search alternative
   // -------------------------------------------------------------------------
   {
     key: 'tavily',
     label: 'Tavily Search',
     category: 'osint',
     blurb: 'Web search + extract + crawl tuned for LLM consumption.',
-    whyForRedamon: 'Backup for built-in web_search if Tavily key isn\'t set globally; also exposes extract/crawl tools the built-in lacks. Useful when scoping a target — fetch their entire site.',
+    whyForRedamon: 'Backup for built-in web_search if Tavily key isn\'t set globally; also exposes extract/crawl tools the built-in lacks. Useful when scoping a target - fetch their entire site.',
     docsUrl: 'https://docs.tavily.com/documentation/mcp',
     authRequired: true,
     authHint: 'Free tier 1k req/month at https://app.tavily.com/home',
@@ -457,13 +457,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 17) Exa Search — neural search (semantic)
+  // 17) Exa Search - neural search (semantic)
   // -------------------------------------------------------------------------
   {
     key: 'exa',
     label: 'Exa Search',
     category: 'osint',
-    blurb: 'Neural / semantic web search — finds by meaning not keywords.',
+    blurb: 'Neural / semantic web search - finds by meaning not keywords.',
     whyForRedamon: 'Find writeups by description ("recent CVE-2024 RCEs in Java deserializers"), discover similar PoCs to a known exploit, semantic search for vendor-specific advisories.',
     docsUrl: 'https://github.com/exa-labs/exa-mcp-server',
     authRequired: true,
@@ -482,7 +482,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 18) DuckDuckGo Search — privacy-friendly OSINT, no auth
+  // 18) DuckDuckGo Search - privacy-friendly OSINT, no auth
   // -------------------------------------------------------------------------
   {
     key: 'duckduckgo',
@@ -505,14 +505,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 19) PostgreSQL — DB schema/query for SQLi-confirmed targets
+  // 19) PostgreSQL - DB schema/query for SQLi-confirmed targets
   // -------------------------------------------------------------------------
   {
     key: 'postgres',
     label: 'PostgreSQL',
     category: 'security',
     blurb: 'Read-only PostgreSQL queries via connection string.',
-    whyForRedamon: 'Once SQLi grants DB access, point this at the captured DSN to enumerate schemas/tables/users/permissions structurally — much cleaner than crafting SQL through the injection point.',
+    whyForRedamon: 'Once SQLi grants DB access, point this at the captured DSN to enumerate schemas/tables/users/permissions structurally - much cleaner than crafting SQL through the injection point.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres',
     authRequired: true,
     authHint: 'Replace the placeholder URL in args with your captured/local connection string',
@@ -529,13 +529,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 20) Puppeteer — browser automation (alt to system Playwright)
+  // 20) Puppeteer - browser automation (alt to system Playwright)
   // -------------------------------------------------------------------------
   {
     key: 'puppeteer',
     label: 'Puppeteer',
     category: 'web',
-    blurb: 'Headless Chromium automation — JS-rendered targets, screenshots.',
+    blurb: 'Headless Chromium automation - JS-rendered targets, screenshots.',
     whyForRedamon: 'Independent browser channel: run a parallel exploit with Puppeteer while system execute_playwright handles the primary session. Useful for SAML/OAuth flows where two browser contexts are needed.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers-archived/tree/main/src/puppeteer',
     authRequired: false,
@@ -552,7 +552,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 21) Slack — exfil findings / notify on milestones
+  // 21) Slack - exfil findings / notify on milestones
   // -------------------------------------------------------------------------
   {
     key: 'slack',
@@ -577,7 +577,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 22) Wikipedia — neutral context source
+  // 22) Wikipedia - neutral context source
   // -------------------------------------------------------------------------
   {
     key: 'wikipedia',
@@ -600,21 +600,21 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 23) OWASP ZAP — local web app scanner via MCP integration add-on
+  // 23) OWASP ZAP - local web app scanner via MCP integration add-on
   // -------------------------------------------------------------------------
   {
     key: 'owasp_zap',
     label: 'OWASP ZAP',
     category: 'security',
     blurb: 'Spider, active scan, and alert analysis via OWASP ZAP.',
-    whyForRedamon: 'Drives ZAP\'s active scanner from the agent — automated XSS/SQLi/SSRF/path-traversal hunts on web targets, with payload variation that nuclei templates don\'t cover.',
+    whyForRedamon: 'Drives ZAP\'s active scanner from the agent - automated XSS/SQLi/SSRF/path-traversal hunts on web targets, with payload variation that nuclei templates don\'t cover.',
     docsUrl: 'https://www.zaproxy.org/blog/2026-04-02-zap-mcp-server/',
     authRequired: true,
     authHint: 'Run ZAP locally → Marketplace → install "MCP Integration" add-on → copy the security key from Options → MCP Integration. Adjust the URL if you bind to a non-default port.',
     template: baseTemplate({
       id: 'owasp_zap',
       name: 'OWASP ZAP',
-      description: 'Web app scanner — spider, active scan, alerts',
+      description: 'Web app scanner - spider, active scan, alerts',
       transport: 'streamable_http',
       url: 'http://host.docker.internal:8282/mcp',
       auth: { type: 'bearer', token: '' },
@@ -624,13 +624,13 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 24) AWS — cloud asset enumeration / pentest
+  // 24) AWS - cloud asset enumeration / pentest
   // -------------------------------------------------------------------------
   {
     key: 'aws',
     label: 'AWS (cloud pentest)',
     category: 'security',
-    blurb: 'AWS API access — S3, DynamoDB, IAM enumeration with read-only creds.',
+    blurb: 'AWS API access - S3, DynamoDB, IAM enumeration with read-only creds.',
     whyForRedamon: 'When you obtain leaked AWS credentials (e.g., via execute_gau finding env files, GitHub PAT exfil), enumerate S3 buckets, IAM users/roles, DynamoDB tables, and identify privilege-escalation paths.',
     docsUrl: 'https://github.com/rishikavikondala/mcp-server-aws',
     authRequired: true,
@@ -653,14 +653,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 25) Censys Platform — internet asset map (hosted streamable_http)
+  // 25) Censys Platform - internet asset map (hosted streamable_http)
   // -------------------------------------------------------------------------
   {
     key: 'censys',
     label: 'Censys Platform',
     category: 'security',
     blurb: 'Internet-wide asset / certificate / service intel via Censys Search API.',
-    whyForRedamon: 'Independent corroboration of Shodan data; Censys often catches assets Shodan misses. Strong on TLS/cert intel — find shadow IT subdomains via SAN-list mining.',
+    whyForRedamon: 'Independent corroboration of Shodan data; Censys often catches assets Shodan misses. Strong on TLS/cert intel - find shadow IT subdomains via SAN-list mining.',
     docsUrl: 'https://docs.censys.com/docs/platform-mcp-server',
     authRequired: true,
     authHint: 'Personal Access Token + Organization ID from https://platform.censys.io. Free tier available.',
@@ -678,7 +678,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 26) Hunter.io — email enumeration / domain → people
+  // 26) Hunter.io - email enumeration / domain → people
   // -------------------------------------------------------------------------
   {
     key: 'hunter',
@@ -702,7 +702,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 27) HaveIBeenPwned (HIBP) — credential breach intel
+  // 27) HaveIBeenPwned (HIBP) - credential breach intel
   // -------------------------------------------------------------------------
   {
     key: 'hibp',
@@ -712,7 +712,7 @@ export const MCP_PRESETS: McpPreset[] = [
     whyForRedamon: 'Check whether emails captured during recon appear in known breaches → predict valid passwords for credential stuffing. Domain-wide search reveals breach exposure for the entire target.',
     docsUrl: 'https://www.npmjs.com/package/@darrenjrobinson/hibp-mcp',
     authRequired: true,
-    authHint: 'HIBP API key from https://haveibeenpwned.com/API/Key ($3.50/month minimum — required for breach lookups).',
+    authHint: 'HIBP API key from https://haveibeenpwned.com/API/Key ($3.50/month minimum - required for breach lookups).',
     template: baseTemplate({
       id: 'hibp',
       name: 'HaveIBeenPwned',
@@ -727,14 +727,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 28) mitmproxy — HTTP/S interception, replay, fuzzing
+  // 28) mitmproxy - HTTP/S interception, replay, fuzzing
   // -------------------------------------------------------------------------
   {
     key: 'mitmproxy',
     label: 'mitmproxy',
     category: 'security',
     blurb: 'Inspect / modify / replay HTTP(S) traffic via mitmproxy.',
-    whyForRedamon: 'Active web-app pentest beyond what curl can do — capture mobile-app / SPA traffic, manipulate JWT tokens mid-flight, replay session-fixation payloads. Complements execute_playwright.',
+    whyForRedamon: 'Active web-app pentest beyond what curl can do - capture mobile-app / SPA traffic, manipulate JWT tokens mid-flight, replay session-fixation payloads. Complements execute_playwright.',
     docsUrl: 'https://pypi.org/project/mitmproxy-mcp/',
     authRequired: false,
     template: baseTemplate({
@@ -750,7 +750,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 29) SQLite — local SQL queries against exfiltrated DBs
+  // 29) SQLite - local SQL queries against exfiltrated DBs
   // -------------------------------------------------------------------------
   {
     key: 'sqlite',
@@ -774,7 +774,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 30) Notion — engagement notes / report drafts
+  // 30) Notion - engagement notes / report drafts
   // -------------------------------------------------------------------------
   {
     key: 'notion',
@@ -799,7 +799,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 31) Browserbase — cloud headless browser, anti-detection
+  // 31) Browserbase - cloud headless browser, anti-detection
   // -------------------------------------------------------------------------
   {
     key: 'browserbase',
@@ -809,7 +809,7 @@ export const MCP_PRESETS: McpPreset[] = [
     whyForRedamon: 'When the local Playwright/Puppeteer hits aggressive bot detection (Cloudflare Turnstile, PerimeterX, Akamai), Browserbase provides residential-IP-backed sessions with anti-detection profiles.',
     docsUrl: 'https://github.com/browserbase/mcp-server-browserbase',
     authRequired: true,
-    authHint: 'Sign up at https://browserbase.com — has a free tier. Need API key + project ID.',
+    authHint: 'Sign up at https://browserbase.com - has a free tier. Need API key + project ID.',
     template: baseTemplate({
       id: 'browserbase',
       name: 'Browserbase',
@@ -827,7 +827,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 32) Kubernetes — k8s pentest with kubeconfig access
+  // 32) Kubernetes - k8s pentest with kubeconfig access
   // -------------------------------------------------------------------------
   {
     key: 'kubernetes',
@@ -852,7 +852,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 33) Snyk — open-source dependency vulnerability scanning
+  // 33) Snyk - open-source dependency vulnerability scanning
   // -------------------------------------------------------------------------
   {
     key: 'snyk',
@@ -877,7 +877,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 34) Stripe — payment / fraud testing
+  // 34) Stripe - payment / fraud testing
   // -------------------------------------------------------------------------
   {
     key: 'stripe',
@@ -902,17 +902,17 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 35) Linear — issue tracking, milestone reporting
+  // 35) Linear - issue tracking, milestone reporting
   // -------------------------------------------------------------------------
   {
     key: 'linear',
     label: 'Linear',
     category: 'utility',
-    blurb: 'Linear API — create / read / update issues for pentest engagement tracking.',
+    blurb: 'Linear API - create / read / update issues for pentest engagement tracking.',
     whyForRedamon: 'Convert each confirmed vulnerability into a Linear issue automatically (severity, repro steps, evidence). Sync with the client\'s remediation team during long engagements.',
     docsUrl: 'https://linear.app/docs/mcp',
     authRequired: true,
-    authHint: 'Personal API key from https://linear.app/settings/api (use Authorization: Bearer <key> directly — supported by Linear MCP).',
+    authHint: 'Personal API key from https://linear.app/settings/api (use Authorization: Bearer <key> directly - supported by Linear MCP).',
     template: baseTemplate({
       id: 'linear',
       name: 'Linear',
@@ -926,14 +926,14 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 36) Trivy — container image / IaC vuln scanner
+  // 36) Trivy - container image / IaC vuln scanner
   // -------------------------------------------------------------------------
   {
     key: 'trivy',
     label: 'Trivy',
     category: 'security',
     blurb: 'Vuln scanner for containers, IaC, secrets, OS packages.',
-    whyForRedamon: 'Scan target Docker images / Kubernetes manifests / Terraform after exfil — identifies vulnerable base images, hard-coded secrets, IaC misconfig (open security groups, public S3, etc).',
+    whyForRedamon: 'Scan target Docker images / Kubernetes manifests / Terraform after exfil - identifies vulnerable base images, hard-coded secrets, IaC misconfig (open security groups, public S3, etc).',
     docsUrl: 'https://github.com/aquasecurity/trivy-mcp',
     authRequired: false,
     authHint: 'Requires Trivy CLI installed in the agent container: docker compose exec agent apt-get install -y trivy (or: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh).',
@@ -950,7 +950,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 37) Prowler (via Ship CLI) — AWS / Azure / GCP audit
+  // 37) Prowler (via Ship CLI) - AWS / Azure / GCP audit
   // -------------------------------------------------------------------------
   {
     key: 'prowler',
@@ -979,17 +979,17 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 38) CVE Intel (mukul975) — NVD / EPSS / CISA KEV / MITRE ATT&CK
+  // 38) CVE Intel (mukul975) - NVD / EPSS / CISA KEV / MITRE ATT&CK
   // -------------------------------------------------------------------------
   {
     key: 'cve_intel_extra',
     label: 'CVE Intel (NVD+EPSS+KEV+ATT&CK)',
     category: 'security',
-    blurb: '27 vuln-intel tools across 21 APIs — NVD, EPSS, CISA KEV, MITRE ATT&CK.',
+    blurb: '27 vuln-intel tools across 21 APIs - NVD, EPSS, CISA KEV, MITRE ATT&CK.',
     whyForRedamon: 'Deeper CVE context than the built-in cve_intel tool: EPSS exploitation probability, CISA known-exploited status, ATT&CK technique mappings, OSV cross-reference. Useful for prioritizing exploit targets.',
     docsUrl: 'https://github.com/mukul975/cve-mcp-server',
     authRequired: false,
-    authHint: 'REQUIRES SETUP: docker compose exec agent bash -c "git clone https://github.com/mukul975/cve-mcp-server /tmp/cve-mcp-server && cd /tmp/cve-mcp-server && pip install -e ." — then save and Test. Optional NVD_API_KEY, GITHUB_TOKEN unlock more tools.',
+    authHint: 'REQUIRES SETUP: docker compose exec agent bash -c "git clone https://github.com/mukul975/cve-mcp-server /tmp/cve-mcp-server && cd /tmp/cve-mcp-server && pip install -e ." - then save and Test. Optional NVD_API_KEY, GITHUB_TOKEN unlock more tools.',
     template: baseTemplate({
       id: 'cve_intel_extra',
       name: 'CVE Intel (extended)',
@@ -1005,7 +1005,7 @@ export const MCP_PRESETS: McpPreset[] = [
   },
 
   // -------------------------------------------------------------------------
-  // 39) GhidraMCP — reverse engineering / binary analysis
+  // 39) GhidraMCP - reverse engineering / binary analysis
   // -------------------------------------------------------------------------
   {
     key: 'ghidra',

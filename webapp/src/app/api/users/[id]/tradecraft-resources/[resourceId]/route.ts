@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // llmModel is required if explicitly being updated. Empty string would
     // make the resource unusable, so reject it. Callers that don't touch
-    // llmModel just omit the key — existing value is preserved.
+    // llmModel just omit the key - existing value is preserved.
     if ('llmModel' in updateData) {
       const val = updateData.llmModel
       if (typeof val !== 'string' || !val.trim()) {

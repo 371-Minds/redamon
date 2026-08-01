@@ -68,7 +68,7 @@ export const reconPresetSchema = z.object({
   naabuSkipHostDiscovery: bool,
   naabuVerifyPorts: bool,
   naabuPassiveMode: bool,
-  // AI surface recon — annotate AI-bearing ports on naabu output
+  // AI surface recon - annotate AI-bearing ports on naabu output
   portScanAiPortCatalogEnabled: bool,
 
   // -- Port Scanning: Masscan --
@@ -80,7 +80,7 @@ export const reconPresetSchema = z.object({
   masscanWait: int,
   masscanRetries: int,
   masscanExcludeTargets: str,
-  // AI surface recon — same AI port catalogue applied to masscan output
+  // AI surface recon - same AI port catalogue applied to masscan output
   masscanAiPortCatalogEnabled: bool,
 
   // -- Port Scanning: Nmap --
@@ -91,7 +91,7 @@ export const reconPresetSchema = z.object({
   nmapTimeout: int,
   nmapHostTimeout: int,
   nmapParallelism: int,
-  // AI surface recon — regex nmap product/version strings against AI runtimes
+  // AI surface recon - regex nmap product/version strings against AI runtimes
   nmapAiVersionRegexEnabled: bool,
 
   // -- HTTP Probing: httpx --
@@ -126,7 +126,7 @@ export const reconPresetSchema = z.object({
   httpxCustomHeaders: strArr,
   httpxMatchCodes: strArr,
   httpxFilterCodes: strArr,
-  // AI surface recon — annotate captured response data against AI vendor catalogues
+  // AI surface recon - annotate captured response data against AI vendor catalogues
   httpProbeAiHeaderScanEnabled: bool,
   httpProbeAiFaviconHashEnabled: bool,
   httpProbeAiTitleDetectionEnabled: bool,
@@ -653,7 +653,7 @@ export const RECON_PARAMETER_CATALOG = `
 - resourceEnumAiPathClassifierEnabled: boolean - Stamp Endpoint.ai_interface_type by matching path against the LLM/completion/embedding/tool-call/SSE/MCP/GraphQL catalogue (OpenAI /v1/chat/completions, Anthropic /v1/messages, Ollama /api/chat, Gemini :generateContent, MCP /mcp, LangServe /stream, etc.)
 - resourceEnumAiRagPathFlagEnabled: boolean - Stamp Endpoint.is_ai_rag_ingest=true for known RAG paths (OpenAI Vector Stores, Pinecone /vectors/upsert, Weaviate /v1/objects, Qdrant /collections/.../points). Ambiguous paths (/upload, /search, /query) only fire when parent BaseURL is AI-tagged.
 - resourceEnumAiParamInjectableFlagEnabled: boolean - Stamp Parameter.is_ai_prompt_injectable=true on AI-classified endpoints when the parameter name matches the prompt-injection catalogue (prompt, messages, system, contents, inputs, arguments, etc.)
-- resourceEnumAiToolArgPathEnabled: boolean - Reserved for the future ai_surface_recon central module — resolves Parameter.ai_tool_arg_path against discovered OpenAPI / ai-plugin.json / MCP tools/list specs. No-op today.
+- resourceEnumAiToolArgPathEnabled: boolean - Reserved for the future ai_surface_recon central module - resolves Parameter.ai_tool_arg_path against discovered OpenAPI / ai-plugin.json / MCP tools/list specs. No-op today.
 
 ## AI Surface Recon (central module, ACTIVE)
 - aiSurfaceReconEnabled: boolean - Master toggle. Active protocol-aware AI/LLM/MCP fingerprinting that runs after resource_enum. Benign shape-probes only (1-token chat ping, MCP handshake, read-only GETs) against hosts already showing an AI signal.
@@ -886,7 +886,7 @@ export const RECON_PARAMETER_CATALOG = `
 - subjackThreads: integer - Subjack concurrent threads (default 10)
 - subjackTimeout: integer - Subjack per-request timeout in seconds (default 30)
 - subjackSsl: boolean - Force HTTPS probing for higher accuracy (default true)
-- subjackAll: boolean - Test every URL, not just identified CNAMEs — slower (default false)
+- subjackAll: boolean - Test every URL, not just identified CNAMEs - slower (default false)
 - subjackCheckNs: boolean - Detect NS takeovers (expired nameservers / dangling cloud DNS delegations)
 - subjackCheckAr: boolean - Detect stale A records pointing to dead cloud IPs (manual review)
 - subjackCheckMail: boolean - Check SPF include + MX takeovers

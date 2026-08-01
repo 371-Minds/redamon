@@ -4,7 +4,7 @@
  * Deliberately dependency-free: the webapp image is built in Docker, so adding an
  * npm package for this would mean a rebuild everywhere, and we only need standard
  * `minute hour day-of-month month day-of-week` with `*`, `a`, `a-b`, `a-b/n`,
- * `*​/n` and comma lists. Seconds are NOT supported — a scan is not a per-second
+ * `*​/n` and comma lists. Seconds are NOT supported - a scan is not a per-second
  * job, and refusing that syntax is part of the DoS guard (Section 8.3).
  *
  * All evaluation is UTC: schedules are stored as absolute instants, so a server
@@ -56,7 +56,7 @@ function parseField(spec: string, min: number, max: number, fieldName: string): 
     } else if (rangePart.includes('-')) {
       const [a, b, ...rest] = rangePart.split('-')
       // Both sides must be present. `Number('')` is 0, so an open-ended range like
-      // "-5" would otherwise be silently reinterpreted as "0-5" — a typo becoming
+      // "-5" would otherwise be silently reinterpreted as "0-5" - a typo becoming
       // a schedule that fires at times the user never asked for.
       if (a === '' || b === undefined || b === '' || rest.length > 0) {
         throw new CronParseError(`invalid ${fieldName} range "${rangePart}"`)
@@ -154,7 +154,7 @@ export function nextCronRun(expr: string, from: Date = new Date()): Date | null 
 }
 
 /**
- * Smallest gap the expression can produce, in minutes — the DoS guard.
+ * Smallest gap the expression can produce, in minutes - the DoS guard.
  * A scan takes many minutes, so anything that can fire more often than
  * SCAN_SCHEDULE_MIN_INTERVAL_MINUTES is rejected at creation.
  */

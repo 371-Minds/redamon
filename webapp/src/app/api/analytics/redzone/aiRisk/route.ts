@@ -10,7 +10,7 @@ function toNum(val: unknown): number | null {
 }
 
 /**
- * "AI Risk (LLM)" offensive view — the attackable AI findings, mapped to
+ * "AI Risk (LLM)" offensive view - the attackable AI findings, mapped to
  * OWASP-LLM / MITRE ATLAS: MCP tool poisoning, prompt-injectable parameters,
  * RAG ingestion sinks, exposed runtimes/gateways, and unauthenticated MCP.
  */
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       { pid })
 
     // --- Tested vulnerabilities (garak/pyrit/giskard/promptfoo), corroborated
-    // across tools by (OWASP-LLM id, target) — the confirmed AI attack findings.
+    // across tools by (OWASP-LLM id, target) - the confirmed AI attack findings.
     // Queried LAST so the earlier sheets' query order stays stable. ---
     const tested = await session.run(
       `MATCH (v:Vulnerability {project_id: $pid})
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
         attack: f.attackChip,
         target: f.target + (f.endpointPath || ''),
         foundBy: f.sources,
-        asr: f.maxAsr != null ? `${Math.round(f.maxAsr * 100)}%` : '—',
+        asr: f.maxAsr != null ? `${Math.round(f.maxAsr * 100)}%` : '-',
         trials: f.totalTrials,
         evidence: f.evidence,
       })),

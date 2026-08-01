@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — Scan Scheduler run history maintenance.
+ * Scan Timeline - Scan Scheduler run history maintenance.
  *
  * DELETE /api/projects/[id]/schedules/history
  *   body { ids: string[] }  delete exactly those run-history rows (multi-select)

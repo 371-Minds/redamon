@@ -7,7 +7,7 @@ import { Toggle, useToast } from '@/components/ui'
  * Per-project TrafficMind capture-routing toggle.
  *
  * Reads and writes the project's `captureProxyEnabled` flag directly (PUT
- * /api/projects/[id]) — the change applies immediately and takes effect on the
+ * /api/projects/[id]) - the change applies immediately and takes effect on the
  * project's next session. Shows the current project name next to the switch so
  * the operator always knows which project they are toggling.
  *

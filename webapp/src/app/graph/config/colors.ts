@@ -52,7 +52,7 @@ export const NODE_COLORS: Record<string, string> = {
   // EXTERNAL / OUT-OF-SCOPE (informational, not a target)
   ExternalDomain: '#8b8178',       // Warm stone gray
 
-  // ATTACK CHAIN (Amber family) — Agent execution history
+  // ATTACK CHAIN (Amber family) - Agent execution history
   AttackChain: '#f59e0b',     // Amber - Chain root
   ChainStep: '#f59e0b',       // Amber - Execution steps
   ChainFinding: '#f59e0b',    // Amber - Findings
@@ -98,13 +98,13 @@ export const SELECTION_COLORS = {
 
 // Attack chain session colors
 export const CHAIN_SESSION_COLORS = {
-  inactive: '#6b7280',          // Grey-500 — chains not in active session
-  inactiveSelected: '#f59e0b',  // Amber — inactive chain node when clicked/selected
-  inactiveFinding: '#3d3107',   // Dark yellow — inactive non-goal ChainFinding diamonds
-  activeRing: '#facc15',        // Yellow-400 — pulsing ring on active AttackChain node
+  inactive: '#6b7280',          // Grey-500 - chains not in active session
+  inactiveSelected: '#f59e0b',  // Amber - inactive chain node when clicked/selected
+  inactiveFinding: '#3d3107',   // Dark yellow - inactive non-goal ChainFinding diamonds
+  activeRing: '#facc15',        // Yellow-400 - pulsing ring on active AttackChain node
 } as const
 
-// Goal/outcome finding types — these represent achieved attack objectives
+// Goal/outcome finding types - these represent achieved attack objectives
 export const GOAL_FINDING_TYPES = new Set([
   'exploit_success',
   'access_gained',
@@ -121,8 +121,8 @@ export const GOAL_FINDING_TYPES = new Set([
 
 // Colors for goal ChainFinding diamonds
 export const GOAL_FINDING_COLORS = {
-  active: '#4ade80',       // Green-400 — goal achieved (active chain)
-  inactive: '#276d43',     // Dark green — goal achieved (inactive chain)
+  active: '#4ade80',       // Green-400 - goal achieved (active chain)
+  inactive: '#276d43',     // Dark green - goal achieved (inactive chain)
 } as const
 
 // Background colors by theme

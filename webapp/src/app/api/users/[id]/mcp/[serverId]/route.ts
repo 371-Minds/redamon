@@ -1,6 +1,6 @@
 /**
- * PUT    /api/users/[id]/mcp/[serverId] — update one server
- * DELETE /api/users/[id]/mcp/[serverId] — delete one server
+ * PUT    /api/users/[id]/mcp/[serverId] - update one server
+ * DELETE /api/users/[id]/mcp/[serverId] - delete one server
  *
  * Both fire async POST ${AGENT_API_URL}/mcp/reload after a successful write.
  */

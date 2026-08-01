@@ -188,7 +188,7 @@ export default function GraphPage() {
     setActiveView('graph')
   }, [fetchViews])
 
-  // Agent status polling — lightweight fetch every 5s for toolbar indicators
+  // Agent status polling - lightweight fetch every 5s for toolbar indicators
   const [agentSummary, setAgentSummary] = useState<{
     activeCount: number
     conversations: Array<{
@@ -217,7 +217,7 @@ export default function GraphPage() {
     return () => clearInterval(interval)
   }, [projectId, userId])
 
-  // Tunnel status polling — check every 10s which tunnels are active
+  // Tunnel status polling - check every 10s which tunnels are active
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus>()
 
   useEffect(() => {
@@ -273,7 +273,7 @@ export default function GraphPage() {
   //  - agent tool-completion websocket events (via AIAssistantDrawer onRefetchGraph)
   //  - pipeline completion (refetchAfterCompletion)
   // Scan Timeline: which version the screen RENDERS. null = the current (active)
-  // version, i.e. the live graph — the default, per the default-is-latest rule.
+  // version, i.e. the live graph - the default, per the default-is-latest rule.
   // A non-null id renders that version's stored snapshot, read-only.
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [isVersionManagerOpen, setIsVersionManagerOpen] = useState(false)
@@ -458,7 +458,7 @@ export default function GraphPage() {
     enabled: trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused' || trufflehogState?.status === 'stopping' || trufflehogState?.status === 'pausing',
   })
 
-  // Active sessions hook — polls kali-sandbox session list
+  // Active sessions hook - polls kali-sandbox session list
   const activeSessions = useActiveSessions({
     enabled: true,
     fastPoll: activeView === 'sessions',
@@ -529,7 +529,7 @@ export default function GraphPage() {
 
   useEffect(() => {
     // Defer first init until BOTH the graph data has types AND the user prefs
-    // have loaded — otherwise we'd briefly show "all visible" and either flicker
+    // have loaded - otherwise we'd briefly show "all visible" and either flicker
     // or overwrite the saved selection.
     if (nodeTypes.length > 0 && !tableInitialized && !graphFilterPrefsLoading) {
       const hidden = new Set(savedHiddenTypes)
@@ -678,14 +678,14 @@ export default function GraphPage() {
   }, [data, activeNodeTypes, nodeTypes.length, hiddenSessions, CHAIN_NODE_TYPES])
 
   // Hard render cap: measured on the node set clustering would actually process
-  // (active saved-filter view, or the type/session-filtered set) — not the raw
-  // unfiltered graph — so a large project narrowed by a filter still renders.
+  // (active saved-filter view, or the type/session-filtered set) - not the raw
+  // unfiltered graph - so a large project narrowed by a filter still renders.
   const renderSource = filterGraphData ?? filteredGraphData
   const overNodeCap = isOverNodeCap(renderSource?.nodes.length ?? 0)
 
   // Clustered graph data for GraphCanvas (collapses >30 same-type leaf neighbors sharing a parent).
   // Applied AFTER filtering so hiding a child type also dissolves its clusters.
-  // Skipped entirely when over the hard cap — clustering is the expensive step that would freeze the tab.
+  // Skipped entirely when over the hard cap - clustering is the expensive step that would freeze the tab.
   const clusteredGraphData = useMemo(() => {
     if (overNodeCap) return undefined
     const src = filterGraphData ?? filteredGraphData
@@ -700,7 +700,7 @@ export default function GraphPage() {
   // finishes resolving ids on its next tick.
   const stableGraphData = useStableGraphData(clusteredGraphData)
 
-  // Clusters count as single nodes for the 3D threshold — use clustered count.
+  // Clusters count as single nodes for the 3D threshold - use clustered count.
   const displayedNodeCount = stableGraphData?.nodes.length ?? 0
   const effectiveIs3D = is3D && displayedNodeCount <= AUTO_2D_THRESHOLD
 
@@ -952,7 +952,7 @@ export default function GraphPage() {
   }, [allPartialReconRuns, refetchAfterCompletion])
 
   const handleToggleAI = useCallback(async () => {
-    // Section 4.2: the agent ALWAYS runs against the current (active) version —
+    // Section 4.2: the agent ALWAYS runs against the current (active) version -
     // it only ever queries the live graph. Say so before opening the drawer over
     // a past-version view, so the user is never confused about what it sees.
     if (!isAIOpen && isViewingPastVersion) {
@@ -1037,11 +1037,11 @@ export default function GraphPage() {
       setIsReconModalOpen(false)
       setActiveLogsDrawer('recon')
       toast.info(mode === 'new'
-        ? 'Previous graph saved as a version — recon scan started'
+        ? 'Previous graph saved as a version - recon scan started'
         : 'Recon scan started (previous graph discarded)')
       return
     }
-    // Failed to start — surface a tailored modal (Part 5). Memory-governor
+    // Failed to start - surface a tailored modal (Part 5). Memory-governor
     // rejections carry a structured limit; distinguish "configured limit" (raise
     // a setting) from "RAM limit" (retry / free memory).
     const startErr = getLastStartError?.()
@@ -1196,7 +1196,7 @@ export default function GraphPage() {
     setActiveLogsDrawer(prev => prev === `partialRecon:${runId}` ? null : `partialRecon:${runId}`)
   }, [])
 
-  // Emergency Pause All — freezes every running pipeline and agent at once
+  // Emergency Pause All - freezes every running pipeline and agent at once
   const isAnyPipelineRunning = isReconRunning || isGvmRunning || isGithubHuntRunning || isTrufflehogRunning || isAgentRunning || isPartialReconRunning
   const [isEmergencyPausing, setIsEmergencyPausing] = useState(false)
 

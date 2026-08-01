@@ -178,7 +178,7 @@ Discover every subdomain that exists and squeeze every possible takeover finding
 
     // VHost & SNI -- discovers hidden vhosts behind shared IPs (admin / staging /
     // internal panels not listed in DNS). Conceptually adjacent to subdomain
-    // takeover hunting — both expose hidden infrastructure.
+    // takeover hunting - both expose hidden infrastructure.
     vhostSniEnabled: true,
     vhostSniTestL7: true,
     vhostSniTestL4: true,

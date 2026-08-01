@@ -188,6 +188,18 @@ With domain: `-l "DOMAIN\\administrator" -P passwords.txt {hydra_flags} smb://<i
 
 **The path, field names, and failure string below are PLACEHOLDERS — read them off the real login form first.** Fetch the form and inspect it: the action path may be `/session`, `/auth`, `/api/login`, etc.; the fields may be `email`/`user`/`login` not `username`/`password`; there may be a CSRF token to carry; and the failure string must be text that actually appears on a failed login (or use `S=` for a success marker). Using the literal values below verbatim against an app that differs yields false negatives ("0 valid").
 
+**Usernames for an APPLICATION login are often a PERSON, not a service account.**
+Web apps frequently seed a personal user account -- a first name, a full name, or the
+local-part of an email the app exposes -- rather than `admin` / `root` / a daemon
+account, so a service/OS username list ALONE will miss it and falsely report "0 valid".
+For a web form login, sweep BOTH: (a) the standard admin/service usernames, AND (b) a
+COMMON-HUMAN-NAMES / personal-handle username list (e.g. SecLists
+`Usernames/Names/names.txt`, plus any names or email local-parts you harvest from the
+app's own pages, author/profile fields, comments, or contact content) -- crossed with a
+common-web-password list (e.g. a rockyou top-N slice or `http_default_pass.txt`). Pass
+the name list via `-L names.txt` (or `-C user:pass` combos). Do NOT declare the login
+un-guessable until a names-based username sweep has run, not just the admin/root defaults.
+
 ```
 -l admin -P /usr/share/metasploit-framework/data/wordlists/http_default_pass.txt {hydra_flags} <ip> http-post-form "/login.php:username=^USER^&password=^PASS^:F=Invalid"
 ```

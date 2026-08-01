@@ -1,5 +1,5 @@
 /**
- * Report Template — generates self-contained HTML pentest reports.
+ * Report Template - generates self-contained HTML pentest reports.
  *
  * 14 sections: Cover, TOC, Executive Summary, Scope & Methodology,
  * Risk Summary, Findings (remediations), Vulnerability Details,
@@ -89,7 +89,7 @@ function cssBarGauge(pct: number, label?: string): string {
   </div>`
 }
 
-/** CSS bar gauge with custom color (inverted — red = high) */
+/** CSS bar gauge with custom color (inverted - red = high) */
 function cssBarGaugeRisk(pct: number, label?: string): string {
   const clamped = Math.max(0, Math.min(100, pct))
   const color = clamped >= 50 ? '#dc2626' : clamped >= 25 ? '#f59e0b' : clamped >= 10 ? '#d97706' : '#3b82f6'
@@ -301,9 +301,9 @@ function renderCisaKevCallout(data: ReportData): string {
   const rows = kevExploits.map(e => `
     <tr style="background:#fef2f2">
       <td style="font-weight:600">${esc(e.name)}</td>
-      <td>${e.cvssScore != null ? e.cvssScore.toFixed(1) : '—'}</td>
-      <td>${esc(e.targetIp || '—')}${e.targetPort ? `:${e.targetPort}` : ''}</td>
-      <td>${e.cveIds.length > 0 ? e.cveIds.map(id => esc(id)).join(', ') : '—'}</td>
+      <td>${e.cvssScore != null ? e.cvssScore.toFixed(1) : '-'}</td>
+      <td>${esc(e.targetIp || '-')}${e.targetPort ? `:${e.targetPort}` : ''}</td>
+      <td>${e.cveIds.length > 0 ? e.cveIds.map(id => esc(id)).join(', ') : '-'}</td>
     </tr>`).join('')
 
   return `
@@ -385,7 +385,7 @@ function renderAttackFlowChains(data: ReportData): string {
       ${arrow}
       <td>${esc(c.cweId || '')}${c.cweName ? `: ${esc(c.cweName)}` : ''}</td>
       ${arrow}
-      <td>${c.capecId ? `${esc(c.capecId)}${c.capecName ? `: ${esc(c.capecName)}` : ''}` : '<span style="color:#94a3b8">—</span>'}</td>
+      <td>${c.capecId ? `${esc(c.capecId)}${c.capecName ? `: ${esc(c.capecName)}` : ''}` : '<span style="color:#94a3b8">-</span>'}</td>
     </tr>`
   }).join('')
 
@@ -421,7 +421,7 @@ export function generateReportHtml(data: ReportData, narratives: LLMNarratives |
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${esc(projectName)} — Penetration Test Report</title>
+<title>${esc(projectName)} - Penetration Test Report</title>
 <style>
 ${CSS_STYLES}
 </style>
@@ -615,7 +615,7 @@ function renderScope(data: ReportData, narrative?: string): string {
               return `${esc(ip.address)}${cdn}`
             }).join('<br/>')
           : '<span style="color:#9ca3af;font-style:italic">Unresolved</span>'
-        const ports = m.ips.length > 0 ? String(m.openPorts) : '<span style="color:#9ca3af">—</span>'
+        const ports = m.ips.length > 0 ? String(m.openPorts) : '<span style="color:#9ca3af">-</span>'
         return `<tr><td>${esc(m.subdomain)}</td><td>${ipList}</td><td>${ports}</td></tr>`
       }).join('')
       mappingTable = `
@@ -637,7 +637,7 @@ function renderScope(data: ReportData, narrative?: string): string {
           : '<span style="color:#9ca3af;font-style:italic">No reverse DNS</span>'
         const cdn = m.isCdn && m.cdnName
           ? `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;background:#dbeafe;color:#1d4ed8">${esc(m.cdnName)}</span>`
-          : '<span style="color:#9ca3af">—</span>'
+          : '<span style="color:#9ca3af">-</span>'
         return `<tr><td>${esc(m.ip)}</td><td>${esc(m.version || '')}</td><td>${hostnames}</td><td>${cdn}</td><td>${m.openPorts}</td></tr>`
       }).join('')
       mappingTable = `
@@ -847,9 +847,9 @@ function renderVulnerabilityDetails(data: ReportData): string {
       <tr>
         <td>${esc(f.name)}</td>
         <td>${sevBadge(f.severity)}</td>
-        <td>${f.cvssScore != null ? f.cvssScore.toFixed(1) : '—'}</td>
-        <td>${esc(f.target || f.host || f.matchedAt || '—')}</td>
-        <td>${esc(f.category || '—')}</td>
+        <td>${f.cvssScore != null ? f.cvssScore.toFixed(1) : '-'}</td>
+        <td>${esc(f.target || f.host || f.matchedAt || '-')}</td>
+        <td>${esc(f.category || '-')}</td>
       </tr>`).join('')
 
     return `
@@ -858,7 +858,7 @@ function renderVulnerabilityDetails(data: ReportData): string {
       <thead><tr><th>Name</th><th>Severity</th><th>CVSS</th><th>Target</th><th>Category</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    ${items.length > 50 ? `<p class="muted">Showing 50 of ${items.length} — see appendix for full list.</p>` : ''}`
+    ${items.length > 50 ? `<p class="muted">Showing 50 of ${items.length} - see appendix for full list.</p>` : ''}`
   }).join('')
 
   return `
@@ -874,7 +874,7 @@ function renderAttackSurface(data: ReportData, narrative?: string): string {
   const { attackSurface, graphOverview } = data
 
   const techRows = attackSurface.technologies.slice(0, 30).map(t =>
-    `<tr><td>${esc(t.name)}</td><td>${esc(t.version || '—')}</td><td>${t.cveCount}</td></tr>`
+    `<tr><td>${esc(t.name)}</td><td>${esc(t.version || '-')}</td><td>${t.cveCount}</td></tr>`
   ).join('')
 
   const svcRows = attackSurface.services.slice(0, 20).map(s =>
@@ -992,10 +992,10 @@ function renderCveIntelligence(data: ReportData): string {
   const cveRows = Array.from(uniqueCves.values()).slice(0, 40).map(c => `
     <tr>
       <td>${esc(c.cveId)}</td>
-      <td>${c.cvss != null ? Number(c.cvss).toFixed(1) : '—'}</td>
-      <td>${c.cveSeverity ? sevBadge(c.cveSeverity) : '—'}</td>
+      <td>${c.cvss != null ? Number(c.cvss).toFixed(1) : '-'}</td>
+      <td>${c.cveSeverity ? sevBadge(c.cveSeverity) : '-'}</td>
       <td>${esc(c.tech)}${c.techVersion ? ` ${esc(c.techVersion)}` : ''}</td>
-      <td>${c.cweId ? esc(c.cweId) : '—'}</td>
+      <td>${c.cweId ? esc(c.cweId) : '-'}</td>
     </tr>`).join('')
 
   // CWE summary
@@ -1019,10 +1019,10 @@ function renderCveIntelligence(data: ReportData): string {
     <tr style="background:${sevBg(e.severity)}">
       <td>${esc(e.name)}</td>
       <td>${sevBadge(e.severity)}</td>
-      <td>${e.cvssScore != null ? e.cvssScore.toFixed(1) : '—'}</td>
-      <td>${esc(e.targetIp || '—')}${e.targetPort ? `:${e.targetPort}` : ''}</td>
+      <td>${e.cvssScore != null ? e.cvssScore.toFixed(1) : '-'}</td>
+      <td>${esc(e.targetIp || '-')}${e.targetPort ? `:${e.targetPort}` : ''}</td>
       <td>${e.cisaKev ? '<span style="color:#dc2626;font-weight:600">YES</span>' : 'No'}</td>
-      <td>${e.cveIds.length > 0 ? e.cveIds.map(id => esc(id)).join(', ') : '—'}</td>
+      <td>${e.cveIds.length > 0 ? e.cveIds.map(id => esc(id)).join(', ') : '-'}</td>
     </tr>`).join('')
 
   return `
@@ -1037,7 +1037,7 @@ function renderCveIntelligence(data: ReportData): string {
     <thead><tr><th>CVE ID</th><th>CVSS</th><th>Severity</th><th>Technology</th><th>CWE</th></tr></thead>
     <tbody>${cveRows}</tbody>
   </table>
-  ${uniqueCves.size > 40 ? `<p class="muted">Showing 40 of ${uniqueCves.size} — see appendix.</p>` : ''}
+  ${uniqueCves.size > 40 ? `<p class="muted">Showing 40 of ${uniqueCves.size} - see appendix.</p>` : ''}
 
   ${cweRows ? `
   <h3>CWE Breakdown</h3>
@@ -1352,7 +1352,7 @@ function renderVhostSni(data: ReportData): string {
     <thead><tr><th>Hidden Hostname</th><th>Severity</th><th>Layer</th><th>Type</th><th>IP:Port</th><th>Baseline</th><th>Observed</th></tr></thead>
     <tbody>${findingRows}</tbody>
   </table>
-  ${vs.findings.length >= 50 ? '<p class="muted">Showing first 50 findings.</p>' : ''}` : '<p class="muted">No anomalies — all candidates returned the same response as the bare IP baseline.</p>'}
+  ${vs.findings.length >= 50 ? '<p class="muted">Showing first 50 findings.</p>' : ''}` : '<p class="muted">No anomalies - all candidates returned the same response as the bare IP baseline.</p>'}
 </div>`
 }
 
@@ -1427,12 +1427,12 @@ function renderAiSurface(data: ReportData): string {
 
   const findingRows = ai.findings.map(f => {
     // baseUrl/path/param-names come from crawling attacker-controlled targets and
-    // can contain markup — escape every interpolated value (stored-XSS guard).
+    // can contain markup - escape every interpolated value (stored-XSS guard).
     const params = f.promptInjectableParams.slice(0, 4).map(esc).join(', ')
     const promptParamsLabel = f.hasPromptParams
       ? `<span style="color: #ef4444; font-weight: 600">${f.promptInjectableParams.length}</span> (${params}${f.promptInjectableParams.length > 4 ? ', ...' : ''})`
-      : '—'
-    const rag = f.isRagIngest ? '<span style="color: #f59e0b; font-weight: 600">yes</span>' : '—'
+      : '-'
+    const rag = f.isRagIngest ? '<span style="color: #f59e0b; font-weight: 600">yes</span>' : '-'
     return `<tr>
       <td><code>${esc(f.baseUrl)}</code></td>
       <td><code>${esc(f.path)}</code></td>
@@ -1484,7 +1484,7 @@ function renderAiSurface(data: ReportData): string {
 function renderAiAttackFindings(ai: ReportData['aiSurface']): string {
   if (!ai.attackFindings?.length) return ''
   const toolsRun = ai.attackToolsRun ?? []
-  const pct = (n: number | null) => (n == null ? '—' : `${Math.round(n * 100)}%`)
+  const pct = (n: number | null) => (n == null ? '-' : `${Math.round(n * 100)}%`)
   const sevColor: Record<string, string> = {
     critical: '#b91c1c', high: '#ef4444', medium: '#f59e0b', low: '#10b981', info: '#6b7280',
   }
@@ -1504,7 +1504,7 @@ function renderAiAttackFindings(ai: ReportData['aiSurface']): string {
     </tr>`
   }).join('\n')
   const corroborated = ai.attackFindings.filter(f => f.sources.length > 1).length
-  return `<h3>Tested Vulnerabilities — AI Gauntlet</h3>
+  return `<h3>Tested Vulnerabilities - AI Gauntlet</h3>
   <p class="lead" style="font-size:13px">
     Confirmed by deterministic offensive testing (<strong>${esc(toolsRun.join(', '))}</strong>),
     grouped by OWASP-LLM id and target. ASR = attack-success rate over trials.
@@ -1589,10 +1589,10 @@ function renderAttackChains(data: ReportData): string {
   const exploitRows = exploitSuccesses.map(e => `
     <tr style="background:#fef2f2">
       <td>${esc(e.title)}</td>
-      <td>${esc(e.targetIp || '—')}${e.targetPort ? `:${e.targetPort}` : ''}</td>
-      <td>${esc(e.attackType || '—')}</td>
-      <td>${esc(e.module || '—')}</td>
-      <td>${e.cveIds.length > 0 ? e.cveIds.map(id => esc(id)).join(', ') : '—'}</td>
+      <td>${esc(e.targetIp || '-')}${e.targetPort ? `:${e.targetPort}` : ''}</td>
+      <td>${esc(e.attackType || '-')}</td>
+      <td>${esc(e.module || '-')}</td>
+      <td>${e.cveIds.length > 0 ? e.cveIds.map(id => esc(id)).join(', ') : '-'}</td>
     </tr>`).join('')
 
   const findingRows = topFindings.slice(0, 15).map(f => `
@@ -1600,7 +1600,7 @@ function renderAttackChains(data: ReportData): string {
       <td>${esc(f.title)}</td>
       <td>${sevBadge(f.severity)}</td>
       <td>${esc(f.findingType)}</td>
-      <td>${esc(f.targetHost || '—')}</td>
+      <td>${esc(f.targetHost || '-')}</td>
     </tr>`).join('')
 
   return `
@@ -1649,7 +1649,7 @@ function renderRecommendations(data: ReportData, narrative?: string): string {
         <td>${i + 1}</td>
         <td>${sevBadge(r.severity || 'info')}</td>
         <td>${esc(r.title)}</td>
-        <td>${esc(r.category || '—')}</td>
+        <td>${esc(r.category || '-')}</td>
         <td>${r.status === 'in_progress' ? '<span class="status-progress">In Progress</span>' : '<span class="status-open">Open</span>'}</td>
       </tr>`).join('')}
     </tbody>
@@ -1738,7 +1738,7 @@ function renderAppendix(data: ReportData): string {
   <h3>B. Assessment Tools</h3>
   <table class="data-table">
     <tbody>
-      <tr><td>Platform</td><td>RedAmon — Automated Security Assessment Platform</td></tr>
+      <tr><td>Platform</td><td>RedAmon - Automated Security Assessment Platform</td></tr>
       <tr><td>Reconnaissance</td><td>Subfinder, HTTPX, Katana, Naabu, GAU</td></tr>
       <tr><td>Vulnerability Scanning</td><td>Nuclei, GreenBone (GVM)</td></tr>
       <tr><td>Exploitation</td><td>Metasploit Framework</td></tr>

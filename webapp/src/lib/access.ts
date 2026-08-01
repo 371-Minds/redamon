@@ -11,7 +11,7 @@ import { getEffectiveUser, EffectiveUser } from './session'
  * this?" (identity) into "may this user touch this resource?" (authorization).
  *
  * Rollout: ownership is ENFORCED by default (fail closed). An operator who wants
- * to observe first can set ACCESS_ENFORCE=0 (or false) to run a log-only phase —
+ * to observe first can set ACCESS_ENFORCE=0 (or false) to run a log-only phase -
  * violations are then logged with a `[BOLA]` marker and allowed. Genuinely missing
  * resources (404) and unauthenticated callers (401) are always hard.
  *
@@ -48,7 +48,7 @@ export async function requireEffectiveUser(): Promise<EffectiveUser | NextRespon
 }
 
 /**
- * Immediate (non-log-only) owner check. Use where a violation must always block —
+ * Immediate (non-log-only) owner check. Use where a violation must always block -
  * notably the secret-exposure routes (A2). Returns 403 unless eff owns ownerId.
  */
 export function assertOwnerStrict(eff: EffectiveUser, ownerId: string): NextResponse | null {

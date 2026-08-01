@@ -35,7 +35,7 @@ declare global {
  * ends in `/ws/agent` (deploy.sh + docs), so we swap that suffix. But if an operator
  * hand-sets AGENT_WS_PUBLIC_URL without the suffix (e.g. `ws://host:8090` or a
  * trailing slash), a naive suffix-replace would be a no-op and SILENTLY DROP the
- * path — every socket (agent, terminal, cypherfix) would then dial the same wrong
+ * path - every socket (agent, terminal, cypherfix) would then dial the same wrong
  * URL. So fall back to appending the path in that case.
  */
 function applyPath(url: string, path: string): string {

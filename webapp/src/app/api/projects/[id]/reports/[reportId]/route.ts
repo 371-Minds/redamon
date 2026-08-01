@@ -7,7 +7,7 @@ interface RouteParams {
   params: Promise<{ id: string; reportId: string }>
 }
 
-/** GET /api/projects/{id}/reports/{reportId} — Download report HTML */
+/** GET /api/projects/{id}/reports/{reportId} - Download report HTML */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id, reportId } = await params
@@ -55,7 +55,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
-/** DELETE /api/projects/{id}/reports/{reportId} — Delete report (file + DB) */
+/** DELETE /api/projects/{id}/reports/{reportId} - Delete report (file + DB) */
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id, reportId } = await params

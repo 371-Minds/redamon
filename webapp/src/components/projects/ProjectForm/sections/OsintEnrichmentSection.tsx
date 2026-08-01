@@ -119,7 +119,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                 {noKey('censys') && (
                   <div className={styles.shodanWarning}>
                     <Info size={13} />
-                    No Censys API credentials — add API Token &amp; Organization ID in Global Settings to enable.
+                    No Censys API credentials - add API Token &amp; Organization ID in Global Settings to enable.
                   </div>
                 )}
               </div>
@@ -159,7 +159,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                 {noKey('fofa') && (
                   <div className={styles.shodanWarning}>
                     <Info size={13} />
-                    No FOFA API key — add it in Global Settings to enable.
+                    No FOFA API key - add it in Global Settings to enable.
                   </div>
                 )}
               </div>
@@ -245,7 +245,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                 {noKey('netlas') && (
                   <div className={styles.shodanWarning}>
                     <Info size={13} />
-                    No Netlas API key — add it in Global Settings to enable.
+                    No Netlas API key - add it in Global Settings to enable.
                   </div>
                 )}
               </div>
@@ -285,7 +285,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                 {noKey('virusTotal') && (
                   <div className={styles.shodanWarning}>
                     <Info size={13} />
-                    No VirusTotal API key — add it in Global Settings to enable.
+                    No VirusTotal API key - add it in Global Settings to enable.
                   </div>
                 )}
               </div>
@@ -325,7 +325,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                 {noKey('zoomEye') && (
                   <div className={styles.shodanWarning}>
                     <Info size={13} />
-                    No ZoomEye API key — add it in Global Settings to enable.
+                    No ZoomEye API key - add it in Global Settings to enable.
                   </div>
                 )}
               </div>
@@ -377,7 +377,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
                 {noKey('criminalIp') && (
                   <div className={styles.shodanWarning}>
                     <Info size={13} />
-                    No Criminal IP API key — add it in Global Settings to enable.
+                    No Criminal IP API key - add it in Global Settings to enable.
                   </div>
                 )}
               </div>
@@ -411,7 +411,7 @@ export function OsintEnrichmentSection({ data, updateField, onRun, onRunUncover 
               <div>
                 <span className={styles.toggleLabel}>Uncover (Multi-Engine Search)</span>
                 <p className={styles.toggleDescription}>
-                  ProjectDiscovery Uncover — searches Shodan, Censys, FOFA, ZoomEye, Netlas,
+                  ProjectDiscovery Uncover - searches Shodan, Censys, FOFA, ZoomEye, Netlas,
                   CriminalIP, Quake, Hunter, and more simultaneously for target expansion.
                   Discovers additional IPs, subdomains, and open ports before port scanning.
                   Configure API keys for each engine in Global Settings.

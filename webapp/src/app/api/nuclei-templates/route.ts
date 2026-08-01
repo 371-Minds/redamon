@@ -81,7 +81,7 @@ async function listTemplates() {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/nuclei-templates — list all custom templates
+// GET /api/nuclei-templates - list all custom templates
 // ---------------------------------------------------------------------------
 export async function GET() {
   try {
@@ -94,7 +94,7 @@ export async function GET() {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/nuclei-templates — upload a .yaml/.yml template
+// POST /api/nuclei-templates - upload a .yaml/.yml template
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   try {

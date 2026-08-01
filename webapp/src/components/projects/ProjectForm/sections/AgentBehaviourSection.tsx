@@ -132,13 +132,13 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                 }}
               >
                 <option value="none">None (manual LHOST/LPORT)</option>
-                <option value="ngrok">ngrok (single port — free, no VPS needed)</option>
-                <option value="chisel">chisel (multi-port — requires VPS)</option>
+                <option value="ngrok">ngrok (single port - free, no VPS needed)</option>
+                <option value="chisel">chisel (multi-port - requires VPS)</option>
               </select>
               <span className={styles.fieldHint}>
                 {data.agentNgrokTunnelEnabled && 'Configure ngrok auth token in Global Settings → Tunneling. Tunnels port 4444 only (handler). Stageless payloads required. Web delivery / HTA not supported.'}
                 {data.agentChiselTunnelEnabled && 'Configure chisel server URL in Global Settings → Tunneling. Requires a chisel server running on your VPS. Tunnels ports 4444 (handler) + 8080 (web delivery). Stageless payloads required.'}
-                {!data.agentNgrokTunnelEnabled && !data.agentChiselTunnelEnabled && 'No tunnel — configure LHOST/LPORT manually below.'}
+                {!data.agentNgrokTunnelEnabled && !data.agentChiselTunnelEnabled && 'No tunnel - configure LHOST/LPORT manually below.'}
               </span>
             </div>
             {(data.agentNgrokTunnelEnabled || data.agentChiselTunnelEnabled) ? (
@@ -251,7 +251,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           onChange={(e) => {
                             // Pass raw value (string or NaN) through during typing.
                             // Clamping on every keystroke makes it impossible to enter
-                            // multi-digit numbers — e.g. typing `15` clamps `1` to `2`
+                            // multi-digit numbers - e.g. typing `15` clamps `1` to `2`
                             // before the user can finish.
                             const raw = e.target.value
                             updateField('fireteamMaxConcurrent' as any, (raw === '' ? '' : parseInt(raw)) as any)
@@ -719,13 +719,13 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             </div>
           </div>
 
-          {/* Kali Shell — Library Installation */}
+          {/* Kali Shell - Library Installation */}
           <div className={styles.subSection}>
-            <h3 className={styles.subSectionTitle}>Kali Shell — Library Installation</h3>
+            <h3 className={styles.subSectionTitle}>Kali Shell - Library Installation</h3>
             <div className={styles.toggleRow}>
               <div>
                 <span className={styles.toggleLabel}>Allow Library Installation</span>
-                <p className={styles.toggleDescription}>Let the agent install packages (pip/apt) in kali_shell during a pentest. Installed packages are ephemeral — lost on container restart.</p>
+                <p className={styles.toggleDescription}>Let the agent install packages (pip/apt) in kali_shell during a pentest. Installed packages are ephemeral - lost on container restart.</p>
               </div>
               <Toggle
                 checked={data.agentKaliInstallEnabled}

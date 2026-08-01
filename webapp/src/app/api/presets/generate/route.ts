@@ -15,7 +15,7 @@ import { assertSafeLlmBaseUrl, BaseUrlValidationError } from '@/lib/llm-url-guar
 //   - "claude-*"           → anthropic
 //   - everything else      → openai
 // This is what makes "Generate Recon Preset with AI" work with any configured
-// provider — including OpenAI-compatible deployments like Microsoft Foundry.
+// provider - including OpenAI-compatible deployments like Microsoft Foundry.
 // ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT = `You are a recon pipeline configuration expert for RedAmon, an AI-powered red-team reconnaissance platform.

@@ -15,7 +15,7 @@
  * control mutates local state only; Apply PUTs the changed fields in a single
  * request, so the orchestrator respawns the proxy AT MOST ONCE per Apply (never
  * once-per-click). The per-project routing matrix at the bottom is the exception
- * — it is per-project, does not respawn the proxy, and keeps applying immediately.
+ * - it is per-project, does not respawn the proxy, and keeps applying immediately.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Info } from 'lucide-react'
@@ -64,15 +64,15 @@ const EGRESS_TOGGLES: { key: EgressToggleKey; title: string; tip: string; danger
 // ── Body-storage policy matrix (mirror capture_lib.DEFAULT_BODY_RULES).
 const BODY_FAMILIES: { key: BodyFamily; title: string; tip: string }[] = [
   { key: 'text', title: 'HTML / CSS / text', tip: 'text/html, text/css, text/plain, xml, csv.' },
-  { key: 'json', title: 'JSON / API data', tip: 'application/json, form-urlencoded, graphql — the highest-value bodies.' },
+  { key: 'json', title: 'JSON / API data', tip: 'application/json, form-urlencoded, graphql - the highest-value bodies.' },
   { key: 'script', title: 'Scripts (JS)', tip: 'application/javascript, ecmascript.' },
-  { key: 'image', title: 'Images', tip: 'image/* — usually render noise.' },
+  { key: 'image', title: 'Images', tip: 'image/* - usually render noise.' },
   { key: 'font', title: 'Fonts', tip: 'font/*, woff/woff2/ttf/otf (incl. octet-stream mislabeled by extension).' },
-  { key: 'video', title: 'Video', tip: 'video/* — large render noise.' },
+  { key: 'video', title: 'Video', tip: 'video/* - large render noise.' },
   { key: 'audio', title: 'Audio', tip: 'audio/*.' },
-  { key: 'document', title: 'Documents', tip: 'pdf / office / rtf — often leak evidence; agent cannot read, human can.' },
-  { key: 'archive', title: 'Archives', tip: 'zip / gzip / tar / 7z — source or backup disclosure.' },
-  { key: 'binary', title: 'Binary / downloads', tip: 'octet-stream / wasm / serialized blobs — deserialization & file downloads.' },
+  { key: 'document', title: 'Documents', tip: 'pdf / office / rtf - often leak evidence; agent cannot read, human can.' },
+  { key: 'archive', title: 'Archives', tip: 'zip / gzip / tar / 7z - source or backup disclosure.' },
+  { key: 'binary', title: 'Binary / downloads', tip: 'octet-stream / wasm / serialized blobs - deserialization & file downloads.' },
 ]
 const BODY_RULES_MINIMAL: Record<string, BodyPolicy> = {
   text: 'auto', json: 'auto', script: 'meta', image: 'meta', font: 'meta',
@@ -156,7 +156,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
       setS((prev) => adoptCanonical(prev, submitted, canonical, keys))
       toast.success('TrafficMind settings applied')
     } catch {
-      toast.error('Not saved — TrafficMind settings are admin-only')
+      toast.error('Not saved - TrafficMind settings are admin-only')
     } finally {
       setSaving(false)
     }
@@ -183,7 +183,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
             <div>
               <p style={{ margin: '0 0 6px', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 13px)' }}>
                 Master switch for the TrafficMind capture proxy. Enabling starts the proxy + ingest containers;
-                disabling stops them — the change takes effect when you click <strong>Apply</strong>. Turn capture
+                disabling stops them - the change takes effect when you click <strong>Apply</strong>. Turn capture
                 on/off per project in the matrix below, or from the toggle on the TrafficMind page.{' '}
                 <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/TrafficMind" title="Open TrafficMind wiki page" />
               </p>
@@ -217,7 +217,7 @@ export function TrafficMindSettingsModal({ isOpen, onClose, userId }: {
               <label style={label13}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   Inline body cap (KB)
-                  <Tooltip content="Text bodies at or under this size are stored INLINE in the database (fast, shown directly in the UI). Larger text and all binary go to disk. This is a DB-vs-disk routing threshold, not a size limit — nothing is dropped by it." position="top" maxWidth={460}>
+                  <Tooltip content="Text bodies at or under this size are stored INLINE in the database (fast, shown directly in the UI). Larger text and all binary go to disk. This is a DB-vs-disk routing threshold, not a size limit - nothing is dropped by it." position="top" maxWidth={460}>
                     <Info size={13} style={{ color: 'var(--text-tertiary)', cursor: 'help' }} />
                   </Tooltip>
                 </span>

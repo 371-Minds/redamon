@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma'
 import { requireEffectiveUser, requireProjectAccess, ownerScope } from '@/lib/access'
 import { readCapturedBody } from '@/lib/captureBodies'
 
-// GET /api/traffic/[projectId]/[id] — full transaction including headers + bodies.
+// GET /api/traffic/[projectId]/[id] - full transaction including headers + bodies.
 // Tenant-enforced: guardProject + the row must belong to this project AND the
 // effective user (ownerScope). A cross-tenant id returns 404 (anti-enumeration),
 // identical to a non-existent id.

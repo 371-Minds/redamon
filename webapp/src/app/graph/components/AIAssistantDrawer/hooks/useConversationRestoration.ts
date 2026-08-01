@@ -214,7 +214,7 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
         // ThinkingItem would duplicate the same text on the chat timeline
         // (once before the card, once inside). This was the source of the
         // "two identical thoughts, one at top, one at bottom" confusion on
-        // session restore — especially for waves whose fireteam row never
+        // session restore - especially for waves whose fireteam row never
         // persisted (cancelled before the deploy POST landed), which left
         // an orphaned thinking with no card to anchor to.
         if (data.action === 'deploy_fireteam') return null
@@ -317,7 +317,7 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
             type: 'message',
             id: msg.id,
             role: 'assistant',
-            content: `**Phase:** ${phase}` + (data.iteration_count ? ` — Step ${data.iteration_count}` : ''),
+            content: `**Phase:** ${phase}` + (data.iteration_count ? ` - Step ${data.iteration_count}` : ''),
             phase,
             timestamp: new Date(msg.createdAt),
           } as Message
@@ -521,7 +521,7 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
       // foldLatsRestoreMarkers returns the SAME array reference when there are
       // no LATS markers (the common case). Guard against it: clearing `restored`
       // would also clear `folded` (same array) and leave the whole timeline
-      // empty — this is what blanked the chat when restoring any non-LATS
+      // empty - this is what blanked the chat when restoring any non-LATS
       // conversation. Only rewrite when folding actually produced a new array.
       if (folded !== restored) {
         restored.length = 0
@@ -866,7 +866,7 @@ export function useConversationRestoration(deps: ConversationRestorationDeps) {
     // wave still showing `running` or `pending_approval` to an appropriate
     // terminal status. The replay block rebuilt cards from persisted
     // fireteam_tool_start events, but mid-flight tools at cancel time
-    // never got a matching fireteam_tool_complete row — so without this
+    // never got a matching fireteam_tool_complete row - so without this
     // pass, switching chats and returning to a cancelled wave still shows
     // tools spinning inside dead specialists.
     for (let i = 0; i < restored.length; i++) {

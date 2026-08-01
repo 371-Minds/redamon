@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       count: toNum(r.get('count')),
     }))
 
-    // Q5: Security headers — actual headers from graph grouped by is_security_header
+    // Q5: Security headers - actual headers from graph grouped by is_security_header
     const secHdrResult = await session.run(
       `MATCH (:BaseURL {project_id: $pid})-[:HAS_HEADER]->(h:Header)
        RETURN h.name AS name,

@@ -67,7 +67,7 @@ export interface FileSystemDrawerProps {
   initialTab?: Tab
 }
 
-// Protected default subdirs — these cannot be renamed or deleted. Mirrors
+// Protected default subdirs - these cannot be renamed or deleted. Mirrors
 // PROTECTED_SUBDIRS in agentic/workspace_fs.py (backend also enforces).
 const PROTECTED_SUBDIRS = new Set(['notes', 'tool-outputs', 'jobs', 'uploads'])
 
@@ -190,7 +190,7 @@ export function FileSystemDrawer({
   const [jobsLoading, setJobsLoading] = useState(false)
   const [jobsError, setJobsError] = useState<string | null>(null)
 
-  // Drawer width — persisted per-user via localStorage so it survives reloads
+  // Drawer width - persisted per-user via localStorage so it survives reloads
   // and project switches. Lazy init reads the stored value once on mount.
   const [drawerWidth, setDrawerWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_WIDTH_PX
@@ -206,7 +206,7 @@ export function FileSystemDrawer({
     try {
       window.localStorage.setItem(WIDTH_STORAGE_KEY, String(clamped))
     } catch {
-      // localStorage unavailable (private mode, quota) — width still applies for the session.
+      // localStorage unavailable (private mode, quota) - width still applies for the session.
     }
   }, [])
 
@@ -256,7 +256,7 @@ export function FileSystemDrawer({
 
   // ---- Fetchers ---------------------------------------------------------
 
-  // `silent` skips the loading/error state toggle — used for the 5s background
+  // `silent` skips the loading/error state toggle - used for the 5s background
   // poll so the entry list doesn't unmount/remount on every tick (which
   // produced a visible flash). The current list stays on screen; if the
   // poll fails we keep the stale data rather than wiping it.
@@ -875,7 +875,7 @@ export function FileSystemDrawer({
             <button
               className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
               onClick={handleCleanAll}
-              title="Clean all — reset workspace to 4 empty default folders"
+              title="Clean all - reset workspace to 4 empty default folders"
             >
               <Eraser size={12} />
             </button>

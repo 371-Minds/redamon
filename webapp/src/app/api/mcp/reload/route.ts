@@ -1,4 +1,4 @@
-/** POST /api/mcp/reload — manual reload trigger; proxies to agent. */
+/** POST /api/mcp/reload - manual reload trigger; proxies to agent. */
 import { NextRequest, NextResponse } from 'next/server'
 import { internalKeyHeaders } from '@/lib/agentAuth'
 

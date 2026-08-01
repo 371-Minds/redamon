@@ -149,7 +149,7 @@ export function ToolExecutionCard({ item, isExpanded, onToggleExpand, missingApi
                 role={onAddApiKey ? 'button' : undefined}
                 tabIndex={onAddApiKey ? 0 : undefined}
               >
-                <AlertTriangle size={10} /> No {TOOL_KEY_LABEL[item.tool_name] || 'API'} key — Add
+                <AlertTriangle size={10} /> No {TOOL_KEY_LABEL[item.tool_name] || 'API'} key - Add
               </span>
             )}
           </span>

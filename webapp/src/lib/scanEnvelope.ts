@@ -3,7 +3,7 @@
  *
  * The admission ledger lives in the orchestrator (it owns the spawn), so the
  * webapp cannot compute an envelope itself. This is used ONLY for the advisory,
- * static feasibility check when a schedule is created — the authoritative gate is
+ * static feasibility check when a schedule is created - the authoritative gate is
  * still `try_admit` at execution time, so a null here (governor disabled, or the
  * orchestrator unreachable) simply skips the courtesy check rather than blocking
  * schedule creation.

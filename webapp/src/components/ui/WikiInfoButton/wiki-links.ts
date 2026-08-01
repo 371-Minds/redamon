@@ -100,7 +100,7 @@ export const SECTION_WIKI: Record<string, { page: string; anchor?: string }> = {
   GvmScan:          { page: 'GVM-Vulnerability-Scanning' },
   Fireteam:         { page: 'Fireteam-Parallel-Specialists' },
   Lats:             { page: 'Exploit-Path-Search-LATS' },
-  // Scan Timeline (versioned recon graphs) — one page, three deep links.
+  // Scan Timeline (versioned recon graphs) - one page, three deep links.
   ScanTimeline:     { page: 'Scan-Timeline' },
   ReconDelta:       { page: 'Scan-Timeline', anchor: 'recon-delta-comparing-two-versions' },
   ScanSchedule:     { page: 'Scan-Timeline', anchor: 'scan-scheduler' },

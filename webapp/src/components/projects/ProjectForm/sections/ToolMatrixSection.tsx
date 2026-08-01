@@ -93,7 +93,7 @@ export function ToolMatrixSection({ data, updateField }: ToolMatrixSectionProps)
 
   // Source the user MCP list from the DATABASE (the user's saved
   // configuration), not from the agent's runtime manifest. The DB is the
-  // source of truth — the agent's registry is downstream and may lag
+  // source of truth - the agent's registry is downstream and may lag
   // until a chat session triggers a settings reload (e.g., right after
   // an agent restart). Reading from the DB means the matrix always
   // reflects what the user has saved, regardless of agent state.
@@ -281,7 +281,7 @@ export function ToolMatrixSection({ data, updateField }: ToolMatrixSectionProps)
                         tabIndex={0}
                       >
                         <AlertTriangle size={12} />
-                        No {keyInfo.label} key — Add
+                        No {keyInfo.label} key - Add
                       </span>
                     )}
                   </span>
@@ -315,7 +315,7 @@ export function ToolMatrixSection({ data, updateField }: ToolMatrixSectionProps)
               MCP Tool Plugins
             </h3>
             <p className={styles.sectionDescription} style={{ marginTop: 0 }}>
-              User-installed MCP Tool Plugins — add or edit in{' '}
+              User-installed MCP Tool Plugins - add or edit in{' '}
               <a href="/settings?tab=mcp" style={{ color: 'var(--accent-primary)' }}>
                 Global Settings → MCP Tool Plugins
               </a>.
@@ -336,7 +336,7 @@ export function ToolMatrixSection({ data, updateField }: ToolMatrixSectionProps)
                 <details key={srv.id} open style={{ marginBottom: 'var(--space-3)' }}>
                   <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
                     {srv.name || srv.id}
-                    {srv.description && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 8, fontSize: '12px' }}>— {srv.description}</span>}
+                    {srv.description && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 8, fontSize: '12px' }}>- {srv.description}</span>}
                     {!srv.enabled && <span style={{ color: 'var(--text-tertiary)', marginLeft: 8, fontSize: '12px' }}>(disabled)</span>}
                   </summary>
                   <div className={styles.toolPhaseGrid}>
@@ -426,7 +426,7 @@ export function ToolMatrixSection({ data, updateField }: ToolMatrixSectionProps)
             </div>
             <span className="formHint">
               {modalInfo.hint}
-              {' — '}
+              {' - '}
               <a href={modalInfo.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }}>
                 Get API key
               </a>

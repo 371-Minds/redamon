@@ -14,7 +14,7 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-// POST /api/users/[id]/attack-skills/import-community — Import all community agent skills
+// POST /api/users/[id]/attack-skills/import-community - Import all community agent skills
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params

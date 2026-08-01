@@ -4,7 +4,7 @@
  *
  * Why this exists: opening a running session from history reads the conversation
  * over HTTP, but the agent's streamed events are persisted by a lagging async
- * queue on the backend — so that first read can be stale/empty. After the socket
+ * queue on the backend - so that first read can be stale/empty. After the socket
  * connects (and the backend flushes its persist queue), we re-read the DB and
  * call this to fold the fresh, authoritative timeline back in WITHOUT dropping
  * the handful of live events that arrived over the socket in the meantime.

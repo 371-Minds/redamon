@@ -2,7 +2,7 @@
 //
 // In-memory, per-process store keyed by lowercased email AND source IP (webapp is
 // single-replica, so a shared store is not required; if ever scaled out, move to a
-// Postgres counter — the failure AUDIT is already durable via R5). The map is
+// Postgres counter - the failure AUDIT is already durable via R5). The map is
 // BOUNDED: expired entries are evicted lazily on access plus a periodic sweep, so
 // a flood of distinct source IPs cannot turn this anti-brute-force control into a
 // memory-exhaustion vector.

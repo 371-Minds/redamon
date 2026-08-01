@@ -2,7 +2,7 @@
  * Pure state reducers for Fireteam events.
  *
  * Each handler accepts the current chatItems list and a WS payload, and
- * returns an updated chatItems list. They never throw — orphaned events
+ * returns an updated chatItems list. They never throw - orphaned events
  * (e.g. a member_completed arriving after its fireteam was already closed)
  * log a warning and return the list unchanged.
  */
@@ -32,7 +32,7 @@ function findOpenFireteamIndex(items: ChatItem[], fireteam_id: string): number {
 }
 
 // Monotonic counter to guarantee unique ids across tool events that fire in
-// the same millisecond — e.g. a plan wave of 3 `execute_ffuf` calls kicks
+// the same millisecond - e.g. a plan wave of 3 `execute_ffuf` calls kicks
 // FIRETEAM_TOOL_START events so close together that Date.now() collides and
 // React emits "two children with the same key" warnings.
 let _toolEventCounter = 0
@@ -461,7 +461,7 @@ export function handleFireteamCompleted(
     // Cascade a terminal status down to any members / tools / plan waves
     // that were still showing `running`. On cancel/timeout the backend
     // kills member tasks mid-tool and never emits per-member tool_complete
-    // or member_completed for them — so without this cascade the UI shows
+    // or member_completed for them - so without this cascade the UI shows
     // a cancelled fireteam header with members and tools still spinning.
     const cascadeMemberStatus: FireteamMemberPanel['status'] =
       status === 'cancelled' ? 'cancelled'

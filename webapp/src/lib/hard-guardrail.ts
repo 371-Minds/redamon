@@ -1,10 +1,10 @@
 /**
- * Hard Guardrail — deterministic, non-disableable check for government/public domains.
+ * Hard Guardrail - deterministic, non-disableable check for government/public domains.
  *
  * Blocks government, military, education, and international organization domains
  * regardless of project settings. This check cannot be toggled off.
  *
- * Mirror of agentic/hard_guardrail.py — keep patterns in sync.
+ * Mirror of agentic/hard_guardrail.py - keep patterns in sync.
  */
 
 // TLD suffix patterns (case-insensitive)
@@ -33,7 +33,7 @@ const TLD_PATTERNS: RegExp[] = [
 ]
 
 // Exact domain matches for intergovernmental orgs on generic TLDs
-// Mirror of agentic/hard_guardrail.py _EXACT_BLOCKED_DOMAINS — keep in sync
+// Mirror of agentic/hard_guardrail.py _EXACT_BLOCKED_DOMAINS - keep in sync
 const EXACT_BLOCKED_DOMAINS = new Set([
   // UN System: Core Bodies & Programmes
   'un.org', 'undp.org', 'unep.org', 'unicef.org', 'unhcr.org', 'unrwa.org',

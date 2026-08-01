@@ -3,7 +3,7 @@
  *
  * Extracted from ProjectForm so the rules can be unit-tested in isolation,
  * without rendering the (very large) form. Keep these functions side-effect
- * free — they take plain data and return plain data/booleans.
+ * free - they take plain data and return plain data/booleans.
  */
 
 /** Shape of the bits of the user record the gate cares about. */
@@ -45,7 +45,7 @@ export function needsModelGate(
 /**
  * Whether the hard provider gate must block creation: true when the user has no
  * LLM provider configured. A non-array (e.g. an error payload) is treated as
- * "no providers" only when explicitly empty/absent — callers pass the parsed
+ * "no providers" only when explicitly empty/absent - callers pass the parsed
  * list; anything that isn't a non-empty array counts as missing.
  */
 export function hasNoConfiguredProvider(providers: unknown): boolean {

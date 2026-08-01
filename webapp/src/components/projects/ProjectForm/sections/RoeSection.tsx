@@ -676,9 +676,9 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
         </p>
 
         <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <li><strong>Target &amp; Modules</strong> — target domain, IP addresses, scan modules, rate limits</li>
-          <li><strong>Tool Matrix</strong> — Tool Phase Restrictions (forbidden tools are disabled in the matrix)</li>
-          <li><strong>Rules of Engagement</strong> — excluded hosts, time windows, testing permissions, compliance</li>
+          <li><strong>Target &amp; Modules</strong> - target domain, IP addresses, scan modules, rate limits</li>
+          <li><strong>Tool Matrix</strong> - Tool Phase Restrictions (forbidden tools are disabled in the matrix)</li>
+          <li><strong>Rules of Engagement</strong> - excluded hosts, time windows, testing permissions, compliance</li>
         </ul>
 
         <p style={{ margin: 0, padding: '10px 12px', background: 'var(--color-surface-alt, rgba(59,130,246,0.08))', borderRadius: '6px', borderLeft: '3px solid var(--color-accent, #3b82f6)' }}>

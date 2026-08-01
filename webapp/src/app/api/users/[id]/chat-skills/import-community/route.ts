@@ -14,7 +14,7 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-// POST /api/users/[id]/chat-skills/import-community — Import all chat skills from agentic catalog
+// POST /api/users/[id]/chat-skills/import-community - Import all chat skills from agentic catalog
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params

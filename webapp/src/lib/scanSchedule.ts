@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — Scan Scheduler validation + RAM feasibility (Section 7).
+ * Scan Timeline - Scan Scheduler validation + RAM feasibility (Section 7).
  *
  * Two independent guards, because they fail differently:
  *
@@ -10,7 +10,7 @@
  *    be admitted (its envelope alone exceeds the whole scan pool), or that
  *    time-overlaps other schedules such that the summed envelopes exceed the pool.
  *    Overlap is computed across ALL projects, because the memory pool is global.
- *    This is a courtesy check — the AUTHORITATIVE gate is the admission ledger at
+ *    This is a courtesy check - the AUTHORITATIVE gate is the admission ledger at
  *    execution time (Section 7.3), which is why over-admitting here is survivable.
  */
 import { nextCronRun, minCronIntervalMinutes, parseCron, CronParseError } from '@/lib/cron'
@@ -198,7 +198,7 @@ export function checkScheduleFeasibility(
   others: ExistingSchedule[]
 ): FeasibilityResult {
   if (!env.scanPoolBytes || !env.envelopeBytes) {
-    // The governor is disabled or unknown — admission stays fail-open by design.
+    // The governor is disabled or unknown - admission stays fail-open by design.
     return { feasible: true }
   }
 

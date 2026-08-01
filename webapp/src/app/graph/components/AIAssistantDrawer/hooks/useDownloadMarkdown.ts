@@ -169,7 +169,7 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
         const lats = item as LatsSearchItem
         const time = lats.timestamp.toLocaleTimeString()
         const snap = lats.latest
-        const outcome = lats.outcome ? ` — ${lats.outcome}` : ''
+        const outcome = lats.outcome ? ` - ${lats.outcome}` : ''
         const statusTag = lats.status === 'complete' ? 'COMPLETE' : 'RUNNING'
         lines.push(`### LATS Exploit-Path Search  \`${time}\`  [${statusTag}${outcome}]`)
         lines.push('')
@@ -197,7 +197,7 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
                   ? 'EXPLOIT ✓'
                   : n.verdict || n.error_class || n.status || ''
                 lines.push(
-                  `- \`d${n.depth}\` **${n.tool_name || '(root)'}**${args} — value ${n.value.toFixed(2)}` +
+                  `- \`d${n.depth}\` **${n.tool_name || '(root)'}**${args} - value ${n.value.toFixed(2)}` +
                     (tag ? `, ${tag}` : '')
                 )
               })
@@ -270,7 +270,7 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
         const waveItem = item as PlanWaveItem
         const time = waveItem.timestamp.toLocaleTimeString()
         const statusIcon = waveItem.status === 'success' ? 'OK' : waveItem.status === 'error' ? 'FAIL' : waveItem.status === 'partial' ? 'PARTIAL' : 'RUNNING'
-        lines.push(`### Wave — ${waveItem.tool_count} tools  \`${time}\`  [${statusIcon}]`)
+        lines.push(`### Wave - ${waveItem.tool_count} tools  \`${time}\`  [${statusIcon}]`)
         lines.push('')
         if (waveItem.plan_rationale) {
           lines.push(`> ${waveItem.plan_rationale}`)
@@ -345,7 +345,7 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
         const ft = item as FireteamItem
         const time = ft.timestamp.toLocaleTimeString()
         const wall = ft.wall_clock_seconds !== undefined ? ` · ${ft.wall_clock_seconds.toFixed(1)}s` : ''
-        lines.push(`### Fireteam — ${ft.members.length} members  \`${time}\`  [${ft.status.toUpperCase()}${wall}]`)
+        lines.push(`### Fireteam - ${ft.members.length} members  \`${time}\`  [${ft.status.toUpperCase()}${wall}]`)
         lines.push('')
         if (ft.plan_rationale) {
           lines.push(`> ${ft.plan_rationale}`)
@@ -418,7 +418,7 @@ export function useDownloadMarkdown(deps: DownloadMarkdownDeps) {
           // Render member's nested plan waves
           m.planWaves?.forEach(wave => {
             const waveStatus = wave.status === 'success' ? 'OK' : wave.status === 'error' ? 'FAIL' : wave.status === 'partial' ? 'PARTIAL' : 'RUNNING'
-            lines.push(`##### Plan Wave — ${wave.tool_count} tools  [${waveStatus}]`)
+            lines.push(`##### Plan Wave - ${wave.tool_count} tools  [${waveStatus}]`)
             lines.push('')
             if (wave.plan_rationale) {
               lines.push(`> ${wave.plan_rationale}`)

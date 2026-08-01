@@ -84,7 +84,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
   // When subdomain discovery is OFF and no prefixes are set, the only valid
   // target is the root domain. Force-enable "Include Root Domain" and lock it
   // so the pipeline cannot be started with zero targets (which would silently
-  // produce empty results). Runs in edit mode too — it's a system-driven
+  // produce empty results). Runs in edit mode too - it's a system-driven
   // safety net, not user editing of scope.
   const forceIncludeRootDomain = !ipMode
     && !data.subdomainDiscoveryEnabled

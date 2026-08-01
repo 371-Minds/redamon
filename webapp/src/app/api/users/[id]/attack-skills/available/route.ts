@@ -43,6 +43,11 @@ const BUILT_IN_SKILLS = [
     description: 'Authorization bypass: forced browsing, IDOR / BOLA, vertical/horizontal privilege escalation, HTTP verb tampering, 401/403 path-normalization and trust-header bypass, hidden-field / role tampering, JWT attacks, and CORS/GraphQL authz flaws',
   },
   {
+    id: 'xxe',
+    name: 'XML External Entity',
+    description: 'XXE testing against XML parsers: in-band file read, php-filter source read, error-based and out-of-band exfiltration via external/local DTD, SSRF via entities, XInclude, content-type switching, and XXE in SVG/DOCX/SAML uploads',
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',
@@ -59,7 +64,7 @@ const BUILT_IN_SKILLS = [
   },
 ]
 
-// GET /api/users/[id]/attack-skills/available — Built-in + user skills for project toggle UI
+// GET /api/users/[id]/attack-skills/available - Built-in + user skills for project toggle UI
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params

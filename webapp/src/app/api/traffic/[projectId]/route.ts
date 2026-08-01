@@ -4,7 +4,7 @@ import { requireEffectiveUser, requireProjectAccess, ownerScope } from '@/lib/ac
 import { gcOrphanBodies } from '@/lib/captureBodies'
 import type { Prisma } from '@prisma/client'
 
-// Summary columns only — bodies are fetched on demand via the [id] detail route,
+// Summary columns only - bodies are fetched on demand via the [id] detail route,
 // so a large history never materializes in the list response.
 const LIST_SELECT = {
   id: true,
@@ -104,7 +104,7 @@ export function buildTrafficWhere(
   if (sp.get('reflected') === 'true') where.reflectedParams = true
   if (sp.get('only5xx') === 'true') where.statusCode = { gte: 500, lt: 600 }
 
-  // Free-text over URL (host/path) — uses the pg_trgm indexes when FTS is on.
+  // Free-text over URL (host/path) - uses the pg_trgm indexes when FTS is on.
   const q = sp.get('q')
   if (q) {
     where.OR = [
@@ -113,7 +113,7 @@ export function buildTrafficWhere(
     ]
   }
 
-  // Body substring search (Phase 3). `resp_body ILIKE '%bodyq%'` — always correct;
+  // Body substring search (Phase 3). `resp_body ILIKE '%bodyq%'` - always correct;
   // becomes index-backed (fast) when the pg_trgm GIN index on resp_body exists
   // (built by the FTS migration when CAPTURE_PROXY_FTS is on). Covers secrets,
   // stack traces, code identifiers, and reflected input alike.
@@ -123,7 +123,7 @@ export function buildTrafficWhere(
   return where
 }
 
-// GET /api/traffic/[projectId] — paginated, filtered transaction list.
+// GET /api/traffic/[projectId] - paginated, filtered transaction list.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> },
@@ -165,11 +165,11 @@ export async function GET(
   }
 }
 
-// DELETE /api/traffic/[projectId] — batch delete (plan §12.2).
+// DELETE /api/traffic/[projectId] - batch delete (plan §12.2).
 // Body: { ids: [...] } OR { filter: {<same query params as GET>} } (delete-all-matching).
 // Tenant-enforced (projectId + ownerScope; cross-user -> 404 via requireProjectAccess),
 // body-GC-aware (ref-counted blob cleanup), and audited. Client tenant fields are
-// never trusted — projectId/userId come from the route + session.
+// never trusted - projectId/userId come from the route + session.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> },

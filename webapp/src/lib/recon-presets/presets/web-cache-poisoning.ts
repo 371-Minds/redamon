@@ -157,7 +157,7 @@ Use \`Web App Pentester\` or \`Full Active Scan\` if you want WCP as one tool am
     //     disable them explicitly or they leak in. None are needed for WCP and they
     //     each spend LLM calls. (AI Surface Recon targets LLM/MCP apps; the Endpoint
     //     AI Classifier + resource-enum AI flags classify endpoints; the httpx AI
-    //     sub-probes enrich fingerprinting — basic Wappalyzer/tech-detect suffices.) ---
+    //     sub-probes enrich fingerprinting - basic Wappalyzer/tech-detect suffices.) ---
     aiSurfaceReconEnabled: false,
     resourceEnumAiClassifierEnabled: false,
     resourceEnumAiPathClassifierEnabled: false,

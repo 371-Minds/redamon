@@ -236,7 +236,7 @@ describe('snapshotToGraphPayload', () => {
 describe('defaultVersionLabel', () => {
   test('renders seq + UTC timestamp', () => {
     expect(defaultVersionLabel(3, new Date('2026-07-30T14:30:00Z')))
-      .toBe('Scan 3 — 2026-07-30 14:30 UTC')
+      .toBe('Scan 3 - 2026-07-30 14:30 UTC')
   })
 })
 

@@ -1,5 +1,5 @@
 /**
- * Report Data Layer — gathers all Neo4j graph + PostgreSQL data for report generation.
+ * Report Data Layer - gathers all Neo4j graph + PostgreSQL data for report generation.
  * Reuses query patterns from analytics routes but runs them in a single session.
  */
 
@@ -340,7 +340,7 @@ export interface ReportData {
     modelFamilies: string[]
     byInterfaceType: { interfaceType: string; count: number }[]
     findings: AiSurfaceRecord[]
-    // AI Attack Surface (garak/pyrit/giskard/promptfoo) — CONFIRMED tested vulns,
+    // AI Attack Surface (garak/pyrit/giskard/promptfoo) - CONFIRMED tested vulns,
     // corroborated across tools (§9). Empty until an attack scan has run.
     attackFindings: AiAttackFindingRecord[]
     attackToolsRun: string[]   // distinct tools that produced findings
@@ -431,7 +431,7 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
     }),
   ])
 
-  // Fetch all Neo4j data — each query group gets its own session
+  // Fetch all Neo4j data - each query group gets its own session
   // (Neo4j doesn't allow concurrent queries on a single session)
   const [
     graphOverview,
@@ -482,7 +482,7 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
     }
     const totalCves = uniqueCveIds.size
 
-    // CVE severity counts — derive from CVSS scores in cveChains (c.severity is often unset on nodes)
+    // CVE severity counts - derive from CVSS scores in cveChains (c.severity is often unset on nodes)
     let cveCriticalCount = 0, cveHighCount = 0, cveMediumCount = 0, cveLowCount = 0
     const countedCves = new Set<string>()
     for (const c of cveIntelligence.cveChains) {
@@ -558,7 +558,7 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
     }
     // AI surface contribution: AI-tagged endpoints, RAG ingest endpoints,
     // and prompt-injectable parameters each add a flat weight. Conservative
-    // weights — these are *discovery* findings (a surface exists), not
+    // weights - these are *discovery* findings (a surface exists), not
     // confirmed vulns. Calibrated to match injectableScore (25/param).
     // Confirmed AI Attack Surface findings carry the most weight: unlike recon
     // signals (surface that *might* be exploitable), these are vulns a tool
@@ -587,7 +587,7 @@ export async function gatherReportData(projectId: string): Promise<ReportData> {
 
     // Fireteam (multi-agent) deployments, keyed by this project's conversations.
     // Authoritative findings-per-member come from Neo4j ChainFinding rows
-    // filtered by fireteam_id + source_agent — Postgres findingsCount may be
+    // filtered by fireteam_id + source_agent - Postgres findingsCount may be
     // stale (fire-and-forget writes).
     let fireteamsBlock: ReportData['fireteams'] = undefined
     try {

@@ -45,10 +45,10 @@ export default function AiAttackSurfacePage() {
   const [maxTurns, setMaxTurns] = useState(4)
   const [seed, setSeed] = useState(0)
   // Concurrent requests per tool (garak --parallel_attempts / promptfoo eval
-  // concurrency). Default 2 — safe for a slow/CPU target; raise for GPU.
+  // concurrency). Default 2 - safe for a slow/CPU target; raise for GPU.
   const [parallelism, setParallelism] = useState(2)
   // Hard wall-clock budget for the whole tool run, in MINUTES. Default 600 (10h)
-  // — big multi-family sweeps + slow probes need room before they're killed.
+  // - big multi-family sweeps + slow probes need room before they're killed.
   const [timeoutMin, setTimeoutMin] = useState(600)
   const [roeConfirmed, setRoeConfirmed] = useState(false)
   // Shared: free-text description of the target app. Lifts giskard/promptfoo/pyrit.
@@ -57,7 +57,7 @@ export default function AiAttackSurfacePage() {
   const [selectedStrategies, setSelectedStrategies] = useState<Set<string>>(new Set(['basic']))
   const [objective, setObjective] = useState('')
 
-  // Shared: target auth (None / Bearer / Custom header) — reused by every tool.
+  // Shared: target auth (None / Bearer / Custom header) - reused by every tool.
   const [authMode, setAuthMode] = useState<AuthMode>('none')
   const [bearerToken, setBearerToken] = useState('')
   const [customHeaderName, setCustomHeaderName] = useState('x-api-key')
@@ -117,7 +117,7 @@ export default function AiAttackSurfacePage() {
       return
     }
     if (!customModel.trim()) {
-      setCustomErr('Enter the target model id (e.g. qwen2.5:0.5b) — sent as the "model" field in each request')
+      setCustomErr('Enter the target model id (e.g. qwen2.5:0.5b) - sent as the "model" field in each request')
       return
     }
     setCustomErr(null)
@@ -204,7 +204,7 @@ export default function AiAttackSurfacePage() {
         </div>
       </div>
 
-      {/* Filter bar — the shared chip vocabulary */}
+      {/* Filter bar - the shared chip vocabulary */}
       <div className={styles.filterBar}>
         <span className={styles.filterLabel}>Filter by attack:</span>
         {(Object.keys(ATTACK_CHIPS) as ChipKey[]).map((k) => (
@@ -259,7 +259,7 @@ export default function AiAttackSurfacePage() {
                     <button type="button"
                             className={`${styles.launchBtn} ${openTool === card.id ? styles.launchBtnOpen : ''}`}
                             disabled={greyed || lockedByRun}
-                            title={lockedByRun ? 'A scan is running — stop it to configure another tool' : undefined}
+                            title={lockedByRun ? 'A scan is running - stop it to configure another tool' : undefined}
                             onClick={() => openConfig(card)}>
                       {isRunning
                         ? <><Loader2 size={14} className={styles.spin} /> Running…</>
@@ -280,7 +280,7 @@ export default function AiAttackSurfacePage() {
       {/* garak detail view (four blocks) */}
       {openCard && (
         <div className={styles.detail}>
-          <h2 className={styles.detailTitle}>{openCard.name} — configure run</h2>
+          <h2 className={styles.detailTitle}>{openCard.name} - configure run</h2>
 
           {/* 1. Targets */}
           <section className={styles.block}>
@@ -363,7 +363,7 @@ export default function AiAttackSurfacePage() {
                 return (
                   <label key={p.id}
                          className={`${styles.probeCard} ${on ? styles.probeCardOn : ''} ${blocked ? styles.probeCardOff : ''}`}
-                         title={blocked ? `Disabled — requires ${p.requires}` : undefined}>
+                         title={blocked ? `Disabled - requires ${p.requires}` : undefined}>
                     <input type="checkbox" checked={on} disabled={blocked}
                            onChange={() => toggle(selectedProbes, p.id, setSelectedProbes)} />
                     <span className={styles.probeBody}>
@@ -405,13 +405,13 @@ export default function AiAttackSurfacePage() {
                 <label>Max turns<input type="number" min={1} value={maxTurns}
                        onChange={(e) => setMaxTurns(parseInt(e.target.value) || 1)} /></label>
               )}
-              <label title="RNG seed — part of the reproducibility envelope (garak / pyrit)">
+              <label title="RNG seed - part of the reproducibility envelope (garak / pyrit)">
                 Seed<input type="number" min={0} value={seed}
                      onChange={(e) => setSeed(parseInt(e.target.value) || 0)} /></label>
               <label title="How many requests are fired at the target at once. Keep low (2) for a slow/CPU target so its queue doesn't time out; raise it for a fast/GPU target.">
                 Parallel<input type="number" min={1} max={16} value={parallelism}
                      onChange={(e) => setParallelism(Math.max(1, Math.min(16, parseInt(e.target.value) || 1)))} /></label>
-              <label title="Hard time budget for the whole run, in minutes. When exceeded the tool is killed (any work done is kept). Default 600 (10h) — big multi-family sweeps and slow probes (atkgen) need room.">
+              <label title="Hard time budget for the whole run, in minutes. When exceeded the tool is killed (any work done is kept). Default 600 (10h) - big multi-family sweeps and slow probes (atkgen) need room.">
                 Timeout (min)<input type="number" min={1} max={1440} value={timeoutMin}
                      onChange={(e) => setTimeoutMin(Math.max(1, Math.min(1440, parseInt(e.target.value) || 1)))} /></label>
             </div>
@@ -419,7 +419,7 @@ export default function AiAttackSurfacePage() {
             {/* promptfoo: payload-mutation strategies (local, zero-egress). */}
             {openCard.id === 'promptfoo' && openCard.strategies && (
               <label className={styles.purposeLabel}>
-                <span>Strategies — wrap each payload in an encoding (tests decode-and-comply)</span>
+                <span>Strategies - wrap each payload in an encoding (tests decode-and-comply)</span>
                 <span className={styles.strategyRow}>
                   {openCard.strategies.map((st) => (
                     <button key={st.id} type="button"
@@ -435,18 +435,18 @@ export default function AiAttackSurfacePage() {
             {/* pyrit: optional custom objective (the specific harmful goal). */}
             {openCard.id === 'pyrit' && (
               <label className={styles.purposeLabel}>
-                <span>Custom objective <em>(optional)</em> — overrides the attack&apos;s built-in goals</span>
+                <span>Custom objective <em>(optional)</em> - overrides the attack&apos;s built-in goals</span>
                 <input type="text" className={styles.purposeInput}
                        placeholder="e.g. Get the bot to approve a refund without an order number"
                        value={objective} onChange={(e) => setObjective(e.target.value)} />
               </label>
             )}
 
-            {/* Target purpose (shared) — giskard/promptfoo/pyrit generate & grade
+            {/* Target purpose (shared) - giskard/promptfoo/pyrit generate & grade
                 attacks from the app description; a real one sharpens detection. */}
             {['giskard', 'promptfoo', 'pyrit'].includes(openCard.id) && (
               <label className={styles.purposeLabel}>
-                <span>Target purpose <em>(optional)</em> — what the app does; sharpens giskard / promptfoo / pyrit</span>
+                <span>Target purpose <em>(optional)</em> - what the app does; sharpens giskard / promptfoo / pyrit</span>
                 <textarea
                   rows={2}
                   className={styles.purposeInput}
@@ -553,14 +553,14 @@ export default function AiAttackSurfacePage() {
                   <td>{f.owaspLlmId}</td>
                   <td>{f.payloadClass}</td>
                   <td className={styles.tgt}>{f.target}{f.endpointPath || ''}</td>
-                  <td><strong>{f.asr != null ? `${Math.round(f.asr * 100)}%` : '—'}</strong></td>
-                  <td>{f.trials ?? '—'}</td>
+                  <td><strong>{f.asr != null ? `${Math.round(f.asr * 100)}%` : '-'}</strong></td>
+                  <td>{f.trials ?? '-'}</td>
                   <td><span className={styles.sevDot} style={{ background: sevColor(f.severity) }} />{f.severity}</td>
                   <td className={styles.ev}>{f.evidence}</td>
                   <td>{f.transcriptRef && projectId
                     ? <a href={`/api/ai-attack-surface/${projectId}/transcript?ref=${encodeURIComponent(f.transcriptRef)}`}
                          target="_blank" rel="noopener noreferrer">view</a>
-                    : '—'}</td>
+                    : '-'}</td>
                 </tr>
               ))}
             </tbody>

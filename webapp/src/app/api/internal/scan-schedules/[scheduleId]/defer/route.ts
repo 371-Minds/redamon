@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — defer a due schedule (Sections 7.2/7.3, F3). Internal-key only.
+ * Scan Timeline - defer a due schedule (Sections 7.2/7.3, F3). Internal-key only.
  *
  * The worker calls this instead of `/run` when the run cannot proceed right now:
  * the project's graph is being swapped by an activation ("graph busy"), or the

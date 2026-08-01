@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       ? { baseUrls: toNum(epRec.get('baseUrls')), endpoints: toNum(epRec.get('endpoints')), parameters: toNum(epRec.get('parameters')) }
       : { baseUrls: 0, endpoints: 0, parameters: 0 }
 
-    // Q5: Certificate health — match both BaseURL and IP certificate paths,
+    // Q5: Certificate health - match both BaseURL and IP certificate paths,
     // cast string not_after to datetime for correct comparison
     const certResult = await session.run(
       `MATCH (c:Certificate {project_id: $pid})

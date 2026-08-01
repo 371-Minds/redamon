@@ -130,7 +130,7 @@ interface GraphTypeFilterPrefs {
  * types default to visible without any DB write.
  *
  * Returns isLoading so callers can defer first-render hydration of derived
- * state (e.g., activeNodeTypes) until prefs have loaded — otherwise the user's
+ * state (e.g., activeNodeTypes) until prefs have loaded - otherwise the user's
  * saved selection is briefly overwritten by "all visible".
  */
 export function useGraphTypeFilterPrefs(projectId: string | null) {
@@ -152,7 +152,7 @@ export function useGraphTypeFilterPrefs(projectId: string | null) {
   return { hiddenTypes, setHiddenTypes, isLoading }
 }
 
-// ---- Graph view toggles (2D/3D, labels) — per-project per-user -----------
+// ---- Graph view toggles (2D/3D, labels) - per-project per-user -----------
 
 const GRAPH_VIEW_KEY = 'graphView'
 
@@ -193,7 +193,7 @@ export function useGraphViewPrefs(projectId: string | null) {
   return { is3D, showLabels, setIs3D, setShowLabels, isLoading }
 }
 
-// ---- Theme — per-user only (no project scope) ----------------------------
+// ---- Theme - per-user only (no project scope) ----------------------------
 
 const THEME_KEY = 'theme'
 
@@ -203,7 +203,7 @@ export type PersistedTheme = 'light' | 'dark' | 'system'
  * Reads/writes the theme from user prefs. Used by the theme DB bridge to keep
  * localStorage (fast cache, prevents FOUC) and the DB (cross-device source of
  * truth) in sync. The actual application of the theme to the DOM stays in
- * `useTheme` — this hook is purely persistence.
+ * `useTheme` - this hook is purely persistence.
  */
 export function useThemePref() {
   const { prefs, isLoading, updatePref } = useUserPreferences()

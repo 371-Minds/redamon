@@ -61,7 +61,7 @@ export function PhaseIndicatorBar({
   const [userMcpServers, setUserMcpServers] = useState<UserMcpServer[]>([])
 
   // Pull the user's saved MCP servers from the DB so MCP tools always
-  // appear in the wrench tooltip — even when the user hasn't explicitly
+  // appear in the wrench tooltip - even when the user hasn't explicitly
   // toggled their phase checkboxes (in which case they're not in
   // toolPhaseMap and would otherwise be invisible).
   useEffect(() => {
@@ -92,7 +92,7 @@ export function PhaseIndicatorBar({
       </div>
 
       {(() => {
-        // Built-in (and explicitly toggled) tools — same logic as before.
+        // Built-in (and explicitly toggled) tools - same logic as before.
         const builtInTools: string[] = toolPhaseMap
           ? Object.entries(toolPhaseMap)
               .filter(([, phases]) => phases.includes(currentPhase))
@@ -101,7 +101,7 @@ export function PhaseIndicatorBar({
 
         // User MCP tools whose default_phases (with per-tool override) include
         // the current phase AND are NOT already in toolPhaseMap (which would
-        // mean the user explicitly toggled them — project override wins).
+        // mean the user explicitly toggled them - project override wins).
         const explicitlyToggled = new Set(Object.keys(toolPhaseMap || {}))
         const mcpTools: Array<{ name: string; serverName: string }> = []
         for (const srv of userMcpServers) {
@@ -221,14 +221,14 @@ export function PhaseIndicatorBar({
           className={`${styles.stealthToggle} ${stealthMode ? styles.stealthToggleActive : ''}`}
           onClick={() => onToggleStealth(!stealthMode)}
           title={stealthMode
-            ? 'Stealth Mode ON — click to disable'
-            : 'Stealth Mode OFF — click to enable passive-only techniques'
+            ? 'Stealth Mode ON - click to disable'
+            : 'Stealth Mode OFF - click to enable passive-only techniques'
           }
         >
           <StealthIcon size={11} />
         </button>
       ) : stealthMode ? (
-        <span className={styles.stealthBadge} title="Stealth Mode — passive/low-noise techniques only">
+        <span className={styles.stealthBadge} title="Stealth Mode - passive/low-noise techniques only">
           <StealthIcon size={11} />
         </span>
       ) : null}

@@ -21,7 +21,7 @@ function getWsUrl(ticket?: string): string {
 
 // STRIDE S3: mint a ws-ticket bound to the effective user + project before
 // opening the terminal socket (mirrors useAgentWebSocket). Returns null when the
-// mint fails (no project, unauthorized, or the secret is unset) — the caller
+// mint fails (no project, unauthorized, or the secret is unset) - the caller
 // surfaces a connection error since the agent now fails closed.
 async function fetchKaliTicket(projectId: string, sessionId: string): Promise<string | null> {
   try {
@@ -326,7 +326,7 @@ export const KaliTerminal = memo(function KaliTerminal({ userId, projectId }: Ka
   // Reconnect when the active project/user changes so the sandbox shell
   // restarts with fresh REDAMON_USER_ID / REDAMON_PROJECT_ID env vars.
   // The first run is suppressed: the mount-effect above already calls connect()
-  // — letting this fire on initial mount would race into disconnect+reconnect,
+  // - letting this fire on initial mount would race into disconnect+reconnect,
   // doubling banners and dropping MOTD output from the killed first shell.
   useEffect(() => {
     if (firstTenantRunRef.current) {

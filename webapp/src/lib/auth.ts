@@ -44,7 +44,7 @@ export async function verifyToken(token: string): Promise<{ sub: string; role: s
 // Short-lived HS256 ticket that binds an authenticated operator identity to a
 // (projectId, sessionId) so the agent can verify the /ws/agent init frame. Signed
 // with a DEDICATED secret (never AUTH_SECRET) so an agent-side compromise cannot
-// forge login cookies. Returns null when the secret is unset — the agent then
+// forge login cookies. Returns null when the secret is unset - the agent then
 // fails open (dev), so the WS still connects.
 const WS_TICKET_EXPIRY = '60s'
 
@@ -75,7 +75,7 @@ export async function createWsTicket(
 // mutually non-substitutable with the login JWT by claim shape: a login token has
 // `role` and no `act`; an act-as token has `act` and no `role`. getEffectiveUser
 // only honors it when the caller's real role (from the untouched login JWT) is
-// admin AND the token's `sub` equals that admin's id — so a standard user forging
+// admin AND the token's `sub` equals that admin's id - so a standard user forging
 // this cookie is ignored, and a login cookie replayed here fails the `act` check.
 export const ACT_AS_COOKIE_NAME = 'redamon-act-as'
 const ACT_AS_EXPIRY = '12h'

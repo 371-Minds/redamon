@@ -143,7 +143,7 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Re-runs the AI surface classifier over every Endpoint and Parameter already in the graph. ' +
     'Stamps Endpoint.ai_interface_type (llm-chat / llm-completion / llm-embedding / llm-tool-call / sse-stream / mcp / llm-graphql / non-llm), ' +
     'flags is_ai_rag_ingest on RAG ingestion paths, and marks parameters whose names match the prompt-injection catalogue as is_ai_prompt_injectable. ' +
-    'No traffic is sent to the target — pure pattern matching against data the URL-discovery tools already collected. ' +
+    'No traffic is sent to the target - pure pattern matching against data the URL-discovery tools already collected. ' +
     'Useful when the catalogue has been updated, when a new lap of AI annotations ships, or when classifier toggles were off during the original scan.',
   AiSurfaceRecon:
     'Re-runs the active AI/LLM/MCP surface probes against the AI surfaces already in the graph. ' +
@@ -161,8 +161,8 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Secret, Endpoint, and JsReconFinding nodes are merged into the existing graph.',
   Nuclei:
     'Template-based vulnerability scanner detecting CVEs, misconfigurations, exposed panels, and web application vulnerabilities (SQLi, XSS, RCE). ' +
-    'Targets are built as the UNION of every available source in the graph (deduplicated): Endpoints with parameters from resource_enum, BaseURLs verified by httpx, and http(s)://<sub> for any Subdomain whose host is not already covered by the first two sources — so newly discovered subdomains get scanned even before httpx has probed them. IPs are excluded by default (toggle "Scan All IPs" to include). ' +
-    'DAST mode is a filter, not an add-on: when enabled it loads ONLY templates with a fuzz: directive (~300 of ~8000) and SKIPS detection templates and custom detection templates. Use DAST-native tags (sqli, xss, ssrf) — detection-class tags (graphql, apollo, hasura, exposure) produce an empty set and the scan fatals. Most production scans should leave DAST off. ' +
+    'Targets are built as the UNION of every available source in the graph (deduplicated): Endpoints with parameters from resource_enum, BaseURLs verified by httpx, and http(s)://<sub> for any Subdomain whose host is not already covered by the first two sources - so newly discovered subdomains get scanned even before httpx has probed them. IPs are excluded by default (toggle "Scan All IPs" to include). ' +
+    'DAST mode is a filter, not an add-on: when enabled it loads ONLY templates with a fuzz: directive (~300 of ~8000) and SKIPS detection templates and custom detection templates. Use DAST-native tags (sqli, xss, ssrf) - detection-class tags (graphql, apollo, hasura, exposure) produce an empty set and the scan fatals. Most production scans should leave DAST off. ' +
     'You can also provide custom URLs below. ' +
     'Vulnerability, CVE, Endpoint, Parameter, MitreData, and Capec nodes are merged into the existing graph.',
   SubdomainTakeover:

@@ -112,6 +112,12 @@ export const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabe
     color: 'var(--accent-indigo, #6366f1)',
     bgColor: 'rgba(99, 102, 241, 0.15)',
   },
+  xxe: {
+    label: 'XML External Entity',
+    shortLabel: 'XXE',
+    color: 'var(--accent-teal, #14b8a6)',
+    bgColor: 'rgba(20, 184, 166, 0.15)',
+  },
 }
 
 /** Derive display config for any attack skill type (known, user, or unclassified). */

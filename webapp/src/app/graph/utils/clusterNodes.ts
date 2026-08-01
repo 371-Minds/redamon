@@ -11,13 +11,13 @@ const CHAIN_TYPES = new Set([
 ])
 
 /**
- * Edges that are "decorative" / "structural" — they connect a hub to a leafy detail
+ * Edges that are "decorative" / "structural" - they connect a hub to a leafy detail
  * node (headers, parameters, technologies, endpoints, certificates). A node whose
  * edges are ALL in this set is treated as structurally leafy for Pass 2 clustering,
  * even if its degree is > 1.
  *
  * Curated from the project's actual Cypher schema (see readmes/GRAPH.SCHEMA.md).
- * Do NOT include attack-chain or vulnerability-link edges here — those carry
+ * Do NOT include attack-chain or vulnerability-link edges here - those carry
  * semantic meaning and should never be collapsed.
  */
 const STRUCTURAL_EDGE_TYPES = new Set([
@@ -101,14 +101,14 @@ function clusterLeafGroups(data: GraphData, threshold: number): GraphData {
 /**
  * Pass 2: structural-edge clustering. A node is "structurally leafy" if ALL its
  * edges are in STRUCTURAL_EDGE_TYPES and it has exactly one incoming non-structural
- * anchor (the parent — typically BaseURL → Endpoint). Group such nodes by the
+ * anchor (the parent - typically BaseURL → Endpoint). Group such nodes by the
  * anchor + type, and collapse if group size ≥ threshold.
  *
  * Cluster id: `struct:<parentId>:<childType>`.
  *
  * Why this matters: Endpoints have degree 5-7 (BaseURL parent + 4 Header children
  * + 1 Technology) so they fail the leaf-only rule. But all their edges are
- * structural — they're decorator hubs, not graph waypoints — so collapsing them
+ * structural - they're decorator hubs, not graph waypoints - so collapsing them
  * loses no topology that matters.
  */
 function clusterStructuralHubs(data: GraphData, threshold: number): GraphData {
@@ -140,7 +140,7 @@ function clusterStructuralHubs(data: GraphData, threshold: number): GraphData {
 
     // The "parent" anchor: the single incoming structural edge from a non-leaf hub.
     // For Endpoints this is BaseURL via HAS_ENDPOINT. For nodes with multiple
-    // incoming structural edges, skip — we can't pick an unambiguous parent.
+    // incoming structural edges, skip - we can't pick an unambiguous parent.
     const incoming = edges.filter(e => !e.outgoing)
     if (incoming.length !== 1) continue
     const parentId = incoming[0].neighborId
@@ -276,7 +276,7 @@ export function clusterGraphData(
   const threshold = thresholdOverride ?? adaptiveThreshold(data.nodes.length)
 
   // Pass 1: cascading leaf clustering. Each iteration collapses one "fringe layer".
-  // Bounded to a handful of passes — graphs rarely have more than 3-4 nested fringes.
+  // Bounded to a handful of passes - graphs rarely have more than 3-4 nested fringes.
   let result = data
   for (let i = 0; i < 5; i++) {
     const next = clusterLeafGroups(result, threshold)

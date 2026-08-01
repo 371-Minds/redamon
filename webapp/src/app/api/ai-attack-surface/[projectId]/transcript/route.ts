@@ -14,7 +14,7 @@ const MAX_BYTES = 8 * 1024 * 1024
 // GET /api/ai-attack-surface/{projectId}/transcript?ref=<ai_transcript_ref>
 // Serves a tool's native report for drill-down (§9c). Defence in depth:
 //   1. the ref must resolve to a path UNDER the read-only output mount (no
-//      traversal — resolveTranscriptPath), and
+//      traversal - resolveTranscriptPath), and
 //   2. some Vulnerability IN THIS PROJECT must actually carry that ref (so a
 //      caller can't read another project's transcripts or arbitrary files).
 export async function GET(request: NextRequest, { params }: RouteParams) {

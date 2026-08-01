@@ -460,7 +460,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
 
     // Only flip parent awaiting/loading state for top-level confirmations.
     // Fireteam escalations never paused the parent, so don't touch isLoading
-    // — other members are still running in parallel.
+    // - other members are still running in parallel.
     if (!fireteamHit) {
       setAwaitingToolConfirmation(false)
       awaitingToolConfirmationRef.current = false
@@ -517,7 +517,7 @@ export function useSendHandlers(deps: SendHandlersDeps) {
       return
     }
 
-    // Top-level (non-fireteam) confirmation path — unchanged.
+    // Top-level (non-fireteam) confirmation path - unchanged.
     if (decision === 'reject') {
       setChatItems((prev: ChatItem[]) => prev.map((item: ChatItem) => {
         if (!('type' in item)) return item
@@ -658,12 +658,12 @@ export function useSendHandlers(deps: SendHandlersDeps) {
     try {
       sendToolStop(toolName, waveId, stepIndex)
     } catch {
-      // fall through — still mark card failed locally
+      // fall through - still mark card failed locally
     }
 
     // Optimistic UI update: mark the stopped tool as failed immediately
     // so the Stop button disappears and the card turns red. We only flip
-    // the status when the tool is STILL running in the latest state —
+    // the status when the tool is STILL running in the latest state -
     // otherwise a tool_complete race (user clicks Stop just as the tool
     // finishes successfully) would silently overwrite the real result.
     setChatItems((prev: ChatItem[]) => prev.map((item: ChatItem) => {

@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — Recon Delta (Section 6.1).
+ * Scan Timeline - Recon Delta (Section 6.1).
  *
  * GET /api/projects/[id]/delta?from=<versionId|current>&to=<versionId|current>
  *

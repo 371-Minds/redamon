@@ -60,6 +60,22 @@ Aggressive payloads (file write / shell):{rce_aggressive_payloads}
 - Default to OOB DNS oracle when available -- it has the lowest target footprint.
 - Treat WAF-encoded errors and 500s as data points, NOT proof. Proof requires a
   controlled output you can correlate to your input.
+- A framework DEBUG CONSOLE reached from an error/traceback page (a Werkzeug/Flask
+  debugger with EVALEX, a Rails web-console, a Symfony profiler, a Django debug
+  page, a Spring Boot actuator) is a POSSIBLE RCE avenue but is very often an
+  UNINTENDED deployment artifact rather than the planted vulnerability -- and it is
+  usually gated by a numeric PIN, a signed token, or a secret. Give such a console
+  ONE bounded, evidence-driven unlock attempt, then GATE it: if it stays locked, if
+  its auth/unlock endpoint reports `exhausted` / `locked` / rate-limited, or if the
+  gating secret cannot be derived from what the target actually leaks, DECLARE IT A
+  DEAD END and pivot back to the application's OWN request-handling surface -- the
+  parameters, headers, cookies, request bodies, and uploads it processes, and whatever
+  it parses or evaluates. Do NOT burn
+  the engagement grinding PIN candidates, brute-forcing a signing secret, or forging
+  sessions for a console you cannot unlock -- that is a classic way a solvable target
+  runs out the clock. The intended sink almost always lives in the app's own logic,
+  not in a debug wrapper; an unreachable console is one dead avenue, never the reason
+  to stop testing the rest of the surface.
 
 ---
 

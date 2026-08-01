@@ -5,11 +5,11 @@ import { gcOrphanBodies } from '@/lib/captureBodies'
 
 export const runtime = 'nodejs'
 
-// POST /api/traffic/maintenance — internal-only periodic housekeeping (plan §6.4,
+// POST /api/traffic/maintenance - internal-only periodic housekeeping (plan §6.4,
 // §15.8). Called by a cron/orchestrator. Runs, in order:
-//   1. retention purge — delete rows older than each OWNER's captureProxyRetentionDays
-//   2. per-project quota — evict the oldest rows beyond CAPTURE_PROXY_MAX_ROWS_PER_PROJECT
-//   3. orphan body sweep — ref-counted GC of blobs no row references
+//   1. retention purge - delete rows older than each OWNER's captureProxyRetentionDays
+//   2. per-project quota - evict the oldest rows beyond CAPTURE_PROXY_MAX_ROWS_PER_PROJECT
+//   3. orphan body sweep - ref-counted GC of blobs no row references
 const DEFAULT_RETENTION_DAYS = 14
 const DAY_MS = 86400000
 

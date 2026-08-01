@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — version list for a project.
+ * Scan Timeline - version list for a project.
  *
  * GET  /api/projects/[id]/versions   list versions (newest first)
  * POST /api/projects/[id]/versions   freeze the live graph as a new past version
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (access instanceof NextResponse) return access
 
   // Freezing reads the whole live graph, so it must not run while anything is
-  // rewriting it: an activation swap, or a scan/partial recon mid-write (Risk 1 —
+  // rewriting it: an activation swap, or a scan/partial recon mid-write (Risk 1 -
   // a snapshot of a half-built graph is worse than no snapshot).
   if (await isActivationInProgress(id)) {
     return NextResponse.json(
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (busy) {
     return NextResponse.json(
       {
-        error: `Cannot save a version while ${busy} for this project — the snapshot would capture a ` +
+        error: `Cannot save a version while ${busy} for this project - the snapshot would capture a ` +
           'half-written graph. Wait for it to finish.',
         busy,
       },
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const captured = await captureGraphSnapshot(id)
     if (captured.nodeCount === 0) {
       return NextResponse.json(
-        { error: 'The graph is empty — there is nothing to save as a version.' },
+        { error: 'The graph is empty - there is nothing to save as a version.' },
         { status: 400 }
       )
     }

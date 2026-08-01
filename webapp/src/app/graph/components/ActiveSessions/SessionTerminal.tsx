@@ -117,7 +117,7 @@ export const SessionTerminal = memo(function SessionTerminal({
     }
   }, [handleSend, commandHistory, historyIndex])
 
-  // Command Whisperer — NLP to command translation
+  // Command Whisperer - NLP to command translation
   const handleNlpSubmit = useCallback(async () => {
     if (!nlpInput.trim() || isGenerating) return
 
@@ -161,7 +161,7 @@ export const SessionTerminal = memo(function SessionTerminal({
     }
   }, [handleNlpSubmit])
 
-  // Empty state — no session selected
+  // Empty state - no session selected
   if (sessionId === null) {
     return (
       <div className={styles.emptyTerminal}>
@@ -178,14 +178,14 @@ export const SessionTerminal = memo(function SessionTerminal({
       <div className={styles.terminalHeader}>
         <div className={styles.terminalTitle}>
           <span className={styles.dot} />
-          Session #{sessionId} — {sessionType}
+          Session #{sessionId} - {sessionType}
         </div>
       </div>
 
       {agentBusy && (
         <div className={styles.busyBanner}>
           <AlertTriangle size={12} />
-          Agent is executing a command — interaction may be delayed
+          Agent is executing a command - interaction may be delayed
         </div>
       )}
 
@@ -208,7 +208,7 @@ export const SessionTerminal = memo(function SessionTerminal({
         )}
       </div>
 
-      {/* Command Whisperer — NLP input */}
+      {/* Command Whisperer - NLP input */}
       <div className={styles.nlpArea}>
         <Sparkles size={13} className={styles.nlpIcon} />
         <input

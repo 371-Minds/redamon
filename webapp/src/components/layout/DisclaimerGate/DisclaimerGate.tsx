@@ -76,7 +76,7 @@ export function DisclaimerGate({ children }: DisclaimerGateProps) {
         }
       }
     } catch {
-      // localStorage unavailable or corrupted — show the gate
+      // localStorage unavailable or corrupted - show the gate
     }
     setIsLoading(false)
   }, [])
@@ -97,7 +97,7 @@ export function DisclaimerGate({ children }: DisclaimerGateProps) {
       }
       localStorage.setItem(DISCLAIMER_STORAGE_KEY, JSON.stringify(value))
     } catch {
-      // localStorage unavailable — acceptance lasts this session only
+      // localStorage unavailable - acceptance lasts this session only
     }
     setIsAccepted(true)
   }, [])
@@ -187,7 +187,7 @@ export function DisclaimerGate({ children }: DisclaimerGateProps) {
           <div className={styles.header}>
             <div className={styles.headerLeft}>
               <Rocket size={20} className={styles.headerIcon} />
-              <h1 className={styles.title}>Getting Started — Your First Steps</h1>
+              <h1 className={styles.title}>Getting Started - Your First Steps</h1>
             </div>
           </div>
 

@@ -87,9 +87,9 @@ export function WebCachePoisonSection({ data, updateField, onRun }: WebCachePois
                   value={data.webCachePoisonScanProfile || 'safe-confirm'}
                   onChange={(e) => updateField('webCachePoisonScanProfile', e.target.value)}
                 >
-                  <option value="safe-confirm">safe-confirm (production recon — benign, isolated)</option>
+                  <option value="safe-confirm">safe-confirm (production recon - benign, isolated)</option>
                   <option value="extended">extended (owned test targets)</option>
-                  <option value="research">research (lab only — enables CPDoS if allowed)</option>
+                  <option value="research">research (lab only - enables CPDoS if allowed)</option>
                 </select>
                 <span className={styles.fieldHint}>
                   <code style={codeStyle}>safe-confirm</code> never sends destructive payloads and always isolates tests.

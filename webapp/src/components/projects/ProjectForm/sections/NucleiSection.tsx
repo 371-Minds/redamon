@@ -379,7 +379,7 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
                   ) : (
                     <>
                       Popular: cve, xss, sqli, rce, lfi, ssrf, xxe, ssti.
-                      <strong> Empty</strong> means the built-in 8000-template pool will <em>not</em> run &mdash;
+                      <strong> Empty</strong> means the built-in 8000-template pool will <em>not</em> run -
                       only the custom templates you select below. If both are empty, the detection pass is skipped.
                     </>
                   )}
@@ -510,7 +510,7 @@ export function NucleiSection({ data, updateField, onRun }: NucleiSectionProps) 
                           </span>
                           {t.name && (
                             <span style={{ color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              — {t.name}
+                              - {t.name}
                             </span>
                           )}
                         </label>

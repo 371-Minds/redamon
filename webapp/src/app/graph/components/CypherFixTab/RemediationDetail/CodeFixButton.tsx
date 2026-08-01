@@ -52,7 +52,7 @@ export const CodeFixButton = memo(function CodeFixButton({
     )
   }
 
-  // If agent ran but couldn't fix — show notes and retry button
+  // If agent ran but couldn't fix - show notes and retry button
   if (remediation.status === 'no_fix') {
     return (
       <div className={styles.codeFixArea}>

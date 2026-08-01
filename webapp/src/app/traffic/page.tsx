@@ -332,15 +332,15 @@ export default function TrafficPage() {
                     {r.source}
                   </span>
                 </td>
-                <td>{r.tool || '—'}</td>
+                <td>{r.tool || '-'}</td>
                 <td className={styles.mono}>{r.method}</td>
                 <td>{r.host}</td>
                 <td className={styles.pathCell} title={`${r.path}${r.query || ''}`}>
                   {r.path}{r.query || ''}
                 </td>
-                <td className={`${styles.mono} ${statusClassName(r.statusCode)}`}>{r.statusCode ?? (r.blocked ? 'BLK' : '—')}</td>
+                <td className={`${styles.mono} ${statusClassName(r.statusCode)}`}>{r.statusCode ?? (r.blocked ? 'BLK' : '-')}</td>
                 <td>{fmtBytes(r.respBodySize)}</td>
-                <td>{r.responseTimeMs ?? '—'}</td>
+                <td>{r.responseTimeMs ?? '-'}</td>
                 <td>
                   <span className={styles.flags}>
                     {r.hasSetCookie && <span className={styles.flag}>cookie</span>}
@@ -446,14 +446,14 @@ export default function TrafficPage() {
                     <Copy size={13} />
                   </button>
                 </div>
-                {/* Rendered as inert text — never HTML. Captured bodies are attacker-controlled (§15.6). */}
+                {/* Rendered as inert text - never HTML. Captured bodies are attacker-controlled (§15.6). */}
                 <pre className={styles.pre}>{detail.data.reqBody}</pre>
               </div>
             )}
 
             <div className={styles.detailSection}>
               <div className={styles.detailLabel}>
-                Response — {detail.data.statusCode ?? (detail.data.blocked ? 'blocked' : 'no status')}
+                Response - {detail.data.statusCode ?? (detail.data.blocked ? 'blocked' : 'no status')}
                 {' · '}{fmtBytes(detail.data.respBodySize)}
                 {detail.data.respContentType ? ` · ${detail.data.respContentType}` : ''}
               </div>
@@ -467,7 +467,7 @@ export default function TrafficPage() {
               <pre className={styles.pre}>{JSON.stringify(detail.data.respHeaders ?? {}, null, 2)}</pre>
               <div className={styles.sectionHead}>
                 <span className={styles.detailLabel}>
-                  Response body{detail.data.respBodyRef ? ' (offloaded — Phase 1)' : ''}
+                  Response body{detail.data.respBodyRef ? ' (offloaded - Phase 1)' : ''}
                 </span>
                 <button className={styles.iconCopy} title="Copy response body" aria-label="Copy response body"
                   disabled={!detail.data.respBody}
@@ -475,7 +475,7 @@ export default function TrafficPage() {
                   <Copy size={13} />
                 </button>
               </div>
-              {/* Rendered as inert text — never HTML. Captured bodies are attacker-controlled (§15.6). */}
+              {/* Rendered as inert text - never HTML. Captured bodies are attacker-controlled (§15.6). */}
               <pre className={styles.pre}>{detail.data.respBody ?? (detail.data.respBodyRef ? '[body stored on disk]' : '[no body]')}</pre>
             </div>
           </div>

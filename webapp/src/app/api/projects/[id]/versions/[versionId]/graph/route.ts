@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — render one version as the graph payload (Section 4.1).
+ * Scan Timeline - render one version as the graph payload (Section 4.1).
  *
  * GET /api/projects/[id]/versions/[versionId]/graph -> { nodes, links }
  *

@@ -92,7 +92,7 @@ export function ShodanSection({ data, updateField, onRun }: ShodanSectionProps) 
           {noKey && (
             <div className={styles.shodanWarning}>
               <Info size={14} />
-              No Shodan API key configured — Host Lookup, Reverse DNS, and Passive CVEs will use InternetDB (free fallback: ports, hostnames, CPEs, CVEs, tags). For full data (geolocation, banners, services) and Domain DNS, add your key in Global Settings.
+              No Shodan API key configured - Host Lookup, Reverse DNS, and Passive CVEs will use InternetDB (free fallback: ports, hostnames, CPEs, CVEs, tags). For full data (geolocation, banners, services) and Domain DNS, add your key in Global Settings.
             </div>
           )}
 
@@ -119,7 +119,7 @@ export function ShodanSection({ data, updateField, onRun }: ShodanSectionProps) 
                 <span className={styles.toggleLabel}>Host Lookup</span>
                 <p className={styles.toggleDescription}>
                   Query each discovered IP for OS, ISP, organization, geolocation, open ports, service banners, and known vulnerabilities.
-                  {noKey && <em> (InternetDB fallback: ports, hostnames, CPEs, CVEs, tags — no geo/banners)</em>}
+                  {noKey && <em> (InternetDB fallback: ports, hostnames, CPEs, CVEs, tags - no geo/banners)</em>}
                 </p>
               </div>
               <Toggle

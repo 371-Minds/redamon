@@ -1,6 +1,6 @@
 /**
- * GET  /api/users/[id]/mcp        — list user's MCP servers
- * POST /api/users/[id]/mcp        — add a new MCP server
+ * GET  /api/users/[id]/mcp        - list user's MCP servers
+ * POST /api/users/[id]/mcp        - add a new MCP server
  *
  * Triggers async POST ${AGENT_API_URL}/mcp/reload after a successful write
  * so the running agent picks up changes without manual intervention.

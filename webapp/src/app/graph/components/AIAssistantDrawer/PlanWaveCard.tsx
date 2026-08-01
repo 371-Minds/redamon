@@ -104,7 +104,7 @@ export function PlanWaveCard({ item, isExpanded, onToggleExpand, missingApiKeys,
           </div>
           <div className={styles.headerInfo}>
             <span className={styles.titleText}>
-              Wave — {item.tool_count} tools
+              Wave - {item.tool_count} tools
             </span>
             {!isExpanded && (
               <span className={styles.toolNamesPreview}>{toolNames}</span>

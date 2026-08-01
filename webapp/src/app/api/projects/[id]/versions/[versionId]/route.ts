@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — Version Manager operations on one version (Section 5).
+ * Scan Timeline - Version Manager operations on one version (Section 5).
  *
  * PATCH  /api/projects/[id]/versions/[versionId]   rename / pin / unpin
  * DELETE /api/projects/[id]/versions/[versionId]   delete the row + its bytes

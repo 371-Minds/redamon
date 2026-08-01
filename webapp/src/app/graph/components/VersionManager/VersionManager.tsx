@@ -43,18 +43,18 @@ function liveScanBadge(status: ReconStatus | undefined): { text: string; busy: b
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+  return Number.isNaN(d.getTime()) ? '-' : d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
 }
 
 function formatBytes(n: number): string {
-  if (!n) return '—'
+  if (!n) return '-'
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /**
- * Scan Timeline — Version Manager (Section 5 + 4A.5).
+ * Scan Timeline - Version Manager (Section 5 + 4A.5).
  *
  * The one place that distinguishes VIEW (just look at a snapshot) from ACTIVATE
  * (make it the graph the agent and every analytics panel work on). Activate is a
@@ -159,7 +159,7 @@ export function VersionManager({
   const activate = async (v: ScanVersionSummary) => {
     const confirmed = await dangerConfirm(
       `This will save the current graph as a version and load “${v.label}” as the working graph the agent uses. ` +
-      'Only the recon graph is swapped — GVM/secret scan output, remediations, reports and captured traffic stay ' +
+      'Only the recon graph is swapped - GVM/secret scan output, remediations, reports and captured traffic stay ' +
       'project-level and still reflect the latest scan.',
       'Activate version'
     )
@@ -268,7 +268,7 @@ export function VersionManager({
                         </span>
                       )}
                     </td>
-                    <td className={styles.num}>{v.nodeCount?.toLocaleString() ?? '—'}</td>
+                    <td className={styles.num}>{v.nodeCount?.toLocaleString() ?? '-'}</td>
                     <td className={`${styles.num} ${styles.muted}`}>
                       {v.isCurrent ? 'live' : formatBytes(v.snapshotBytes)}
                     </td>
@@ -285,7 +285,7 @@ export function VersionManager({
                       {v.isCurrent && <span className={styles.activeBadge}>Active</span>}
                       {v.pinned && <span className={styles.pinBadge}>Pinned</span>}
                       {!v.isCurrent && !v.activatable && (
-                        <span className={styles.warnBadge} title="No stored snapshot — this version cannot be activated">
+                        <span className={styles.warnBadge} title="No stored snapshot - this version cannot be activated">
                           No snapshot
                         </span>
                       )}

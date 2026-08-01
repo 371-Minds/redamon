@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     if (mimeType === 'text/plain' || fileName.endsWith('.txt') || fileName.endsWith('.md')) {
       text = await file.text()
     } else if (mimeType === 'application/pdf' || fileName.endsWith('.pdf')) {
-      // Use pdfjs-dist directly — pdf-parse v2 triggers DOMMatrix errors in Node.js
+      // Use pdfjs-dist directly - pdf-parse v2 triggers DOMMatrix errors in Node.js
       // pdfjs-dist is in serverExternalPackages so it's loaded from node_modules at runtime
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
       const path = await import('path')

@@ -75,7 +75,7 @@ export function PortServiceHeatmap({ services, isLoading }: PortServiceHeatmapPr
                     key={port}
                     className={styles.cell}
                     style={{ backgroundColor: heatColor(count, maxCount) }}
-                    title={count > 0 ? `${svc}:${port} — ${count} instances` : `${svc}:${port} — none`}
+                    title={count > 0 ? `${svc}:${port} - ${count} instances` : `${svc}:${port} - none`}
                   />
                 )
               })}

@@ -9,7 +9,7 @@ function toNum(val: unknown): number | null {
 }
 
 /**
- * "AI Surface" inventory view — every AI/LLM/MCP/vector-DB surface discovered,
+ * "AI Surface" inventory view - every AI/LLM/MCP/vector-DB surface discovered,
  * across ALL modules (http_probe, port_scan, resource_enum, js_recon, and the
  * central ai_surface_recon). Returns one array per sub-sheet.
  */

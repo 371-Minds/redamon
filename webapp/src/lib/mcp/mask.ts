@@ -64,7 +64,7 @@ export function restoreMaskedToken(incoming: MCPServer, existing: MCPServer | un
     if (existing?.auth?.token) {
       out = { ...out, auth: { ...out.auth, token: existing.auth.token } }
     } else {
-      // Masked sent for a server with no prior token — strip the placeholder so
+      // Masked sent for a server with no prior token - strip the placeholder so
       // the schema's at-least-one validator triggers.
       out = { ...out, auth: { ...out.auth, token: undefined } }
     }

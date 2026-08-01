@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma'
 //
 // Public trigger the kali-sandbox worker calls on boot.
 //
-// STRIDE I19: a worker (re)boot must NEVER silently re-activate tunnels — that
+// STRIDE I19: a worker (re)boot must NEVER silently re-activate tunnels - that
 // would re-expose internal listeners to the internet and break the LAN-only
 // premise. So on boot we FORCE tunnels down: clear the `tunnelsEnabled` flag and
 // push an empty (stop) config to the tunnel-manager. The operator must

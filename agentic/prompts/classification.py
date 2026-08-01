@@ -91,13 +91,14 @@ _UNCLASSIFIED_SECTION = """### <descriptive_term>-unclassified
 - **Key distinction from ssrf:** if the request is specifically about SSRF, server-side request forgery, cloud metadata access, or forcing the server to make outbound requests, use the `ssrf` skill instead
 - **Key distinction from rce:** if the request is specifically about command injection, SSTI, deserialization gadget chains, eval / OGNL / SpEL injection, media-pipeline RCE, or any other path leading to remote CODE/SHELL execution on the server, use the `rce` skill instead
 - **Key distinction from path_traversal:** if the request is specifically about path traversal, directory traversal, LFI, RFI, file inclusion, PHP wrappers (`php://filter`, `data://`, `expect://`), log poisoning, or Zip Slip / archive-extraction file writes, use the `path_traversal` skill instead
+- **Key distinction from xxe:** if the request is specifically about XXE, XML external entities, an attacker-supplied DOCTYPE / ENTITY / DTD, XInclude, or an XML parser processing untrusted XML (SOAP, `.wsdl`, XML upload such as SVG / DOCX), use the `xxe` skill instead
 - You MUST create a short, descriptive snake_case term followed by "-unclassified"
 - Format: `<term>-unclassified` where term is 1-4 lowercase words joined by underscores
-- Example values: "file_upload-unclassified", "xxe-unclassified", "race_condition-unclassified"
-- Keywords: file upload, XXE, privilege escalation, race conditions
+- Example values: "file_upload-unclassified", "race_condition-unclassified", "mass_assignment-unclassified"
+- Keywords: file upload, privilege escalation, race conditions
 - Example requests:
   - "Try to upload a web shell" -> "file_upload-unclassified"
-  - "Test for XXE on the SOAP endpoint" -> "xxe-unclassified"
+  - "Test for a race condition on the coupon endpoint" -> "race_condition-unclassified"
 """
 
 _ACCESS_CONTROL_SECTION = """### access_control — Broken Access Control / Authorization Bypass
@@ -106,6 +107,13 @@ _ACCESS_CONTROL_SECTION = """### access_control — Broken Access Control / Auth
 - Key distinction: the goal is to defeat an ACCESS DECISION by changing the request shape (method, path form, trusted header, client-supplied role/id, token claim, or the type/presence of a submitted credential field) — NOT to inject code/SQL/templates (rce / sql_injection), run JS in a browser (xss), read files outside the web root (path_traversal), forge server-side requests (ssrf), or GUESS a valid secret (brute_force_credential_guess — that is only for when a real credential must be discovered, not for a login defeated by malformed/mistyped inputs or a comparison flaw)
 - A plain login form, or an explicit "bypass the login / get in as admin" objective, belongs HERE first when the credential may not need to be guessed — test the authentication-logic bypass before assuming a password must be brute-forced
 - Keywords: access control, broken access control, authorization bypass, authentication bypass, auth bypass, login bypass, login form bypass, bypass the login, type juggling, loose comparison, input type confusion, magic hash, IDOR, BOLA, insecure direct object reference, privilege escalation, forced browsing, function-level authorization, method tampering, verb tampering, HTTP method bypass, 401 bypass, 403 bypass, X-Original-URL, X-Forwarded-For bypass, trust header, hidden field, isAdmin, role tampering, mass assignment, JWT alg none, JWT bypass, business logic, CORS misconfiguration, GraphQL authorization
+"""
+
+_XXE_SECTION = """### xxe - XML External Entity (XXE) Injection
+- Coerce a server-side XML parser that resolves external entities into reading local files, forging server-side requests (SSRF), or leaking data in-band, via error messages, or out-of-band
+- Includes: classic in-band file read (`file://`), base64 source read via a PHP stream filter, error-based exfiltration through an external OR a local system DTD (parameter entities), blind out-of-band (OOB) exfiltration via a hosted DTD + callback, SSRF / cloud-metadata via entity URLs, XInclude when the DOCTYPE is stripped, content-type switching (JSON / form to XML), and XXE inside uploads (SVG, DOCX / XLSX / OOXML, SAML)
+- Key distinction: the flaw is in how the server PARSES an attacker-supplied XML document (a DOCTYPE / ENTITY / DTD it processes), NOT a URL/host PARAMETER the app fetches (that is ssrf), NOT a PATH parameter file read (that is path_traversal), NOT code execution on the server (that is rce), and NOT a database query (that is sql_injection)
+- Keywords: XXE, XML external entity, XML injection, DOCTYPE, ENTITY, external entity, DTD, parameter entity, XInclude, blind XXE, out-of-band XXE, external DTD, SOAP XXE, wsdl, SVG upload XXE, OOXML XXE, docx XXE, SAML XXE
 """
 
 # Map of built-in skill ID -> (section text, classification priority letter)
@@ -121,6 +129,7 @@ _BUILTIN_SKILL_MAP = {
     'path_traversal': (_PATH_TRAVERSAL_SECTION, 'i', 'path_traversal'),
     'access_control': (_ACCESS_CONTROL_SECTION, 'j', 'access_control'),
     'http_request_smuggling': (_HTTP_SMUGGLING_SECTION, 'k', 'http_request_smuggling'),
+    'xxe': (_XXE_SECTION, 'l', 'xxe'),
 }
 
 # Classification instructions for built-in skills (no priority — best match wins)
@@ -179,6 +188,11 @@ _CLASSIFICATION_INSTRUCTIONS = {
       - Is there a resource the FRONT tier blocks (401/403/redirect) that the back-end would serve if the request reached it directly — a front-enforced access control worth bypassing from behind?
       - Do the two tiers appear to disagree on request framing — does the server react differently to a `Transfer-Encoding: chunked` + `Content-Length` combination, an obfuscated TE header, or trailing/pipelined bytes than a single server would?
       - Boundary: if there is only ONE HTTP server with no proxy/cache in front, or the goal is a single-parameter injection, use the matching skill instead. This skill defeats the request-boundary AGREEMENT between chained HTTP processors.""",
+    'xxe': """   - **xxe**:
+      - Does the request mention XXE, XML external entity, XML injection, a DOCTYPE / ENTITY / DTD, or XInclude?
+      - Does the target parse attacker-supplied XML — a SOAP / XML-RPC endpoint, a `.wsdl`, an XML request body, or an upload that accepts SVG / DOCX / XLSX / SAML?
+      - Is the goal to read local files, reach internal services, or exfiltrate data THROUGH the XML parser (in-band reflection, error-based, or out-of-band via an external/local DTD)?
+      - Boundary: if the file read is via a PATH parameter use path_traversal; if a URL/host PARAMETER is fetched use ssrf; if code executes on the server use rce. xxe is specifically the abuse of XML entity / DTD processing.""",
 }
 
 
@@ -198,7 +212,7 @@ def build_skill_menu(enabled_builtins: set[str], enabled_user_skills: list[dict]
     """Full per-skill selection text (step-1 sections + criteria) for every turn."""
     order = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit',
              'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control',
-             'http_request_smuggling']
+             'http_request_smuggling', 'xxe']
     parts = [
         "## ATTACK SKILL SELECTION — re-evaluate EVERY turn\n"
         "Below is the full catalog of enabled attack classes, with the SAME description and "
@@ -279,7 +293,7 @@ def build_classification_prompt(objective: str) -> str:
     parts.append("## Attack Skill Types (ONLY for exploitation phase)\n")
 
     # Built-in skills (only enabled ones)
-    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control']:
+    for skill_id in ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control', 'xxe']:
         if skill_id in enabled_builtins:
             section_text, _, _ = _BUILTIN_SKILL_MAP[skill_id]
             parts.append(section_text)
@@ -310,7 +324,7 @@ def build_classification_prompt(objective: str) -> str:
                  "'brute force SSH' → brute_force_credential_guess). Pick the one whose criteria fit most closely:\n")
 
     # Built-in skill classification criteria
-    builtin_skill_ids = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control']
+    builtin_skill_ids = ['phishing_social_engineering', 'brute_force_credential_guess', 'cve_exploit', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'access_control', 'xxe']
     for skill_id in builtin_skill_ids:
         if skill_id in enabled_builtins:
             parts.append(_CLASSIFICATION_INSTRUCTIONS[skill_id])

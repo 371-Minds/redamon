@@ -50,7 +50,7 @@ export const SECTION_NODE_MAP: Record<string, string[]> = {
   ParamSpider:        ['Endpoint', 'Parameter', 'BaseURL', 'ExternalDomain'],
   Kiterunner:         ['Endpoint', 'BaseURL'],
   Arjun:              ['Parameter'],
-  EndpointAiClassifier: [],   // produces no new nodes — pure enrichment
+  EndpointAiClassifier: [],   // produces no new nodes - pure enrichment
   AiSurfaceRecon:     ['Vulnerability'],   // annotates Endpoint/Parameter/Technology; creates MCP-poisoning Vulnerability
   Nuclei:             ['Vulnerability', 'Endpoint', 'Parameter', 'CVE', 'MitreData', 'Capec'],
   CveLookup:          ['CVE', 'MitreData', 'Capec'],

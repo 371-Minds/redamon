@@ -113,7 +113,7 @@ export const BlastRadiusTable = memo(function BlastRadiusTable({ projectId }: Pr
       {limit < filtered.length && (
         <div className={rowStyles.loadMoreBar}>
           <button className={rowStyles.loadMoreBtn} onClick={() => setLimit(l => l + PAGE_SIZE)}>
-            Showing {sliced.length} of {filtered.length} — Load more
+            Showing {sliced.length} of {filtered.length} - Load more
           </button>
         </div>
       )}

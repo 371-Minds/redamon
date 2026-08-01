@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { requireEffectiveUser, requireProjectAccess, ownerScope } from '@/lib/access'
 
-// GET /api/traffic/[projectId]/facets — distinct values for the filter dropdowns
+// GET /api/traffic/[projectId]/facets - distinct values for the filter dropdowns
 // (tools, hosts, runs, sessions), scoped to the caller's own rows in this project.
 export async function GET(
   _request: NextRequest,

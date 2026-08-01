@@ -44,7 +44,7 @@ export function internalKeyRouteAllowed(method: string, pathname: string): boole
   )
 }
 
-// S3/E6: the scanner token is a strict SUBSET — only the two GET routes recon
+// S3/E6: the scanner token is a strict SUBSET - only the two GET routes recon
 // legitimately reads (its OSINT settings + project config). Excluded from
 // llm-providers, tradecraft, and all user-CRUD. Enforced directly (SCANNER_API_KEY
 // is a brand-new principal with no legacy callers, so there is nothing to break).
@@ -108,7 +108,7 @@ export async function middleware(request: NextRequest) {
     }
     // Valid key but off-allowlist route.
     if (ENFORCE_ALLOWLIST) {
-      // Fall through to the JWT check below — a service call has no auth cookie,
+      // Fall through to the JWT check below - a service call has no auth cookie,
       // so it becomes 401 (or a redirect for a page). This is the closure.
       console.warn(`[internal-key] BLOCKED off-allowlist ${request.method} ${pathname}`)
     } else {
@@ -119,7 +119,7 @@ export async function middleware(request: NextRequest) {
 
   // S3/E6: the scoped scanner token. Accepted ONLY on its two GET routes;
   // any other route with the scanner key falls through to JWT (401 for a
-  // service). Enforced directly — no legacy callers hold this new token.
+  // service). Enforced directly - no legacy callers hold this new token.
   const scannerKey = process.env.SCANNER_API_KEY
   if (internalKey && scannerKey && scannerKey !== 'changeme' && constantTimeEqual(internalKey, scannerKey)) {
     if (scannerKeyRouteAllowed(request.method, pathname)) {

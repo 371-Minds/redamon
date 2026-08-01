@@ -8,8 +8,8 @@ import { assertGraphNotActivating } from '@/lib/activationLock'
 //
 // STRIDE S6: mints a short-lived ticket the browser includes in the /ws/agent
 // init frame so the agent can authenticate the WebSocket. The ticket binds the
-// EFFECTIVE user (getEffectiveUser) — a standard user's own id, or, when an admin
-// is simulating user X, X — never a body-supplied or x-user-id value. So the agent
+// EFFECTIVE user (getEffectiveUser) - a standard user's own id, or, when an admin
+// is simulating user X, X - never a body-supplied or x-user-id value. So the agent
 // acts as the impersonated user (fetches X's keys, tags the graph as X), and an
 // admin can only mint a ticket for a project the simulated user owns. An
 // internal-key caller has no cookie and cannot mint a ticket for anyone.
@@ -34,12 +34,12 @@ export async function POST(request: NextRequest) {
   if (access instanceof NextResponse) return access
 
   // Scan Timeline 4A.3: the ticket is the chokepoint for starting an agent
-  // session. Refuse to mint one while the project's live graph is being swapped —
+  // session. Refuse to mint one while the project's live graph is being swapped -
   // the agent reasons over that graph, so it must not attach mid-swap.
   const activating = await assertGraphNotActivating(projectId)
   if (activating) return activating
 
-  // Null when AGENT_WS_TICKET_SECRET is unset (dev) — the agent fails open.
+  // Null when AGENT_WS_TICKET_SECRET is unset (dev) - the agent fails open.
   const ticket = await createWsTicket(eff.userId, projectId, sessionId)
   return NextResponse.json({ ticket })
 }

@@ -118,7 +118,7 @@ export function GithubSection({ data, updateField, hasGithubToken = false }: Git
                   <div>
                     <span className={styles.toggleLabel}>Scan Commits</span>
                     <p className={styles.toggleDescription}>Search commit history for secrets</p>
-                    <TimeEstimate estimate="Most expensive operation — disabling saves 50%+ time" />
+                    <TimeEstimate estimate="Most expensive operation - disabling saves 50%+ time" />
                   </div>
                   <Toggle
                     checked={data.githubScanCommits}

@@ -189,7 +189,7 @@ const AI_SURFACE_SHEETS: SheetDef[] = [
 
 const AI_RISK_SHEETS: SheetDef[] = [
   { key: 'findings', label: 'MCP Tool Poisoning',
-    empty: 'No MCP tool-poisoning findings. Good — or MCP analysis was disabled.',
+    empty: 'No MCP tool-poisoning findings. Good - or MCP analysis was disabled.',
     columns: [
       { key: 'severity', header: 'Severity', kind: 'sev' },
       { key: 'type', header: 'Type', kind: 'text' },

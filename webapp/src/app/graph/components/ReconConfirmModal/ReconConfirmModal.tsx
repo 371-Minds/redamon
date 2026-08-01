@@ -88,7 +88,7 @@ export function ReconConfirmModal({
                 <p className={styles.warningTitle}>Existing Data Found</p>
                 <p className={styles.warningText}>
                   This project has <strong>{stats.totalNodes}</strong> nodes in the graph database.
-                  The scan rebuilds the live graph from scratch — choose whether to keep the
+                  The scan rebuilds the live graph from scratch - choose whether to keep the
                   current graph as a saved version first.
                 </p>
                 <div className={styles.stats}>

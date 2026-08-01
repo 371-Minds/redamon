@@ -17,7 +17,7 @@ interface TooltipProps {
   disabled?: boolean
   /** Override default max-width (CSS default is 260px) */
   maxWidth?: number | string
-  /** When true, the tooltip stays open while the mouse is over its body —
+  /** When true, the tooltip stays open while the mouse is over its body -
    *  needed so the user can scroll inside the tooltip or click links inside it.
    *  Default: false (legacy hover-and-leave behavior). */
   interactive?: boolean

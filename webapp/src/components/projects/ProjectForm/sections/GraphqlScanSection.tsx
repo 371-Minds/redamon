@@ -306,7 +306,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
             External Docker-based misconfig scanner (<code>dolevf/graphql-cop:1.14</code>).
             Runs 12 checks per endpoint including alias/batch/directive DoS probes, GraphiQL
             detection, trace/debug disclosure, GET-method CSRF, unhandled errors, and field
-            suggestions. Traffic is <strong>active</strong> &mdash; DoS probes auto-disable in
+            suggestions. Traffic is <strong>active</strong> - DoS probes auto-disable in
             stealth mode. Introspection test is off by default to dedupe with the native scanner above.
           </p>
 
@@ -374,7 +374,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </h4>
               <p className={styles.fieldHint} style={{ marginBottom: '8px' }}>
                 Each toggle maps to one graphql-cop test.{' '}
-                <strong>Filters findings from the report only &mdash; DoS traffic still fires</strong>{' '}
+                <strong>Filters findings from the report only - DoS traffic still fires</strong>{' '}
                 until graphql-cop ships <code>-e</code> support on DockerHub (patched in git main v1.15, unreleased).
                 To fully suppress a test&apos;s traffic, disable the master <em>Enable graphql-cop</em> toggle above.
               </p>
@@ -382,7 +382,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               {/* Info-leak + CSRF checks (low-noise) */}
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Field Suggestions (LOW &mdash; info leak)</span>
+                  <span className={styles.toggleLabel}>Field Suggestions (LOW - info leak)</span>
                   <p className={styles.toggleDescription}>&quot;Did you mean X?&quot; errors leak schema fields even with introspection off.</p>
                 </div>
                 <Toggle
@@ -392,8 +392,8 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Introspection (HIGH &mdash; info leak)</span>
-                  <p className={styles.toggleDescription}>Off by default &mdash; native scanner above already tests this. Enable for dedup validation.</p>
+                  <span className={styles.toggleLabel}>Introspection (HIGH - info leak)</span>
+                  <p className={styles.toggleDescription}>Off by default - native scanner above already tests this. Enable for dedup validation.</p>
                 </div>
                 <Toggle
                   checked={(data as any).graphqlCopTestIntrospection ?? false}
@@ -412,7 +412,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>GET Method Query Support (MEDIUM &mdash; CSRF)</span>
+                  <span className={styles.toggleLabel}>GET Method Query Support (MEDIUM - CSRF)</span>
                   <p className={styles.toggleDescription}>Queries allowed via GET enable CSRF attacks.</p>
                 </div>
                 <Toggle
@@ -422,7 +422,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>GET-based Mutations (MEDIUM &mdash; CSRF)</span>
+                  <span className={styles.toggleLabel}>GET-based Mutations (MEDIUM - CSRF)</span>
                   <p className={styles.toggleDescription}>Mutations executable via GET requests.</p>
                 </div>
                 <Toggle
@@ -442,7 +442,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Trace Mode (INFO &mdash; info leak)</span>
+                  <span className={styles.toggleLabel}>Trace Mode (INFO - info leak)</span>
                   <p className={styles.toggleDescription}>Apollo tracing extension disclosure.</p>
                 </div>
                 <Toggle
@@ -452,7 +452,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Unhandled Errors (INFO &mdash; info leak)</span>
+                  <span className={styles.toggleLabel}>Unhandled Errors (INFO - info leak)</span>
                   <p className={styles.toggleDescription}>Exception stack traces returned to client.</p>
                 </div>
                 <Toggle
@@ -466,13 +466,13 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
                 backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
                 fontSize: '11px', color: '#f87171',
               }}>
-                <strong>DoS probes below &mdash; noisy traffic.</strong> Toggling these off hides their findings
+                <strong>DoS probes below - noisy traffic.</strong> Toggling these off hides their findings
                 but the packets still fly (see note above). Auto-disabled only in stealth mode.
               </div>
 
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Alias Overloading (HIGH &mdash; DoS)</span>
+                  <span className={styles.toggleLabel}>Alias Overloading (HIGH - DoS)</span>
                   <p className={styles.toggleDescription}>Sends 101 aliases in one query to bypass rate limits.</p>
                 </div>
                 <Toggle
@@ -482,7 +482,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Array-based Query Batching (HIGH &mdash; DoS)</span>
+                  <span className={styles.toggleLabel}>Array-based Query Batching (HIGH - DoS)</span>
                   <p className={styles.toggleDescription}>Sends 10+ queries batched in one POST.</p>
                 </div>
                 <Toggle
@@ -492,7 +492,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Directive Overloading (HIGH &mdash; DoS)</span>
+                  <span className={styles.toggleLabel}>Directive Overloading (HIGH - DoS)</span>
                   <p className={styles.toggleDescription}>Sends 10+ repeated directives to exhaust parsing.</p>
                 </div>
                 <Toggle
@@ -502,7 +502,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
-                  <span className={styles.toggleLabel}>Introspection-based Circular Query (HIGH &mdash; DoS)</span>
+                  <span className={styles.toggleLabel}>Introspection-based Circular Query (HIGH - DoS)</span>
                   <p className={styles.toggleDescription}>Deeply nested introspection to trigger recursion DoS.</p>
                 </div>
                 <Toggle

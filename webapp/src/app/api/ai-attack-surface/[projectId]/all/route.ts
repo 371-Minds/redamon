@@ -8,7 +8,7 @@ interface RouteParams {
   params: Promise<{ projectId: string }>
 }
 
-// GET /api/ai-attack-surface/{projectId}/all — list all runs for a project.
+// GET /api/ai-attack-surface/{projectId}/all - list all runs for a project.
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { projectId } = await params
   const __denied = await guardProject(projectId)
@@ -23,7 +23,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }
     return NextResponse.json(await response.json())
   } catch {
-    // Orchestrator unreachable — degrade to empty list.
+    // Orchestrator unreachable - degrade to empty list.
     return NextResponse.json({ project_id: projectId, runs: [] })
   }
 }

@@ -165,7 +165,7 @@ export function useAgentWebSocket({
   }, [sendMessage])
 
   // Public API: Send a single fireteam member's dangerous-tool decision.
-  // Unlike sendToolConfirmation, this does NOT pause the parent graph —
+  // Unlike sendToolConfirmation, this does NOT pause the parent graph -
   // other members keep running while this one resumes on approve/reject.
   const sendFireteamMemberConfirmation = useCallback((
     wave_id: string,
@@ -313,7 +313,7 @@ export function useAgentWebSocket({
 
   // Connect to WebSocket
   const connect = useCallback(() => {
-    // Close existing connection — detach handlers first to prevent
+    // Close existing connection - detach handlers first to prevent
     // the old close event from clobbering the new connection
     if (wsRef.current) {
       wsRef.current.onopen = null

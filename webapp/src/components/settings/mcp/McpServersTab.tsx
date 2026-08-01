@@ -410,11 +410,11 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
     description: string,
     inputSchema: unknown,
   ): ToolSpec => {
-    const desc = description || '(filled from MCP server — please refine)'
+    const desc = description || '(filled from MCP server - please refine)'
     return {
       name,
       description: desc,
-      // First line of the MCP description is usually a one-line summary —
+      // First line of the MCP description is usually a one-line summary -
       // good enough as a default purpose. User can refine.
       purpose: desc.split('\n')[0].slice(0, 120) || name,
       // when_to_use is the only field the user genuinely has to think
@@ -479,7 +479,7 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
 
         {loading && <p className={styles.muted}><Loader2 className={styles.spin} size={14} /> Loading…</p>}
 
-        {/* Quick-Add presets — 10 publicly-available MCPs vetted for pentest workflow */}
+        {/* Quick-Add presets - 10 publicly-available MCPs vetted for pentest workflow */}
         {!loading && (
           <div className={styles.presetsBlock}>
             <div className={styles.presetsHeader}>
@@ -520,7 +520,7 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
         )}
 
         {!loading && servers.length === 0 && (
-          <p className={styles.muted}>No saved MCP Tool Plugins yet — pick one from Quick add above, or click Add MCP to configure one manually.</p>
+          <p className={styles.muted}>No saved MCP Tool Plugins yet - pick one from Quick add above, or click Add MCP to configure one manually.</p>
         )}
 
         {!loading && servers.length > 0 && (
@@ -539,7 +539,7 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
                 <tr key={srv.id}>
                   <td>
                     <div className={styles.cellTitle}>{srv.name || srv.id}</div>
-                    <div className={styles.cellSub}>{srv.id}{srv.description ? ` — ${srv.description}` : ''}</div>
+                    <div className={styles.cellSub}>{srv.id}{srv.description ? ` - ${srv.description}` : ''}</div>
                   </td>
                   <td>
                     <span className={styles.transportPill}>
@@ -608,8 +608,8 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
         <div className={testResult.ok ? styles.testOk : styles.testFail}>
           {testResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
           {testResult.ok
-            ? <span><strong>OK</strong> — {testResult.discovered_tools.length} tool(s) discovered in {testResult.elapsed_ms}ms.</span>
-            : <span><strong>Failed</strong> — {testResult.error}</span>}
+            ? <span><strong>OK</strong> - {testResult.discovered_tools.length} tool(s) discovered in {testResult.elapsed_ms}ms.</span>
+            : <span><strong>Failed</strong> - {testResult.error}</span>}
           {testResult.warnings.length > 0 && (
             <ul className={styles.warnList}>
               {testResult.warnings.map((w, i) => (
@@ -795,7 +795,7 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
                   onChange={e => updateField('auth', e.target.value
                     ? { type: 'bearer', token: e.target.value }
                     : undefined)}
-                  placeholder="paste token here (e.g. ghp_...) — stored in DB, masked on display"
+                  placeholder="paste token here (e.g. ghp_...) - stored in DB, masked on display"
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -967,7 +967,7 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
                 type="text"
                 value={t.when_to_use}
                 onChange={e => updateTool(i, { when_to_use: e.target.value })}
-                placeholder="Strategic guidance — when should the agent pick this?"
+                placeholder="Strategic guidance - when should the agent pick this?"
               />
               {errOf(`tools.${i}.when_to_use`) && <span className={styles.fieldErr}>{errOf(`tools.${i}.when_to_use`)}</span>}
             </label>
@@ -989,7 +989,7 @@ export default function McpServersTab({ userId, onDirtyChange }: Props) {
             <label className={`${styles.field} ${styles.fieldWide}`}>
               <span>
                 description
-                <span className={styles.injectedBadge} title="Injected as full multi-line guidance into the system prompt — every phase where this tool's `default_phases` allows it. The phase checkbox toggles whether the tool exists in the registry for that phase, NOT which fields render. If a tool is allowed in a phase, the LLM sees all four fields (name, purpose, when_to_use, args_format, description) in that phase.">
+                <span className={styles.injectedBadge} title="Injected as full multi-line guidance into the system prompt - every phase where this tool's `default_phases` allows it. The phase checkbox toggles whether the tool exists in the registry for that phase, NOT which fields render. If a tool is allowed in a phase, the LLM sees all four fields (name, purpose, when_to_use, args_format, description) in that phase.">
                   → injected in LLM prompt
                 </span>
               </span>

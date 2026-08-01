@@ -33,7 +33,7 @@ export function TechnologyTreemap({ data, isLoading }: TechnologyTreemapProps) {
               backgroundColor: palette[i % palette.length],
               opacity: 0.3 + (tech.cveCount / maxCve) * 0.7,
             }}
-            title={`${tech.name}${tech.version ? ` v${tech.version}` : ''} — ${tech.cveCount} CVEs`}
+            title={`${tech.name}${tech.version ? ` v${tech.version}` : ''} - ${tech.cveCount} CVEs`}
           >
             <span className={styles.name}>{tech.name}</span>
             {tech.cveCount > 0 && <span className={styles.badge}>{tech.cveCount}</span>}

@@ -123,7 +123,7 @@ export async function DELETE(
       console.error('Failed to stop agent session before delete (continuing):', stopError)
     }
 
-    // Delete attack chain nodes from Neo4j (fire-and-forget — don't block on failure)
+    // Delete attack chain nodes from Neo4j (fire-and-forget - don't block on failure)
     try {
       const neo4jSession = getGraphSession()
       try {

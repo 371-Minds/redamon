@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — one schedule (Section 7.2).
+ * Scan Timeline - one schedule (Section 7.2).
  *
  * PATCH  enable/disable, retime, change scan mode or label
  * DELETE remove the schedule (its ScanJob history survives, schedule_id -> NULL)

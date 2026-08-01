@@ -41,7 +41,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
       const ok = await confirm(
         'You are turning off Subdomain Discovery while no Subdomain Prefixes are set. ' +
         'To keep the pipeline runnable, "Include Root Domain" will be automatically ' +
-        'enabled and locked ON — the root domain becomes the only scan target. Continue?',
+        'enabled and locked ON - the root domain becomes the only scan target. Continue?',
         'Disable Subdomain Discovery?'
       )
       if (!ok) return
@@ -115,7 +115,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
               <div className={styles.toggleRowCompactInfo}>
                 <span className={styles.toggleLabelLg}>crt.sh</span>
                 <p className={styles.toggleDescription}>
-                  Certificate transparency logs — discovers subdomains from SSL/TLS certificates
+                  Certificate transparency logs - discovers subdomains from SSL/TLS certificates
                 </p>
               </div>
               {data.crtshEnabled && (
@@ -141,7 +141,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
               <div className={styles.toggleRowCompactInfo}>
                 <span className={styles.toggleLabelLg}>HackerTarget</span>
                 <p className={styles.toggleDescription}>
-                  DNS lookup database — discovers subdomains from HackerTarget&apos;s host search API
+                  DNS lookup database - discovers subdomains from HackerTarget&apos;s host search API
                 </p>
               </div>
               {data.hackerTargetEnabled && (
@@ -219,7 +219,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
               <div className={styles.toggleRowCompactInfo}>
                 <span className={styles.toggleLabelLg}>Amass</span>
                 <p className={styles.toggleDescription}>
-                  OWASP Amass — subdomain enumeration using 50+ data sources (certificate logs, DNS databases, web archives, WHOIS)
+                  OWASP Amass - subdomain enumeration using 50+ data sources (certificate logs, DNS databases, web archives, WHOIS)
                 </p>
               </div>
               {data.amassEnabled && (
@@ -267,7 +267,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
               <div>
                 <span className={styles.toggleLabel}>Knockpy Bruteforce Mode</span>
                 <p className={styles.toggleDescription}>
-                  Use wordlist-based subdomain bruteforcing — sends thousands of DNS queries
+                  Use wordlist-based subdomain bruteforcing - sends thousands of DNS queries
                 </p>
                 <TimeEstimate estimate="+5-30 min depending on wordlist size" />
               </div>
@@ -281,7 +281,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
               <div>
                 <span className={styles.toggleLabel}>Amass Active Mode</span>
                 <p className={styles.toggleDescription}>
-                  Enable zone transfers and certificate name grabs — sends DNS queries directly to target
+                  Enable zone transfers and certificate name grabs - sends DNS queries directly to target
                 </p>
               </div>
               <Toggle
@@ -295,7 +295,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
               <div>
                 <span className={styles.toggleLabel}>Amass Bruteforce</span>
                 <p className={styles.toggleDescription}>
-                  DNS brute forcing after passive enumeration — significantly increases scan time
+                  DNS brute forcing after passive enumeration - significantly increases scan time
                 </p>
                 <TimeEstimate estimate="+10-60 min depending on target size" />
               </div>
@@ -345,7 +345,7 @@ export function SubdomainDiscoverySection({ data, updateField, onRun }: Subdomai
                 <span className={styles.toggleLabel}>Puredns Wildcard Filtering</span>
                 <p className={styles.toggleDescription}>
                   Validates discovered subdomains against public DNS resolvers and removes wildcard
-                  entries and DNS-poisoned results &mdash; runs after all discovery tools complete
+                  entries and DNS-poisoned results - runs after all discovery tools complete
                 </p>
               </div>
               <Toggle

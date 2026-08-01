@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — full-scan version bookkeeping (server-side).
+ * Scan Timeline - full-scan version bookkeeping (server-side).
  *
  * A full scan always wipes and rebuilds the live Neo4j graph, and the live graph
  * IS the current version. So there is no pointer to flip and no completion
@@ -36,7 +36,7 @@ export function parseScanMode(value: unknown): ScanMode | null {
 }
 
 /** Auto-generated labels are refreshed on overwrite; user-renamed ones are kept. */
-const AUTO_LABEL = /^Scan \d+ — \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/
+const AUTO_LABEL = /^Scan \d+ - \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/
 
 export interface PrepareResult {
   /** The version the scan about to start will populate (the new current). */
@@ -86,7 +86,7 @@ export async function prepareVersionsForFullScan(
   }
 
   // mode === 'new': freeze the outgoing graph first. Anything that throws here
-  // must propagate — the caller aborts the start rather than risk losing it.
+  // must propagate - the caller aborts the start rather than risk losing it.
   let captured
   try {
     captured = await captureGraphSnapshot(projectId)
@@ -116,7 +116,7 @@ export async function prepareVersionsForFullScan(
 
   const created = await rotateToNextVersion(projectId, current.id)
 
-  // A version was just added to the timeline — trim it back to the policy.
+  // A version was just added to the timeline - trim it back to the policy.
   await applyRetentionSafe(projectId)
 
   return {
@@ -139,7 +139,7 @@ const ROTATE_ATTEMPTS = 4
  * Two writers can read the same max(seq) and both try to create seq+1 (a
  * double-clicked Start, or a scan racing "save current as a version"). The
  * `@@unique([projectId, seq])` constraint is what keeps version numbering from
- * forking — but the loser used to surface as a 500 AFTER its snapshot had already
+ * forking - but the loser used to surface as a 500 AFTER its snapshot had already
  * been frozen. Retrying with a recomputed seq turns that race into a queue.
  */
 export async function rotateToNextVersion(

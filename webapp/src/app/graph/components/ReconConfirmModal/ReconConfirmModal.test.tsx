@@ -52,8 +52,8 @@ describe('ReconConfirmModal — scan mode choice', () => {
   })
 
   test('shows the label the current graph would be saved as', () => {
-    render(<ReconConfirmModal {...baseProps} stats={withData} currentVersionLabel="Scan 2 — 2026-07-01 10:00 UTC" />)
-    expect(screen.getByText(/Scan 2 — 2026-07-01 10:00 UTC/)).toBeTruthy()
+    render(<ReconConfirmModal {...baseProps} stats={withData} currentVersionLabel="Scan 2 - 2026-07-01 10:00 UTC" />)
+    expect(screen.getByText(/Scan 2 - 2026-07-01 10:00 UTC/)).toBeTruthy()
   })
 
   test('reopening resets a previously chosen overwrite back to the safe default', () => {

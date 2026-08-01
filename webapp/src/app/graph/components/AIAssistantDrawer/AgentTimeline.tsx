@@ -67,7 +67,7 @@ export interface PlanWaveItem {
   recommended_next_steps?: string[]
   // Set when this pending-approval wave was created from a fireteam member's
   // escalated tool/plan. On approve, the backend does NOT continue this wave
-  // (it redeploys a single-member fireteam instead) — so the UI must drop
+  // (it redeploys a single-member fireteam instead) - so the UI must drop
   // this stale card rather than wait for plan/tool events that will never
   // arrive. See FIRETEAM.md §7.3.
   isFireteamEscalation?: boolean
@@ -144,7 +144,7 @@ export interface FireteamItem {
 }
 
 // ---------------------------------------------------------------------------
-// LATS (exploit-path tree search) UI state — one card that mutates in place as
+// LATS (exploit-path tree search) UI state - one card that mutates in place as
 // the search runs (keyed by search_id), holding the latest full-tree snapshot
 // plus per-wave history for the replay scrubber.
 // ---------------------------------------------------------------------------

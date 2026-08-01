@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — due-schedule feed for the orchestrator's scheduler worker
+ * Scan Timeline - due-schedule feed for the orchestrator's scheduler worker
  * (Section 7.2). Internal-key only.
  *
  * The worker owns the tick and the admission pre-check; the WEBAPP owns the
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // F3: the worker must not spawn into an in-flight graph swap. Batched — this
+    // F3: the worker must not spawn into an in-flight graph swap. Batched - this
     // endpoint is polled every tick, so one query per due project would scale the
     // round-trips with the number of schedules.
     const activating = await activationStates([...new Set(due.map(d => d.projectId))])

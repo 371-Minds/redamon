@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — ACTIVATE a version (Section 4A): make it the live graph.
+ * Scan Timeline - ACTIVATE a version (Section 4A): make it the live graph.
  *
  * POST /api/projects/[id]/versions/[versionId]/activate
  *
@@ -7,7 +7,7 @@
  * is the deliberate, locked, destructive-then-restore operation:
  *
  *   1. freeze the OUTGOING current version from the LIVE graph (not from its old
- *      stored bytes — partial recon may have edited it since). If this fails we
+ *      stored bytes - partial recon may have edited it since). If this fails we
  *      abort here: nothing has been deleted, nothing is lost (fail closed).
  *   2. clear the live recon graph (KEEPING agent session nodes, F1) and restore X
  *      through the shared import restore path.
@@ -57,7 +57,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ ok: true, alreadyCurrent: true, versionId })
   }
 
-  // 4A.6: a version with no restorable bytes must never be activated — restoring
+  // 4A.6: a version with no restorable bytes must never be activated - restoring
   // from the lossy render shape is not a thing we do.
   if (!target.hasSnapshot) {
     return NextResponse.json(
@@ -93,7 +93,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     // the highest-seq row when none is marked current (a crashed activation, an
     // imported archive with no current flag, or a concurrent list read). If that
     // row IS the target, freezing would overwrite the very bytes we are about to
-    // restore with the live graph — silent loss of the version the user asked for.
+    // restore with the live graph - silent loss of the version the user asked for.
     if (current.id === versionId) {
       return NextResponse.json({ ok: true, alreadyCurrent: true, versionId })
     }
@@ -132,7 +132,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       await withSnapshotSlot(async () => {
         const session = getGraphSession()
         try {
-          // F1: agent session nodes are NOT version state — they survive the swap.
+          // F1: agent session nodes are NOT version state - they survive the swap.
           await clearProjectGraph(session, id, SESSION_LABELS)
           await restoreGraph(session, snapshot.nodes, snapshot.relationships, { projectId: id })
         } finally {
@@ -144,7 +144,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       invalidateCache(id)
       return NextResponse.json(
         {
-          error: 'Activation failed while rebuilding the graph. No version data was lost — ' +
+          error: 'Activation failed while rebuilding the graph. No version data was lost - ' +
             'retry the activation to rebuild it. ' + (err instanceof Error ? err.message : String(err)),
           restoreFailed: true,
           retriable: true,

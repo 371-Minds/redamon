@@ -15,7 +15,7 @@ import { useAuth } from '@/providers/AuthProvider'
  *               clicked ThemeToggle), persist the new value to the DB.
  *
  * Implementation note: `useTheme.theme` (the user preference) is per-hook-
- * instance state — toggling in ThemeToggle does NOT update other useTheme
+ * instance state - toggling in ThemeToggle does NOT update other useTheme
  * instances' `theme` value. What DOES propagate across instances is
  * `resolvedTheme`, which is kept in sync via a MutationObserver on the
  * `<html data-theme>` attribute. So the bridge watches `resolvedTheme`.

@@ -15,7 +15,7 @@ const SubdomainDiscovery = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      The only graph input is the <strong>Domain</strong> node — the project's apex domain. Subdomain Discovery uses the domain name as the seed for multiple OSINT sources (Subfinder, Amass, certificate transparency logs, DNS bruteforce, etc., depending on the modules you have enabled).
+      The only graph input is the <strong>Domain</strong> node - the project's apex domain. Subdomain Discovery uses the domain name as the seed for multiple OSINT sources (Subfinder, Amass, certificate transparency logs, DNS bruteforce, etc., depending on the modules you have enabled).
     </p>
     <p style={paraStyle}>
       Each source returns a list of candidate hostnames. Candidates are merged, deduplicated, and validated to confirm they actually belong to the apex domain. Wildcard records and bogus mock subdomains are filtered out using puredns.
@@ -35,7 +35,7 @@ const SubdomainDiscovery = (
       <li>The apex Domain node is enriched with WHOIS data (registrar, organization, country, registration dates) when WHOIS lookup is enabled.</li>
     </ul>
     <p style={paraStyle}>
-      Existing nodes are reused (deduplicated) — running the scan again only adds newly discovered subdomains, never duplicates.
+      Existing nodes are reused (deduplicated) - running the scan again only adds newly discovered subdomains, never duplicates.
     </p>
     <p style={{ ...paraStyle, margin: 0 }}>
       When the <strong>AI TXT/SPF/DKIM Hint</strong> toggle is on, captured TXT records (including SPF/DKIM/DMARC) are regex-matched against the AI vendor catalogue. On match, the Subdomain carries <span style={codeStyle}>ai_service_hint</span> with the provider name (anthropic, openai, huggingface, replicate, langchain, langfuse, …). The <strong>AI NS Hint</strong> toggle is a weaker signal: NS records pointing at Vercel/Netlify/Replit/Modal tag the subdomain as <span style={codeStyle}>ai_service_hint=&quot;ai-hosting-candidate&quot;</span> only when no stronger TXT hint already exists.
@@ -81,7 +81,7 @@ const Uncover = (
       <li>Each subdomain and IP is tagged with the list of upstream sources that returned it (e.g. "Shodan, Censys"), plus counters for total raw results vs deduplicated.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Out-of-scope hostnames returned by the search engines do not become Subdomain nodes — they're either skipped or stored as ExternalDomain nodes for traceability, depending on the project setting.
+      Out-of-scope hostnames returned by the search engines do not become Subdomain nodes - they're either skipped or stored as ExternalDomain nodes for traceability, depending on the project setting.
     </p>
   </div>
 )
@@ -93,8 +93,8 @@ const Urlscan = (
       Input is the <strong>Domain</strong> node. URLScan runs in two phases:
     </p>
     <ol style={listStyle}>
-      <li><strong>Discovery phase</strong> (before HTTP Probing) — queries the URLScan API for past scans of the domain, extracting subdomains, IPs, and full URLs from the results.</li>
-      <li><strong>Enrichment phase</strong> (after HTTP Probing) — for each existing BaseURL in the graph, fetches its URLScan record (screenshot, server banner, page title) and attaches it to the BaseURL.</li>
+      <li><strong>Discovery phase</strong> (before HTTP Probing) - queries the URLScan API for past scans of the domain, extracting subdomains, IPs, and full URLs from the results.</li>
+      <li><strong>Enrichment phase</strong> (after HTTP Probing) - for each existing BaseURL in the graph, fetches its URLScan record (screenshot, server banner, page title) and attaches it to the BaseURL.</li>
     </ol>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -106,7 +106,7 @@ const Urlscan = (
       <li>Each BaseURL touched in phase 2 is enriched with screenshot URL, server header, and page title.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Phase 2 silently skips BaseURLs that no longer exist in the graph — this prevents stale URLScan data from re-creating deleted nodes.
+      Phase 2 silently skips BaseURLs that no longer exist in the graph - this prevents stale URLScan data from re-creating deleted nodes.
     </p>
   </div>
 )
@@ -118,7 +118,7 @@ const Gau = (
       Input comes from the <strong>Domain</strong> node and every <strong>Subdomain</strong> node in scope. For each one, the tool queries historical URL archives (the Wayback Machine, AlienVault OTX, Common Crawl) for any URL ever captured under that hostname.
     </p>
     <p style={paraStyle}>
-      This is purely passive — no traffic is sent to the target. Discovered URLs may no longer exist on the live service, but they reveal the historical attack surface.
+      This is purely passive - no traffic is sent to the target. Discovered URLs may no longer exist on the live service, but they reveal the historical attack surface.
     </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -141,7 +141,7 @@ const ParamSpider = (
       Input comes from the <strong>Domain</strong> and every <strong>Subdomain</strong> node in scope. For each, ParamSpider queries the Wayback Machine for historical URLs that contain query parameters.
     </p>
     <p style={paraStyle}>
-      Like Gau, this is passive — no traffic to the live target. Unlike Gau, the focus is specifically parameters: ParamSpider discovers parameters that may have been removed from the live service but are still useful to test.
+      Like Gau, this is passive - no traffic to the live target. Unlike Gau, the focus is specifically parameters: ParamSpider discovers parameters that may have been removed from the live service but are still useful to test.
     </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -179,7 +179,7 @@ const Shodan = (
       <li>The IP node itself is enriched with OS, ISP, organization, country, city, and is marked as enriched by Shodan.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Re-running Shodan refreshes the enrichment fields and adds any newly indexed ports/CVEs — existing nodes are reused, not duplicated.
+      Re-running Shodan refreshes the enrichment fields and adds any newly indexed ports/CVEs - existing nodes are reused, not duplicated.
     </p>
   </div>
 )
@@ -220,12 +220,12 @@ const Naabu = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      Naabu scans IP addresses (or CIDR ranges). Subdomains contribute via their resolved IPs — Naabu does not consume hostnames directly.
+      Naabu scans IP addresses (or CIDR ranges). Subdomains contribute via their resolved IPs - Naabu does not consume hostnames directly.
     </p>
     <p style={paraStyle}>The graph sources are merged additively (no priority chain):</p>
     <ol style={listStyle}>
-      <li><strong>Apex Domain IPs</strong> — every IP linked to the root Domain node.</li>
-      <li><strong>Subdomain IPs</strong> — every IP linked to any Subdomain (A/AAAA records).</li>
+      <li><strong>Apex Domain IPs</strong> - every IP linked to the root Domain node.</li>
+      <li><strong>Subdomain IPs</strong> - every IP linked to any Subdomain (A/AAAA records).</li>
     </ol>
     <p style={paraStyle}>The merged list is deduplicated by IP. Custom inputs from the partial recon modal:</p>
     <ul style={listStyle}>
@@ -261,7 +261,7 @@ const Masscan = (
       Masscan needs <strong>IP</strong> addresses. The input list is built from every IP linked to the apex Domain plus every IP linked to any Subdomain that successfully resolved (i.e. has at least one A or AAAA record).
     </p>
     <p style={paraStyle}>
-      DNS resolution must run first — Masscan does not accept hostnames. CIDR notation is supported and is the recommended format for large IP ranges.
+      DNS resolution must run first - Masscan does not accept hostnames. CIDR notation is supported and is the recommended format for large IP ranges.
     </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -276,7 +276,7 @@ const Masscan = (
       IPs that have no open ports and no hostname associations are skipped to avoid creating orphaned nodes. Existing Port nodes are reused, not duplicated.
     </p>
     <p style={{ ...paraStyle, margin: 0 }}>
-      When <strong>AI Port Catalog</strong> is enabled, the same AI port table used by Naabu fires here too — open AI ports also MERGE a <strong>Technology</strong> node with <span style={codeStyle}>category=ai-*</span> linked to the Service via <span style={codeStyle}>:USES_TECHNOLOGY</span> with <span style={codeStyle}>detected_by=masscan-ai-port</span>.
+      When <strong>AI Port Catalog</strong> is enabled, the same AI port table used by Naabu fires here too - open AI ports also MERGE a <strong>Technology</strong> node with <span style={codeStyle}>category=ai-*</span> linked to the Service via <span style={codeStyle}>:USES_TECHNOLOGY</span> with <span style={codeStyle}>detected_by=masscan-ai-port</span>.
     </p>
   </div>
 )
@@ -288,8 +288,8 @@ const Nmap = (
       Nmap scans a list of IP addresses against a list of ports. Both come from the graph:
     </p>
     <ul style={listStyle}>
-      <li><strong>IPs</strong> — read from IP nodes that already have Port relationships (output of Naabu/Masscan). Falls back to apex Domain IPs if no port-scan data exists yet.</li>
-      <li><strong>Ports</strong> — the union of every Port node discovered in earlier phases. If no Port nodes exist, Nmap falls back to its built-in top-ports list.</li>
+      <li><strong>IPs</strong> - read from IP nodes that already have Port relationships (output of Naabu/Masscan). Falls back to apex Domain IPs if no port-scan data exists yet.</li>
+      <li><strong>Ports</strong> - the union of every Port node discovered in earlier phases. If no Port nodes exist, Nmap falls back to its built-in top-ports list.</li>
     </ul>
     <p style={paraStyle}>
       Custom IPs/CIDRs and ports from the partial recon modal merge with the graph data. CIDRs above /24 are rejected.
@@ -297,7 +297,7 @@ const Nmap = (
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
     <p style={paraStyle}>
-      Nmap is primarily an enrichment scanner — it doesn't usually create Port nodes (Naabu/Masscan does that), but it adds rich detail to existing ones:
+      Nmap is primarily an enrichment scanner - it doesn't usually create Port nodes (Naabu/Masscan does that), but it adds rich detail to existing ones:
     </p>
     <ul style={listStyle}>
       <li>Each scanned Port is enriched with detected product, version, and CPE.</li>
@@ -327,7 +327,7 @@ const Httpx = (
     </p>
     <ol style={listStyle}>
       <li>
-        <strong>Primary — Port nodes:</strong> for every (host, port) pair in the graph (Naabu/Masscan output), the protocol is picked by port number and detected service:
+        <strong>Primary - Port nodes:</strong> for every (host, port) pair in the graph (Naabu/Masscan output), the protocol is picked by port number and detected service:
         <ul style={{ ...listStyle, marginTop: '4px', marginBottom: 0 }}>
           <li>port 443 or service detected as https/ssl/tls → <span style={codeStyle}>https://host</span></li>
           <li>port 80 or service detected as http → <span style={codeStyle}>http://host</span></li>
@@ -337,7 +337,7 @@ const Httpx = (
         </ul>
       </li>
       <li style={{ marginTop: '6px' }}>
-        <strong>Fallback — Subdomain nodes:</strong> only if the port-scan source produced zero URLs. For each resolved host, probes default ports plus a wide set of common HTTP/HTTPS alternates: 80, 443, 8080, 8000, 8888, 3000, 5000, 9000, 8443, 4443, 9443.
+        <strong>Fallback - Subdomain nodes:</strong> only if the port-scan source produced zero URLs. For each resolved host, probes default ports plus a wide set of common HTTP/HTTPS alternates: 80, 443, 8080, 8000, 8888, 3000, 5000, 9000, 8443, 4443, 9443.
       </li>
     </ol>
     <p style={paraStyle}>
@@ -377,9 +377,9 @@ const Katana = (
       Katana's target list is the <strong>union of every available source</strong>, deduplicated. Sources are merged, never shadowed:
     </p>
     <ol style={listStyle}>
-      <li><strong>BaseURL nodes</strong> — live URLs verified by HTTP Probing (status &lt; 500). httpx already picked the working scheme; the other scheme is NOT re-added for the same hostname.</li>
-      <li><strong>Subdomain nodes</strong> — for every Subdomain whose host is <em>not</em> already represented by a BaseURL, both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> are added. Catches subdomains discovered after httpx ran (or via Subfinder mid-pipeline).</li>
-      <li><strong>Custom URLs</strong> from the partial recon modal — added and can be attached to an existing BaseURL via the modal's selector.</li>
+      <li><strong>BaseURL nodes</strong> - live URLs verified by HTTP Probing (status &lt; 500). httpx already picked the working scheme; the other scheme is NOT re-added for the same hostname.</li>
+      <li><strong>Subdomain nodes</strong> - for every Subdomain whose host is <em>not</em> already represented by a BaseURL, both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> are added. Catches subdomains discovered after httpx ran (or via Subfinder mid-pipeline).</li>
+      <li><strong>Custom URLs</strong> from the partial recon modal - added and can be attached to an existing BaseURL via the modal's selector.</li>
     </ol>
     <p style={paraStyle}>
       Katana is the deepest crawler in the pipeline: it executes JavaScript (when JS Crawl is enabled) to discover paths that only become visible after the page renders, including SPA routes and dynamically loaded API endpoints.
@@ -395,7 +395,7 @@ const Katana = (
       <li>The Domain is enriched with crawl metadata: total endpoints discovered, total parameters, total forms, and a timestamp.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Out-of-scope discoveries do not pollute the project graph — they're either ignored or stored as orphan nodes for traceability, depending on settings. Endpoints are deduplicated by path + method.
+      Out-of-scope discoveries do not pollute the project graph - they're either ignored or stored as orphan nodes for traceability, depending on settings. Endpoints are deduplicated by path + method.
     </p>
   </div>
 )
@@ -435,12 +435,12 @@ const Hakrawler = (
       Hakrawler's target list is built as the <strong>union of every available source</strong>, deduplicated:
     </p>
     <ol style={listStyle}>
-      <li><strong>BaseURL nodes</strong> — live URLs from HTTP Probing (status &lt; 500), used in the scheme httpx confirmed.</li>
-      <li><strong>Subdomain nodes</strong> not already covered by a BaseURL — added as <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> so newly discovered subs get crawled even if httpx hasn't re-run.</li>
-      <li><strong>Custom URLs</strong> from the partial recon modal — appended; can be attached to an existing BaseURL.</li>
+      <li><strong>BaseURL nodes</strong> - live URLs from HTTP Probing (status &lt; 500), used in the scheme httpx confirmed.</li>
+      <li><strong>Subdomain nodes</strong> not already covered by a BaseURL - added as <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> so newly discovered subs get crawled even if httpx hasn't re-run.</li>
+      <li><strong>Custom URLs</strong> from the partial recon modal - appended; can be attached to an existing BaseURL.</li>
     </ol>
     <p style={paraStyle}>
-      It is a lighter-weight crawler than Katana — fewer dependencies, faster, but does not execute JavaScript. Best used as a quick first pass or as an alternative when you don't need JS-rendered pages.
+      It is a lighter-weight crawler than Katana - fewer dependencies, faster, but does not execute JavaScript. Best used as a quick first pass or as an alternative when you don't need JS-rendered pages.
     </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -451,7 +451,7 @@ const Hakrawler = (
       <li>Endpoints flagged as having parameters are marked so downstream tools can pick them up.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Endpoints are deduplicated across multiple crawl runs (and across crawlers — Hakrawler shares deduplication with Katana). Out-of-scope discoveries are skipped to keep the graph clean.
+      Endpoints are deduplicated across multiple crawl runs (and across crawlers - Hakrawler shares deduplication with Katana). Out-of-scope discoveries are skipped to keep the graph clean.
     </p>
   </div>
 )
@@ -463,8 +463,8 @@ const Kiterunner = (
       Kiterunner brute-forces a target list against an API-route wordlist to find endpoints that don't appear in HTML or JavaScript (typical of API-only services). The target list is the <strong>union of every available source</strong>, deduplicated:
     </p>
     <ol style={listStyle}>
-      <li><strong>BaseURL nodes</strong> — live URLs from HTTP Probing (preferred, scheme already verified).</li>
-      <li><strong>Subdomain nodes</strong> not yet covered by a BaseURL — both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> added, so freshly discovered subs get tested without re-running httpx.</li>
+      <li><strong>BaseURL nodes</strong> - live URLs from HTTP Probing (preferred, scheme already verified).</li>
+      <li><strong>Subdomain nodes</strong> not yet covered by a BaseURL - both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> added, so freshly discovered subs get tested without re-running httpx.</li>
       <li><strong>Custom URLs</strong> from the partial recon modal.</li>
     </ol>
 
@@ -489,10 +489,10 @@ const Ffuf = (
       Ffuf appends wordlist entries to each base URL (e.g. <span style={codeStyle}>https://api.example.com/FUZZ</span>) to discover hidden paths or parameters. The base URL list is the <strong>union of every available source</strong>, deduplicated:
     </p>
     <ol style={listStyle}>
-      <li><strong>BaseURL nodes</strong> — live URLs from HTTP Probing (status &lt; 500), used in the verified scheme.</li>
-      <li><strong>Endpoint nodes</strong> — existing paths used as deeper fuzz roots (e.g. <span style={codeStyle}>https://host/path/FUZZ</span>).</li>
-      <li><strong>Subdomain nodes</strong> not yet covered by a BaseURL — both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> added so freshly discovered subs get fuzzed.</li>
-      <li><strong>Custom URLs</strong> from the partial recon modal — added to the fuzz list and treated as live targets.</li>
+      <li><strong>BaseURL nodes</strong> - live URLs from HTTP Probing (status &lt; 500), used in the verified scheme.</li>
+      <li><strong>Endpoint nodes</strong> - existing paths used as deeper fuzz roots (e.g. <span style={codeStyle}>https://host/path/FUZZ</span>).</li>
+      <li><strong>Subdomain nodes</strong> not yet covered by a BaseURL - both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> added so freshly discovered subs get fuzzed.</li>
+      <li><strong>Custom URLs</strong> from the partial recon modal - added to the fuzz list and treated as live targets.</li>
     </ol>
     <p style={paraStyle}>
       When <strong>AI in Pipeline</strong> is enabled, file extensions are chosen per target by AI from response headers (Server, X-Powered-By, etc.). The static extension list is ignored. The AI call is cached by header fingerprint so multiple targets behind the same stack only cost one call.
@@ -506,7 +506,7 @@ const Ffuf = (
       <li>The Domain is enriched with a count of endpoints discovered through fuzzing.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Endpoints are deduplicated by path + method. Fuzzing produces broader coverage than crawling but lower confidence — endpoints found by Ffuf alone are less likely to be linked from real application flow.
+      Endpoints are deduplicated by path + method. Fuzzing produces broader coverage than crawling but lower confidence - endpoints found by Ffuf alone are less likely to be linked from real application flow.
     </p>
 
     <div style={sectionTitleStyle}>When the scan refuses to start</div>
@@ -523,8 +523,8 @@ const Jsluice = (
       Jsluice consumes a list of URLs pointing to JavaScript resources. The list is built additively from two graph sources:
     </p>
     <ol style={listStyle}>
-      <li><strong>Endpoint nodes</strong> — full URLs reconstructed from each Endpoint and its parent BaseURL, prioritizing those ending in <span style={codeStyle}>.js</span> or known JS path patterns.</li>
-      <li><strong>BaseURL nodes</strong> — used as crawl roots when no specific JS endpoints exist yet.</li>
+      <li><strong>Endpoint nodes</strong> - full URLs reconstructed from each Endpoint and its parent BaseURL, prioritizing those ending in <span style={codeStyle}>.js</span> or known JS path patterns.</li>
+      <li><strong>BaseURL nodes</strong> - used as crawl roots when no specific JS endpoints exist yet.</li>
     </ol>
     <p style={paraStyle}>
       Custom URLs from the partial recon modal are appended to the analysis list. Jsluice fetches each JavaScript resource and parses it with JS-aware tooling to extract URL strings, API paths, embedded routes, and secrets.
@@ -537,7 +537,7 @@ const Jsluice = (
       <li>The BaseURL is enriched with the count of secrets found and an analysis timestamp.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Secrets are deduplicated by (type + source URL + content hash). Jsluice integrates into the Resource Enumeration pipeline — its findings are unified with those from Katana / Hakrawler.
+      Secrets are deduplicated by (type + source URL + content hash). Jsluice integrates into the Resource Enumeration pipeline - its findings are unified with those from Katana / Hakrawler.
     </p>
 
     <div style={sectionTitleStyle}>When the scan refuses to start</div>
@@ -554,15 +554,15 @@ const JsRecon = (
       JS Recon downloads JavaScript files and analyses them for sensitive data and hidden routes. Two graph sources, additive:
     </p>
     <ol style={listStyle}>
-      <li><strong>Endpoint nodes</strong> — full URLs reconstructed from each Endpoint + parent BaseURL.</li>
-      <li><strong>BaseURL nodes</strong> — used to crawl for JS files when no specific endpoints are known.</li>
+      <li><strong>Endpoint nodes</strong> - full URLs reconstructed from each Endpoint + parent BaseURL.</li>
+      <li><strong>BaseURL nodes</strong> - used to crawl for JS files when no specific endpoints are known.</li>
     </ol>
     <p style={paraStyle}>
       Two extra inputs from the partial recon modal:
     </p>
     <ul style={listStyle}>
-      <li><strong>Custom URLs</strong> — appended to the analysis list.</li>
-      <li><strong>JS file uploads</strong> — uploaded <span style={codeStyle}>.js</span> files are analysed offline, skipping the URL-fetching step entirely. Useful for analysing JS bundles that aren't accessible via the live web.</li>
+      <li><strong>Custom URLs</strong> - appended to the analysis list.</li>
+      <li><strong>JS file uploads</strong> - uploaded <span style={codeStyle}>.js</span> files are analysed offline, skipping the URL-fetching step entirely. Useful for analysing JS bundles that aren't accessible via the live web.</li>
     </ul>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -570,12 +570,12 @@ const JsRecon = (
       <li>Each regex-matched secret (API keys, hardcoded endpoints, auth tokens) becomes a <strong>Secret</strong> node attached to its source BaseURL.</li>
       <li>URLs found inside JS source become <strong>Endpoint</strong> nodes attached to the matching BaseURL, tagged with their source JS file.</li>
       <li>Variable assignments and route definitions extracted from JS produce <strong>Parameter</strong> nodes attached to relevant Endpoints.</li>
-      <li>Detected JS libraries and frameworks (React, Vue, jQuery, etc.) become <strong>JsReconFinding</strong> nodes (with finding type "framework") attached to the analysed JS file via <span style={codeStyle}>HAS_JS_FINDING</span>. They are <em>not</em> currently promoted to Technology nodes, so they do not feed the CVE Lookup phase — that's a known gap.</li>
+      <li>Detected JS libraries and frameworks (React, Vue, jQuery, etc.) become <strong>JsReconFinding</strong> nodes (with finding type "framework") attached to the analysed JS file via <span style={codeStyle}>HAS_JS_FINDING</span>. They are <em>not</em> currently promoted to Technology nodes, so they do not feed the CVE Lookup phase - that's a known gap.</li>
       <li><strong>AI SDK detection</strong> (Adversarial AI Phase 6): every bundle is also scanned for AI/LLM SDK imports, hard-coded provider keys, the <span style={codeStyle}>dangerouslyAllowBrowser</span> opt-in, and AI-frontend product markers in shipped JS chunks. Each hit becomes a <strong>JsReconFinding</strong> with finding type <span style={codeStyle}>ai-sdk-client</span>, <span style={codeStyle}>ai-sdk-key-literal</span>, <span style={codeStyle}>ai-sdk-browser-allowed</span>, <span style={codeStyle}>ai-frontend-detected</span>, or <span style={codeStyle}>ai-provider-url</span>. When a hard-coded AI key matches an existing Secret on the same JS file, that Secret node is enriched with an <span style={codeStyle}>ai_provider</span> property so generic secret queries pivot directly to the AI-context view.</li>
       <li>The BaseURL is enriched with arrays of detected frameworks, libraries, and a count of secrets found in JS.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Secrets from minified or transpiled JS are extracted using regex matching with severity scoring. Endpoint references found in JS but never linked from real navigation are still added — they expose APIs that may not appear via crawling.
+      Secrets from minified or transpiled JS are extracted using regex matching with severity scoring. Endpoint references found in JS but never linked from real navigation are still added - they expose APIs that may not appear via crawling.
     </p>
   </div>
 )
@@ -587,8 +587,8 @@ const Arjun = (
       Arjun fuzzes endpoint URLs to discover hidden HTTP parameters. It tests across GET, POST, and JSON body, and reports parameters that produce a different response from the baseline. Two graph sources, additive:
     </p>
     <ol style={listStyle}>
-      <li><strong>Endpoint nodes</strong> — full URLs reconstructed from Endpoint + parent BaseURL. Endpoints already known to have parameters are prioritized — Arjun discovers <em>additional</em> hidden parameters beyond the ones already known.</li>
-      <li><strong>BaseURL nodes</strong> — used to test the root path when no specific endpoints exist.</li>
+      <li><strong>Endpoint nodes</strong> - full URLs reconstructed from Endpoint + parent BaseURL. Endpoints already known to have parameters are prioritized - Arjun discovers <em>additional</em> hidden parameters beyond the ones already known.</li>
+      <li><strong>BaseURL nodes</strong> - used to test the root path when no specific endpoints exist.</li>
     </ol>
     <p style={paraStyle}>
       Custom URLs from the partial recon modal are appended to the test list.
@@ -597,7 +597,7 @@ const Arjun = (
     <div style={sectionTitleStyle}>How output transforms the graph</div>
     <ul style={listStyle}>
       <li>Each discovered hidden parameter becomes a <strong>Parameter</strong> node linked to its Endpoint via <span style={codeStyle}>HAS_PARAMETER</span>.</li>
-      <li>Parameters from Arjun are tagged as discovered via fuzzing (no sample values — Arjun is discovery-only, it doesn't capture observed values).</li>
+      <li>Parameters from Arjun are tagged as discovered via fuzzing (no sample values - Arjun is discovery-only, it doesn't capture observed values).</li>
       <li>Each tested Endpoint is marked as Arjun-tested with a count of parameters found.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
@@ -673,20 +673,20 @@ const Nuclei = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      Nuclei scans a flat list of URLs built as the <strong>union of every available source</strong>, deduplicated. Sources are merged, never shadowed — newly discovered subdomains that haven't been probed yet are still scanned alongside existing BaseURLs and Endpoints.
+      Nuclei scans a flat list of URLs built as the <strong>union of every available source</strong>, deduplicated. Sources are merged, never shadowed - newly discovered subdomains that haven't been probed yet are still scanned alongside existing BaseURLs and Endpoints.
     </p>
     <ol style={listStyle}>
       <li>
-        <strong>Endpoint nodes (resource_enum)</strong> — full URLs reconstructed from each Endpoint and its parent BaseURL, with sample parameter values filled in. Example: <span style={codeStyle}>https://api.example.com/users?id=1</span>. Highest fidelity.
+        <strong>Endpoint nodes (resource_enum)</strong> - full URLs reconstructed from each Endpoint and its parent BaseURL, with sample parameter values filled in. Example: <span style={codeStyle}>https://api.example.com/users?id=1</span>. Highest fidelity.
       </li>
       <li>
-        <strong>BaseURL nodes (httpx-verified live URLs)</strong> — included as-is. Example: <span style={codeStyle}>https://api.example.com:8443</span>. httpx already picked the working scheme, so the other scheme is NOT re-added for the same hostname.
+        <strong>BaseURL nodes (httpx-verified live URLs)</strong> - included as-is. Example: <span style={codeStyle}>https://api.example.com:8443</span>. httpx already picked the working scheme, so the other scheme is NOT re-added for the same hostname.
       </li>
       <li>
-        <strong>Subdomain nodes</strong> — for every Subdomain whose hostname is <em>not</em> already represented in sources 1 or 2, both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> are added. This catches new subdomains discovered after httpx ran. Default ports only.
+        <strong>Subdomain nodes</strong> - for every Subdomain whose hostname is <em>not</em> already represented in sources 1 or 2, both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> are added. This catches new subdomains discovered after httpx ran. Default ports only.
       </li>
       <li>
-        <strong>IPs</strong> — only added when <em>Scan All IPs</em> is enabled in the Nuclei settings. Default off (hostnames only).
+        <strong>IPs</strong> - only added when <em>Scan All IPs</em> is enabled in the Nuclei settings. Default off (hostnames only).
       </li>
     </ol>
     <p style={paraStyle}>
@@ -696,10 +696,10 @@ const Nuclei = (
       <strong>Domain</strong> and <strong>Technology</strong> are listed as inputs but they don't produce target URLs. They feed the post-scan enrichment phases: Technology → CVE Lookup, Domain → Security Checks (SPF, DMARC, DNSSEC, zone transfer).
     </p>
     <p style={paraStyle}>
-      <strong>Include Tags</strong> drives whether the built-in ~8000-template pool runs at all. With tags set, nuclei loads the built-in pool and filters by those tags. With tags <em>empty</em>, the built-in pool is <em>not</em> loaded — only the custom templates you've selected run. If <em>both</em> tags and custom templates are empty, the detection pass is skipped (the run becomes a no-op unless DAST mode produces something). Default tags: <span style={codeStyle}>cve, xss, sqli, rce, lfi, ssrf, xxe, ssti</span>. Default exclude: <span style={codeStyle}>dos, fuzz</span> (kept out of production scans).
+      <strong>Include Tags</strong> drives whether the built-in ~8000-template pool runs at all. With tags set, nuclei loads the built-in pool and filters by those tags. With tags <em>empty</em>, the built-in pool is <em>not</em> loaded - only the custom templates you've selected run. If <em>both</em> tags and custom templates are empty, the detection pass is skipped (the run becomes a no-op unless DAST mode produces something). Default tags: <span style={codeStyle}>cve, xss, sqli, rce, lfi, ssrf, xxe, ssti</span>. Default exclude: <span style={codeStyle}>dos, fuzz</span> (kept out of production scans).
     </p>
     <p style={paraStyle}>
-      <strong>DAST mode</strong> is a <em>filter</em>, not an additional source. When enabled, nuclei runs ONLY templates with a <span style={codeStyle}>fuzz:</span> directive (~300 of ~8000) — detection templates and your custom detection templates are skipped. Combine with DAST-native tags (<span style={codeStyle}>sqli, xss, ssrf, xxe, ssti, lfi, rce</span>); detection-class tags like <span style={codeStyle}>graphql, apollo, hasura, exposure</span> intersect to an empty set and the scan fatals.
+      <strong>DAST mode</strong> is a <em>filter</em>, not an additional source. When enabled, nuclei runs ONLY templates with a <span style={codeStyle}>fuzz:</span> directive (~300 of ~8000) - detection templates and your custom detection templates are skipped. Combine with DAST-native tags (<span style={codeStyle}>sqli, xss, ssrf, xxe, ssti, lfi, rce</span>); detection-class tags like <span style={codeStyle}>graphql, apollo, hasura, exposure</span> intersect to an empty set and the scan fatals.
     </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -728,7 +728,7 @@ const GraphqlScan = (
       GraphQL Scan probes a list of candidate paths against each <strong>BaseURL</strong> in the graph (e.g. <span style={codeStyle}>/graphql</span>, <span style={codeStyle}>/api/graphql</span>, <span style={codeStyle}>/v1/graphql</span>). The candidate path list is configured in the GraphQL Scan settings.
     </p>
     <p style={paraStyle}>
-      Existing <strong>Endpoint</strong> nodes — especially those already tagged as GraphQL by upstream tools (JS Recon, Katana) — are re-tested with deeper checks: introspection queries, batch queries, mutations, and field probing.
+      Existing <strong>Endpoint</strong> nodes - especially those already tagged as GraphQL by upstream tools (JS Recon, Katana) - are re-tested with deeper checks: introspection queries, batch queries, mutations, and field probing.
     </p>
     <p style={paraStyle}>
       The Input counter shows how many endpoints in the graph are <strong>already flagged as GraphQL</strong>. These get the deep-test path rather than blind path probing. Custom URLs from the partial recon modal are added as additional candidate paths for that scan run.
@@ -739,7 +739,7 @@ const GraphqlScan = (
       <li>Endpoints that respond as valid GraphQL servers are tagged with type "graphql" and given a GraphQL version property.</li>
       <li>If introspection is enabled on the server, the schema is captured: a <strong>GraphqlSchema</strong> node is created and linked from the Endpoint via <span style={codeStyle}>HAS_SCHEMA</span>.</li>
       <li>Each schema field becomes a <strong>GraphqlField</strong> node, each custom type becomes a <strong>GraphqlType</strong>, and each public query becomes a <strong>GraphqlQuery</strong>, all linked from the schema.</li>
-      <li>Endpoints with introspection enabled are flagged separately — this is itself a security finding worth investigating.</li>
+      <li>Endpoints with introspection enabled are flagged separately - this is itself a security finding worth investigating.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
       Capturing the full schema gives downstream tools (manual review, custom Nuclei templates, exploit scripts) the data they need for targeted attacks. Existing schema nodes are reused, not duplicated.
@@ -756,7 +756,7 @@ const SubdomainTakeover = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      Subdomain Takeover checks every <strong>Subdomain</strong> node in the graph for dangling DNS records — typically a CNAME pointing to a deprovisioned cloud service (S3, Heroku, GitHub Pages, Azure, etc.).
+      Subdomain Takeover checks every <strong>Subdomain</strong> node in the graph for dangling DNS records - typically a CNAME pointing to a deprovisioned cloud service (S3, Heroku, GitHub Pages, Azure, etc.).
     </p>
     <p style={paraStyle}>
       Crucially, <strong>unresolved subdomains are still scanned</strong>. A subdomain with a CNAME but no A record is exactly the takeover signal we're looking for. If a subdomain ever existed in the graph but no longer resolves, it stays in the test list.
@@ -862,7 +862,7 @@ const SecurityChecks = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      Security Checks runs <strong>multiple parallel input streams</strong>, one per check category. There is no single target list — each individual check (~27 of them in the settings) picks the input it needs from the graph:
+      Security Checks runs <strong>multiple parallel input streams</strong>, one per check category. There is no single target list - each individual check (~27 of them in the settings) picks the input it needs from the graph:
     </p>
     <ul style={listStyle}>
       <li><strong>BaseURLs</strong> → header checks (Referrer-Policy, COOP/CORP/COEP, Cache-Control, CSP), session/cookie checks, login form checks, insecure form action checks.</li>
@@ -871,7 +871,7 @@ const SecurityChecks = (
       <li><strong>Domain (apex)</strong> → DNS-level checks scoped to the root domain (apex SPF, apex DMARC).</li>
     </ul>
     <p style={paraStyle}>
-      All four sources are <strong>additive</strong> — there's no priority chain. Disabling a specific toggle in the settings skips that check's input slice. Custom subdomains, IPs, and URLs from the partial recon modal merge into the appropriate pool.
+      All four sources are <strong>additive</strong> - there's no priority chain. Disabling a specific toggle in the settings skips that check's input slice. Custom subdomains, IPs, and URLs from the partial recon modal merge into the appropriate pool.
     </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
@@ -882,7 +882,7 @@ const SecurityChecks = (
       <li>The Domain is enriched with a security-assessment timestamp.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Findings are typically low-severity but high volume — the value is in tracking compliance and configuration drift over time. Re-running updates the timestamps and adds any newly applicable findings.
+      Findings are typically low-severity but high volume - the value is in tracking compliance and configuration drift over time. Re-running updates the timestamps and adds any newly applicable findings.
     </p>
 
     <div style={sectionTitleStyle}>When the scan refuses to start</div>
@@ -896,7 +896,7 @@ const CveLookup = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      CVE Lookup consumes <strong>Technology</strong> nodes — created upstream by Nmap (from service banners), HTTP Probing (from Wappalyzer fingerprints), and JS Recon (from detected libraries).
+      CVE Lookup consumes <strong>Technology</strong> nodes - created upstream by Nmap (from service banners), HTTP Probing (from Wappalyzer fingerprints), and JS Recon (from detected libraries).
     </p>
     <p style={paraStyle}>
       Each Technology node carries a product name and a version. The tool queries CVE databases (NVD primarily, with Vulners as an alternate source) for any CVE matching that product + version combination.
@@ -920,7 +920,7 @@ const Mitre = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
     <p style={paraStyle}>
-      MITRE Enrichment consumes <strong>CVE</strong> nodes — created upstream by CVE Lookup and Nuclei. For each CVE, the tool fetches its CWE (Common Weakness Enumeration) mappings and the related CAPEC (Common Attack Pattern Enumeration) data.
+      MITRE Enrichment consumes <strong>CVE</strong> nodes - created upstream by CVE Lookup and Nuclei. For each CVE, the tool fetches its CWE (Common Weakness Enumeration) mappings and the related CAPEC (Common Attack Pattern Enumeration) data.
     </p>
     <p style={paraStyle}>
       The CVE → CWE → CAPEC mappings come from the public CVE2CAPEC database, then the detailed CWE and CAPEC metadata is pulled from MITRE's official feeds. Both data sources are cached locally with a TTL to avoid repeated downloads.
@@ -933,7 +933,7 @@ const Mitre = (
       <li>The CVE is tagged as enriched by MITRE.</li>
     </ul>
     <p style={{ ...paraStyle, margin: 0 }}>
-      Only CWEs with direct CAPEC mappings are created — inherited mappings from parent CWEs are intentionally excluded as they tend to be inaccurate. ATT&amp;CK and D3FEND are not part of this enrichment by design.
+      Only CWEs with direct CAPEC mappings are created - inherited mappings from parent CWEs are intentionally excluded as they tend to be inaccurate. ATT&amp;CK and D3FEND are not part of this enrichment by design.
     </p>
   </div>
 )

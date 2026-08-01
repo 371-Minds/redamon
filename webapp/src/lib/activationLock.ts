@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — the project activation lock (Section 4A.3).
+ * Scan Timeline - the project activation lock (Section 4A.3).
  *
  * Activating a version DELETES the live recon graph and rebuilds it from stored
  * bytes. Anything else that reads or writes that graph while the swap is in
@@ -9,7 +9,7 @@
  *   - a partial recon run
  *   - an agent session (swapping the graph mid-reasoning changes the agent's
  *     world; we block rather than corrupt the session)
- *   - the scheduler worker (F3 — it defers instead of spawning into a swap)
+ *   - the scheduler worker (F3 - it defers instead of spawning into a swap)
  *
  * The lock is a single project-scoped row flag (`Project.activationState`), taken
  * with a conditional UPDATE so two concurrent activations cannot both win. It is
@@ -81,7 +81,7 @@ export async function assertGraphNotActivating(projectId: string): Promise<NextR
   }
   return NextResponse.json(
     {
-      error: 'A version activation is in progress for this project — the graph is being swapped. Try again once it finishes.',
+      error: 'A version activation is in progress for this project - the graph is being swapped. Try again once it finishes.',
       activationInProgress: true,
     },
     { status: 409 }
@@ -128,7 +128,7 @@ export async function acquireActivationLock(
   return { acquired: true }
 }
 
-/** Always call from a `finally` — a leaked lock blocks scans and the agent. */
+/** Always call from a `finally` - a leaked lock blocks scans and the agent. */
 export async function releaseActivationLock(projectId: string): Promise<void> {
   try {
     await prisma.project.update({

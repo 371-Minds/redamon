@@ -5,7 +5,7 @@
 // API routes. A pure-JS XOR-accumulate avoids a byte-by-byte short-circuit
 // (which `===` on strings can expose to timing analysis) and is length-guarded.
 // The length check returns early, which reveals only the length of a 64-hex
-// secret (not its bytes) — an accepted, standard trade-off.
+// secret (not its bytes) - an accepted, standard trade-off.
 export function constantTimeEqual(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false
   if (a.length !== b.length) return false

@@ -9,7 +9,7 @@
  *
  * Pass the full URL (callers keep their existing `${RECON_ORCHESTRATOR_URL}/...`
  * templates); only the function name changes from `fetch` to `orchestratorFetch`.
- * Server-side only — never import this into client components.
+ * Server-side only - never import this into client components.
  *
  * TIMEOUT: every request gets a default abort timeout so a hung/slow orchestrator
  * can never make a route hang indefinitely. Without it, when the orchestrator's

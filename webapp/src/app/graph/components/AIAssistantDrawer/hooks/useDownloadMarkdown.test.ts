@@ -122,7 +122,7 @@ describe('useDownloadMarkdown header', () => {
   test('renders the LATS exploit-path search card (probes + trajectory) — regression for the dropped tree', async () => {
     await run([userMsg(0), latsSearch(1000), assistantMsg(5000)])
     expect(captured).toContain('### LATS Exploit-Path Search')
-    expect(captured).toContain('[COMPLETE — branch_collapsed]')
+    expect(captured).toContain('[COMPLETE - branch_collapsed]')
     expect(captured).toContain('3 rollouts (max 50)')
     expect(captured).toContain('2 probes')
     expect(captured).toContain('execute_curl')

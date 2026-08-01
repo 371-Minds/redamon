@@ -94,7 +94,7 @@ function buildFullDetail(
 
   // Selection ring (always created, hidden by default -- toggled via mutation)
   // Clusters render as a torus extending to ~sphereSize * 1.7, so the default
-  // selection ring would be hidden inside it — scale it out for clusters.
+  // selection ring would be hidden inside it - scale it out for clusters.
   const selectInner = isCluster ? 1.85 : THREE_CONFIG.selectionRingScale.inner
   const selectOuter = isCluster ? 2.05 : THREE_CONFIG.selectionRingScale.outer
   const selectGeometry = new THREE.RingGeometry(

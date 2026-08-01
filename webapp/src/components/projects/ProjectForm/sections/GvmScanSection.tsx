@@ -50,13 +50,13 @@ export function GvmScanSection({ data, updateField }: GvmScanSectionProps) {
                   value={data.gvmScanConfig}
                   onChange={(e) => updateField('gvmScanConfig', e.target.value)}
                 >
-                  <option value="Full and fast">Full and fast — Comprehensive, good performance (recommended)</option>
-                  <option value="Full and fast ultimate">Full and fast ultimate — Most thorough, slower</option>
-                  <option value="Full and very deep">Full and very deep — Deep scan, very slow</option>
-                  <option value="Full and very deep ultimate">Full and very deep ultimate — Maximum coverage, very slow</option>
-                  <option value="Discovery">Discovery — Network discovery only, no vulnerability tests</option>
-                  <option value="Host Discovery">Host Discovery — Basic host enumeration</option>
-                  <option value="System Discovery">System Discovery — System enumeration</option>
+                  <option value="Full and fast">Full and fast - Comprehensive, good performance (recommended)</option>
+                  <option value="Full and fast ultimate">Full and fast ultimate - Most thorough, slower</option>
+                  <option value="Full and very deep">Full and very deep - Deep scan, very slow</option>
+                  <option value="Full and very deep ultimate">Full and very deep ultimate - Maximum coverage, very slow</option>
+                  <option value="Discovery">Discovery - Network discovery only, no vulnerability tests</option>
+                  <option value="Host Discovery">Host Discovery - Basic host enumeration</option>
+                  <option value="System Discovery">System Discovery - System enumeration</option>
                 </select>
                 <span className={styles.fieldHint}>GVM scan configuration preset. &ldquo;Full and fast&rdquo; is recommended for most targets.</span>
                 <TimeEstimate estimate="Discovery: ~5-10 min | Full and fast: ~30-60 min | Deep: hours" />
@@ -69,9 +69,9 @@ export function GvmScanSection({ data, updateField }: GvmScanSectionProps) {
                   value={data.gvmScanTargets}
                   onChange={(e) => updateField('gvmScanTargets', e.target.value)}
                 >
-                  <option value="both">Both — Scan IPs and hostnames separately</option>
-                  <option value="ips_only">IPs Only — Only scan IP addresses</option>
-                  <option value="hostnames_only">Hostnames Only — Only scan hostnames/subdomains</option>
+                  <option value="both">Both - Scan IPs and hostnames separately</option>
+                  <option value="ips_only">IPs Only - Only scan IP addresses</option>
+                  <option value="hostnames_only">Hostnames Only - Only scan hostnames/subdomains</option>
                 </select>
                 <span className={styles.fieldHint}>Which targets from recon data to scan. &ldquo;Both&rdquo; provides the most thorough coverage.</span>
                 <TimeEstimate estimate="&ldquo;Both&rdquo; doubles the number of targets vs single strategy" />

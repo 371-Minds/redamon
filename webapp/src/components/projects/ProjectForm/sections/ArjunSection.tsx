@@ -19,10 +19,10 @@ interface ArjunSectionProps {
 const METHOD_OPTIONS = ['GET', 'POST', 'JSON', 'XML']
 
 const METHOD_LABELS: Record<string, string> = {
-  GET: 'GET — Query parameters',
-  POST: 'POST — Form body',
-  JSON: 'JSON — JSON body',
-  XML: 'XML — XML body',
+  GET: 'GET - Query parameters',
+  POST: 'POST - Form body',
+  JSON: 'JSON - JSON body',
+  XML: 'XML - XML body',
 }
 
 export function ArjunSection({ data, updateField, onRun }: ArjunSectionProps) {
@@ -202,7 +202,7 @@ export function ArjunSection({ data, updateField, onRun }: ArjunSectionProps) {
                 <div className={styles.toggleRow}>
                   <div>
                     <span className={styles.toggleLabel}>Passive Mode</span>
-                    <p className={styles.toggleDescription}>Use CommonCrawl, OTX, and WaybackMachine only — no active requests to target</p>
+                    <p className={styles.toggleDescription}>Use CommonCrawl, OTX, and WaybackMachine only - no active requests to target</p>
                   </div>
                   <Toggle
                     checked={data.arjunPassive}

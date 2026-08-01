@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database, Code2, Globe, Terminal, FolderTree, Download, ShieldAlert } from 'lucide-react'
+import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database, Code2, Globe, Terminal, FolderTree, Download, ShieldAlert, FileCode2 } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import { Toggle } from '@/components/ui/Toggle/Toggle'
@@ -82,6 +82,12 @@ const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
     icon: <ShieldAlert size={16} />,
   },
   {
+    id: 'xxe',
+    name: 'XML External Entity',
+    description: 'XXE testing against XML parsers: in-band file read, php-filter source read, error-based and out-of-band exfiltration via external/local DTD, SSRF via entities, XInclude, content-type switching, and XXE in SVG/DOCX/SAML uploads',
+    icon: <FileCode2 size={16} />,
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',
@@ -115,6 +121,7 @@ const DEFAULT_CONFIG: AttackSkillConfig = {
     rce: true,
     path_traversal: true,
     access_control: true,
+    xxe: true,
     brute_force_credential_guess: false,
     phishing_social_engineering: false,
     denial_of_service: false,

@@ -203,7 +203,7 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
             />
           </div>
 
-          {/* LLM Model Override — searchable dropdown */}
+          {/* LLM Model Override - searchable dropdown */}
           <div className={styles.fieldGroup}>
             <label className={styles.fieldLabel}>LLM Model Override</label>
             <div className={styles.modelSelector} ref={dropdownRef}>

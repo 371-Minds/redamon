@@ -4,7 +4,7 @@ import { isInternalRequest } from '@/lib/session'
 import { requireEffectiveUser, requireConversationAccessBySession } from '@/lib/access'
 
 // POST /api/conversations/by-session/[sessionId]/messages
-// Append messages by session ID (used by the agent backend with X-Internal-Key —
+// Append messages by session ID (used by the agent backend with X-Internal-Key -
 // carve-out; browser callers may only append to a session they own).
 export async function POST(
   request: NextRequest,

@@ -26,7 +26,7 @@ function maskProvider(provider: Record<string, unknown>): Record<string, unknown
 //
 // STRIDE I1: unmasked provider secrets (apiKey / awsSecretKey / awsBearerToken)
 // are returned ONLY to trusted internal callers that present a valid
-// `X-Internal-Key` header (the agent) — never on the strength of the plaintext
+// `X-Internal-Key` header (the agent) - never on the strength of the plaintext
 // `?internal=true` query param alone. Browser/JWT callers always receive masked
 // rows, and only for their OWN user id (or if admin), closing the cross-tenant
 // IDOR where any logged-in user could read another user's cleartext keys.

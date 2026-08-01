@@ -127,7 +127,7 @@ export function RiskScoreGauge({ vulnData, surfaceData, graphData, exploitSucces
               />
             </RadialBarChart>
           </ResponsiveContainer>
-          {/* Score overlay — centered on the chart */}
+          {/* Score overlay - centered on the chart */}
           <div style={{
             position: 'absolute',
             inset: 0,

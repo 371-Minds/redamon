@@ -89,7 +89,7 @@ export async function GET(
         if (format === 'json') {
           controller.enqueue(encoder.encode(`\n],"count":${sent},"truncated":${truncated}${errored ? `,"error":${JSON.stringify(errored)}` : ''}}\n`))
         } else {
-          if (truncated) controller.enqueue(encoder.encode(`# TRUNCATED at ${MAX_EXPORT_ROWS} rows — narrow the filters to export the rest\n`))
+          if (truncated) controller.enqueue(encoder.encode(`# TRUNCATED at ${MAX_EXPORT_ROWS} rows - narrow the filters to export the rest\n`))
           if (errored) controller.enqueue(encoder.encode(`# export error: ${errored}\n`))
         }
         controller.close()

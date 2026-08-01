@@ -52,14 +52,14 @@ export const ActiveSessions = memo(function ActiveSessions({
     )
   }
 
-  // Empty state — no sessions at all
+  // Empty state - no sessions at all
   if (totalSessions === 0 && jobs.length === 0) {
     return (
       <div className={styles.emptyState}>
         <Terminal size={40} className={styles.emptyIcon} />
         <p className={styles.emptyTitle}>No Reverse Shells</p>
         <p className={styles.emptyText}>
-          Sessions appear here when the agent establishes connections —
+          Sessions appear here when the agent establishes connections -
           reverse shells, meterpreter sessions, bind shells, and listeners.
         </p>
       </div>
@@ -68,7 +68,7 @@ export const ActiveSessions = memo(function ActiveSessions({
 
   return (
     <div className={styles.container}>
-      {/* Left panel — session list */}
+      {/* Left panel - session list */}
       <div className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <span className={styles.sidebarTitle}>
@@ -129,7 +129,7 @@ export const ActiveSessions = memo(function ActiveSessions({
         </div>
       </div>
 
-      {/* Right panel — terminal */}
+      {/* Right panel - terminal */}
       <div className={styles.main}>
         <SessionTerminal
           sessionId={selectedSessionId}

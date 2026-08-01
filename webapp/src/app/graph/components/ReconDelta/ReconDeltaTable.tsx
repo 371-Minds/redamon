@@ -56,7 +56,7 @@ type Section = 'added' | 'removed' | 'changed' | 'links' | 'security' | 'overlay
 const CURRENT = 'current'
 
 function renderValue(v: unknown): string {
-  if (v === null || v === undefined) return '—'
+  if (v === null || v === undefined) return '-'
   if (Array.isArray(v)) return v.join(', ')
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
@@ -68,7 +68,7 @@ function describe(n: DeltaNode): string {
 }
 
 /**
- * Scan Timeline — Recon Delta (Section 6.2).
+ * Scan Timeline - Recon Delta (Section 6.2).
  *
  * MVP surface first: new / removed / changed nodes with per-field old → new, plus
  * the change scorecard. The security lenses (newly exposed ports, new and
@@ -89,7 +89,7 @@ export function ReconDeltaTable({ projectId, versions, isDark = true }: ReconDel
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [section, setSection] = useState<Section>('added')
-  // Overlay (Section 6.3) is fetched separately and only when opened — it returns
+  // Overlay (Section 6.3) is fetched separately and only when opened - it returns
   // the union of both versions, which is up to twice the render set.
   const [overlay, setOverlay] = useState<OverlayPayload | null>(null)
   const [overlayLoading, setOverlayLoading] = useState(false)
@@ -439,7 +439,7 @@ interface DeltaOverlayProps {
 }
 
 /**
- * Section 6.3 — the two versions merged on the identity key and rendered through
+ * Section 6.3 - the two versions merged on the identity key and rendered through
  * the normal canvas, colored by delta state. Clicking a node shows its changed
  * fields old → new. The legend/counts + "show unchanged" toggle live on the Recon
  * Delta controls bar (one bar less here).
@@ -486,7 +486,7 @@ function DeltaOverlay({
   return (
     <div className={styles.overlayWrap}>
       {/* The legend (from→to, per-state counts, "show unchanged") lives on the
-          Recon Delta controls bar now, not as a separate row here — one bar less,
+          Recon Delta controls bar now, not as a separate row here - one bar less,
           more vertical room for the canvas. */}
       <div className={styles.overlayBody}>
         <div ref={containerRef} className={styles.overlayCanvas}>

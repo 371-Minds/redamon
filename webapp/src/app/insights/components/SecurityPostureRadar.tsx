@@ -56,13 +56,13 @@ export function SecurityPostureRadar({ graphData, vulnData, surfaceData, exploit
     // Security headers: weighted coverage across all BaseURLs
     // Weight reflects severity: 3=critical, 2=high, 1=low
     const SEC_HEADERS: [string, number][] = [
-      ['strict-transport-security', 3],   // Critical — MITM prevention
-      ['content-security-policy', 3],     // Critical — XSS/injection defense
-      ['x-frame-options', 2],            // High — clickjacking prevention
-      ['x-content-type-options', 2],     // High — MIME sniffing prevention
-      ['x-xss-protection', 1],           // Low — deprecated, CSP supersedes
-      ['referrer-policy', 1],            // Low — data leakage prevention
-      ['permissions-policy', 1],         // Low — browser feature restriction
+      ['strict-transport-security', 3],   // Critical - MITM prevention
+      ['content-security-policy', 3],     // Critical - XSS/injection defense
+      ['x-frame-options', 2],            // High - clickjacking prevention
+      ['x-content-type-options', 2],     // High - MIME sniffing prevention
+      ['x-xss-protection', 1],           // Low - deprecated, CSP supersedes
+      ['referrer-policy', 1],            // Low - data leakage prevention
+      ['permissions-policy', 1],         // Low - browser feature restriction
     ]
     const totalBaseUrls = graphData.endpointCoverage.baseUrls
     let secHeaderScore = 0

@@ -99,7 +99,7 @@ export function NaabuSection({ data, updateField, onRun }: NaabuSectionProps) {
                   </div>
                   {data.naabuCustomPorts ? (
                     <span className={styles.fieldHintWarning}>
-                      Custom Ports set &mdash; Top Ports is ignored. Only these ports are scanned and probed.
+                      Custom Ports set - Top Ports is ignored. Only these ports are scanned and probed.
                     </span>
                   ) : (
                     <span className={styles.fieldHint}>Overrides Top Ports if set. Use ranges: 8080-8090</span>
@@ -229,7 +229,7 @@ export function NaabuSection({ data, updateField, onRun }: NaabuSectionProps) {
                 <div className={styles.toggleRow}>
                   <div>
                     <span className={styles.toggleLabel}>AI Port Catalog</span>
-                    <p className={styles.toggleDescription}>Annotate AI-bearing ports (Ollama 11434, Qdrant 6333, Open WebUI 8080, vLLM, LiteLLM, Triton, Milvus, Gradio, ComfyUI, …) — emits Technology nodes with category=ai-* linked to the Service</p>
+                    <p className={styles.toggleDescription}>Annotate AI-bearing ports (Ollama 11434, Qdrant 6333, Open WebUI 8080, vLLM, LiteLLM, Triton, Milvus, Gradio, ComfyUI, …) - emits Technology nodes with category=ai-* linked to the Service</p>
                   </div>
                   <Toggle
                     checked={data.portScanAiPortCatalogEnabled ?? true}

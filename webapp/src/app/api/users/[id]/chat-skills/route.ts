@@ -6,7 +6,7 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-// GET /api/users/[id]/chat-skills — List skills (id, name, description, category, createdAt; exclude content)
+// GET /api/users/[id]/chat-skills - List skills (id, name, description, category, createdAt; exclude content)
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 const MAX_CONTENT_SIZE = 50 * 1024 // 50KB
 const MAX_SKILLS_PER_USER = 50
 
-// POST /api/users/[id]/chat-skills — Create skill { name, content, category?, description? }
+// POST /api/users/[id]/chat-skills - Create skill { name, content, category?, description? }
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params

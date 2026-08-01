@@ -69,7 +69,7 @@ export function WorkflowView({ formData, updateField, projectId, mode, onSave, o
         const ok = await confirm(
           'You are turning off Subdomain Discovery while no Subdomain Prefixes are set. ' +
           'To keep the pipeline runnable, "Include Root Domain" will be automatically ' +
-          'enabled and locked ON — the root domain becomes the only scan target. Continue?',
+          'enabled and locked ON - the root domain becomes the only scan target. Continue?',
           'Disable Subdomain Discovery?'
         )
         if (!ok) return
@@ -117,7 +117,7 @@ export function WorkflowView({ formData, updateField, projectId, mode, onSave, o
 
   const hasHighlight = highlightedNodeId !== null
 
-  // SubdomainDiscovery is locked OFF when explicit Subdomain Prefixes are set —
+  // SubdomainDiscovery is locked OFF when explicit Subdomain Prefixes are set -
   // the backend runs in FILTERED mode and skips every discovery source.
   const subdomainList = (formData as { subdomainList?: string[] }).subdomainList ?? []
   const hasExplicitPrefixes = subdomainList.some(

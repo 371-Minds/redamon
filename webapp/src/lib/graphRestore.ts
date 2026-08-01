@@ -1,5 +1,5 @@
 /**
- * Shared Neo4j restore — rebuild a project subgraph from the export/snapshot
+ * Shared Neo4j restore - rebuild a project subgraph from the export/snapshot
  * format `{labels, properties}` + `{startExportId, endExportId, type, properties}`.
  *
  * Extracted from the project import route so version activation (Scan Timeline
@@ -50,7 +50,7 @@ const DEFAULT_REL_BATCH = 500
 
 /**
  * Delete a project's graph. `excludeLabels` keeps nodes that are NOT part of the
- * recon version — notably the AttackChain family, which is agent-session state
+ * recon version - notably the AttackChain family, which is agent-session state
  * and must survive a version swap (F1).
  */
 export async function clearProjectGraph(

@@ -257,7 +257,7 @@ export function ProjectForm({
 
   // Prefer URL param on settings page so wordlist upload etc. always get a real id.
   // In create mode, generate a stable ID upfront so uploads (JS Recon, FFuf wordlists)
-  // can use it immediately — the same ID is sent to the backend on save.
+  // can use it immediately - the same ID is sent to the backend on save.
   const [generatedId] = useState(() =>
     typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 25) : ''
   )
@@ -420,7 +420,7 @@ export function ProjectForm({
   const applyPreset = useCallback(async (preset: ReconPreset) => {
     // Apply ONLY this preset's settings on a clean backend-defaults baseline, so the
     // resulting recon config never depends on whichever preset was selected before
-    // (no merge-from-previous-state — that made disabled tools "stick" across presets).
+    // (no merge-from-previous-state - that made disabled tools "stick" across presets).
     // /api/projects/defaults carries no target-identity keys (name, targetDomain, IPs,
     // RoE), so the spread base `...prev` preserves everything the user entered; the
     // defaults reset every recon-tool field to its baseline; the preset then overrides
@@ -910,7 +910,7 @@ export function ProjectForm({
             {!formData.naabuEnabled && !formData.masscanEnabled && (
               <div className={styles.shodanWarning}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                <span>Both port scanners are disabled. The recon pipeline will skip port scanning entirely &mdash; downstream modules (HTTP probe, vulnerability scanning) require open ports to function and will produce no results.</span>
+                <span>Both port scanners are disabled. The recon pipeline will skip port scanning entirely - downstream modules (HTTP probe, vulnerability scanning) require open ports to function and will produce no results.</span>
               </div>
             )}
             <NaabuSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Naabu') : undefined} />

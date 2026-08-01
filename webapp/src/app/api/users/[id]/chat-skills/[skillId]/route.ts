@@ -6,7 +6,7 @@ interface RouteParams {
   params: Promise<{ id: string; skillId: string }>
 }
 
-// GET /api/users/[id]/chat-skills/[skillId] — Full skill with content (for download)
+// GET /api/users/[id]/chat-skills/[skillId] - Full skill with content (for download)
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id, skillId } = await params
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT /api/users/[id]/chat-skills/[skillId] — Update name, description, category, or content
+// PUT /api/users/[id]/chat-skills/[skillId] - Update name, description, category, or content
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id, skillId } = await params
@@ -100,7 +100,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/users/[id]/chat-skills/[skillId] — Delete skill
+// DELETE /api/users/[id]/chat-skills/[skillId] - Delete skill
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id, skillId } = await params

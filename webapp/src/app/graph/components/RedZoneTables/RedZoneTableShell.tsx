@@ -158,7 +158,7 @@ export const RedZoneTableShell = memo(function RedZoneTableShell({
           <div className={styles.stateContainer}>
             <SearchX size={24} className={styles.emptyIcon} />
             <p className={styles.stateText}>{noMatchLabel}</p>
-            <p className={styles.stateSubtext}>{rowCount} total rows — clear the search to see them.</p>
+            <p className={styles.stateSubtext}>{rowCount} total rows - clear the search to see them.</p>
           </div>
         ) : (
           <div className={styles.tableScroll}>{children}</div>

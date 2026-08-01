@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — Scan Scheduler CRUD (Section 7.2).
+ * Scan Timeline - Scan Scheduler CRUD (Section 7.2).
  *
  * GET  /api/projects/[id]/schedules   upcoming schedules + recent run history
  * POST /api/projects/[id]/schedules   create a schedule (validated + RAM-checked)

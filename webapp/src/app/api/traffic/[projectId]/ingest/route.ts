@@ -7,7 +7,7 @@ import type { Prisma } from '@prisma/client'
 //
 // Phase 0 write path for captured HTTP transactions. Called by the recon
 // pipeline with `X-Internal-Key: SCANNER_API_KEY` (and, later, by the agent with
-// INTERNAL_API_KEY). There is NO browser-session path here — this route is
+// INTERNAL_API_KEY). There is NO browser-session path here - this route is
 // internal-only, gated in middleware to the internal/scanner allowlist.
 //
 // Trust model: tenant fields are NEVER taken from the request body. `projectId`
@@ -15,7 +15,7 @@ import type { Prisma } from '@prisma/client'
 // lookup. A compromised/rogue scanner therefore cannot forge cross-tenant rows,
 // and the webapp remains the sole Prisma writer (per README.TM trust boundaries).
 
-// Hard ceilings (defense-in-depth against DoS / Postgres bloat — §15.8).
+// Hard ceilings (defense-in-depth against DoS / Postgres bloat - §15.8).
 const MAX_INLINE_BODY_BYTES = (parseInt(process.env.CAPTURE_PROXY_MAX_BODY_KB || '64', 10) || 64) * 1024
 const MAX_TXNS_PER_REQUEST = 2000
 

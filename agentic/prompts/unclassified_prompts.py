@@ -36,6 +36,7 @@ enabled skill that HOUSES it and switch to that ID instead:
 | SQL injection, NoSQL injection, ORM injection | `sql_injection` |
 | Reflected/stored/DOM cross-site scripting, JavaScript/HTML injection into a victim browser | `xss` |
 | Server-side request forgery, webhook/URL-fetch abuse, cloud-metadata pivots, open redirect used to reach internal hosts | `ssrf` |
+| XML external entity (XXE), XML injection, attacker-supplied DOCTYPE / ENTITY / DTD, XInclude, an XML parser processing untrusted XML (SOAP, `.wsdl`, XML upload such as SVG / DOCX) | `xxe` |
 | Credential guessing / brute force / default credentials against a login | `brute_force_credential_guess` |
 | A specific CVE or Metasploit-module target | `cve_exploit` |
 

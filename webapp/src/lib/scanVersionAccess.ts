@@ -37,7 +37,7 @@ export async function requireVersionInProject(
   if (!versionId || typeof versionId !== 'string') return NOT_FOUND()
 
   // ONE query. This runs on every version request, and `snapshot` is potentially
-  // megabytes — so the row and the "does it have bytes?" answer come back
+  // megabytes - so the row and the "does it have bytes?" answer come back
   // together, with Postgres reporting the SIZE rather than shipping the payload.
   // `versionId` is bound as a parameter by the tagged template, never interpolated.
   const [row] = await prisma.$queryRaw<Array<{

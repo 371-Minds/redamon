@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       count: toNum(r.get('count')),
     }))
 
-    // Q3: Security findings with full context — traces ALL vulnerability connection paths
+    // Q3: Security findings with full context - traces ALL vulnerability connection paths
     // Covers: HAS_VULNERABILITY (from IP/BaseURL/Subdomain/Domain), FOUND_AT (DAST→Endpoint)
     const findingsResult = await session.run(
       `MATCH (v:Vulnerability {project_id: $pid})

@@ -126,11 +126,11 @@ export function validateAndParse(raw: string, fileSize: number): ParsedImport | 
   try {
     data = JSON.parse(raw)
   } catch {
-    return { message: 'Invalid JSON — file could not be parsed.' }
+    return { message: 'Invalid JSON - file could not be parsed.' }
   }
 
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return { message: 'Invalid format — expected a JSON object at the top level.' }
+    return { message: 'Invalid format - expected a JSON object at the top level.' }
   }
 
   const obj = data as Record<string, unknown>
@@ -149,7 +149,7 @@ export function validateAndParse(raw: string, fileSize: number): ParsedImport | 
   }
 
   if (!hasKeys && !hasRotation && !hasTunneling) {
-    return { message: 'Missing required section — file must contain at least one of: "keys", "rotation", "tunneling".' }
+    return { message: 'Missing required section - file must contain at least one of: "keys", "rotation", "tunneling".' }
   }
 
   const result: ParsedImport = {

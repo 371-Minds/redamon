@@ -56,7 +56,7 @@ describe('AgentStatusChips', () => {
 
   test('renders placeholders when score/stall are missing', () => {
     render(<AgentStatusChips score={null} tier={null} stall={null} latsActive={false} />)
-    // score and stall both show the em-dash placeholder
-    expect(screen.getAllByText('—').length).toBe(2)
+    // score and stall both show the hyphen placeholder
+    expect(screen.getAllByText('-').length).toBe(2)
   })
 })

@@ -3,7 +3,7 @@
  *
  * Left-to-right: root at x=0, depth grows right (x = depth * xStep). Leaves get
  * their own row; internal nodes are centered on their children. Reingold-Tilford
- * flavored but intentionally minimal — the tree is bounded at LATS_MAX_TREE_NODES
+ * flavored but intentionally minimal - the tree is bounded at LATS_MAX_TREE_NODES
  * (~60), so an O(n) post-order pass is plenty and needs no external lib.
  */
 

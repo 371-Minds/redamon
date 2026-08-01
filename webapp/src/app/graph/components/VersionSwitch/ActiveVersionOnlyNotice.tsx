@@ -15,7 +15,7 @@ interface ActiveVersionOnlyNoticeProps {
  * F0: the RedZone / analytics panels run rich Cypher against the LIVE graph by
  * project_id, so they always reflect the ACTIVE version and cannot be recomputed
  * from a stored snapshot. Rather than silently showing active-version numbers
- * under a past-version header, say so — and point at Activate, which is the
+ * under a past-version header, say so - and point at Activate, which is the
  * supported way to analyze an older version.
  */
 export function ActiveVersionOnlyNotice({

@@ -242,7 +242,7 @@ export default function SettingsPage() {
     }
   }, [userId])
 
-  // Upload skill from .md file — read file then open name modal
+  // Upload skill from .md file - read file then open name modal
   const handleSkillUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !userId) return
@@ -658,13 +658,13 @@ export default function SettingsPage() {
       for (const [, toolName] of Object.entries(TOOL_NAME_MAP)) {
         const info = rotationConfigs[toolName]
         if (info && (info as RotationInfo & { _extraKeys?: string })._extraKeys !== undefined) {
-          // New keys were set via the modal — send them
+          // New keys were set via the modal - send them
           rotPayload[toolName] = {
             extraKeys: (info as RotationInfo & { _extraKeys?: string })._extraKeys!,
             rotateEveryN: info.rotateEveryN,
           }
         } else if (info && info.extraKeyCount > 0) {
-          // Existing keys not modified — send masked marker to preserve
+          // Existing keys not modified - send masked marker to preserve
           rotPayload[toolName] = {
             extraKeys: '••••',
             rotateEveryN: info.rotateEveryN,
@@ -673,7 +673,7 @@ export default function SettingsPage() {
       }
 
       // TrafficMind capture settings are edited from the /traffic page modal, not
-      // here — strip them so a stale save on this page can't clobber those edits.
+      // here - strip them so a stale save on this page can't clobber those edits.
       const settingsPayload = Object.fromEntries(
         Object.entries(settings).filter(([k]) => !k.startsWith('captureProxy') && !k.startsWith('captureEgress'))
       )
@@ -783,7 +783,7 @@ export default function SettingsPage() {
     if (!rotationModal) return
     const existing = rotationConfigs[rotationModal]
     if (rotationDraftDirty) {
-      // User typed new keys — send them (may be empty to clear)
+      // User typed new keys - send them (may be empty to clear)
       const keys = rotationDraft.extraKeys.split('\n').filter(k => k.trim())
       setRotationConfigs(prev => ({
         ...prev,
@@ -794,7 +794,7 @@ export default function SettingsPage() {
         } as RotationInfo & { _extraKeys: string },
       }))
     } else {
-      // Only rotateEveryN changed — preserve existing keys
+      // Only rotateEveryN changed - preserve existing keys
       setRotationConfigs(prev => ({
         ...prev,
         [rotationModal]: {
@@ -858,7 +858,7 @@ export default function SettingsPage() {
         return
       }
       if (result.keyCount === 0 && result.rotationCount === 0 && result.tunnelingCount === 0) {
-        toast.error('No keys to import — all values are empty or masked.')
+        toast.error('No keys to import - all values are empty or masked.')
         return
       }
       setPendingImport(result)
@@ -882,7 +882,7 @@ export default function SettingsPage() {
     }
     setSettingsDirty(true)
     setPendingImport(null)
-    toast.success('Keys imported — click "Save Settings" to persist.')
+    toast.success('Keys imported - click "Save Settings" to persist.')
   }, [pendingImport])
 
   const searchParams = useSearchParams()
@@ -1105,7 +1105,7 @@ export default function SettingsPage() {
                     <div className={styles.providerName}>{p.name}</div>
                     <div className={styles.providerMeta}>
                       {getProviderLabel(p.providerType)}
-                      {p.providerType === 'openai_compatible' && p.modelIdentifier && ` — ${p.modelIdentifier}`}
+                      {p.providerType === 'openai_compatible' && p.modelIdentifier && ` - ${p.modelIdentifier}`}
                     </div>
                   </div>
                   <div className={styles.providerActions}>
@@ -1413,7 +1413,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="NVD API Key"
-              hint="NIST NVD API key — increases CVE lookup rate limit from 5 to 120 requests/30s"
+              hint="NIST NVD API key - increases CVE lookup rate limit from 5 to 120 requests/30s"
               signupUrl="https://nvd.nist.gov/developers/request-an-api-key"
               badges={['Recon Pipeline']}
               value={settings.nvdApiKey}
@@ -1425,7 +1425,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Vulners API Key"
-              hint="Vulners CVE database — alternative to NVD for vulnerability lookups with richer exploit data"
+              hint="Vulners CVE database - alternative to NVD for vulnerability lookups with richer exploit data"
               signupUrl="https://vulners.com/#register"
               badges={['Recon Pipeline']}
               value={settings.vulnersApiKey}
@@ -1437,7 +1437,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="URLScan API Key"
-              hint="Optional — used by URLScan.io OSINT enrichment for higher rate limits. Works without key (public results only)"
+              hint="Optional - used by URLScan.io OSINT enrichment for higher rate limits. Works without key (public results only)"
               signupUrl="https://urlscan.io/user/signup"
               badges={['Recon Pipeline']}
               value={settings.urlscanApiKey}
@@ -1450,7 +1450,7 @@ export default function SettingsPage() {
 
             <SecretField
               label="Censys API Token"
-              hint="Censys Platform personal access token — used by Recon Pipeline and Uncover engine"
+              hint="Censys Platform personal access token - used by Recon Pipeline and Uncover engine"
               signupUrl="https://accounts.censys.io/settings/personal-access-tokens"
               badges={['Recon Pipeline', 'Standalone + Uncover']}
               value={settings.censysApiToken}
@@ -1460,7 +1460,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Censys Organization ID"
-              hint="Censys Organization ID — paired with API Token above. Found on your Censys account page"
+              hint="Censys Organization ID - paired with API Token above. Found on your Censys account page"
               signupUrl="https://accounts.censys.io/settings/personal-access-tokens"
               badges={['Recon Pipeline', 'Standalone + Uncover']}
               value={settings.censysOrgId}
@@ -1470,7 +1470,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Censys Personal API Token"
-              hint="Personal Access Token from your Censys account — alternative to API ID + Secret. Takes precedence when both are set."
+              hint="Personal Access Token from your Censys account - alternative to API ID + Secret. Takes precedence when both are set."
               signupUrl="https://accounts.censys.io/settings/personal-access-tokens"
               badges={['Recon Pipeline']}
               value={settings.censysApiToken}
@@ -1480,7 +1480,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="FOFA API Key"
-              hint="FOFA cyberspace search — asset discovery by banner, certificate, domain. Key format: email:key"
+              hint="FOFA cyberspace search - asset discovery by banner, certificate, domain. Key format: email:key"
               signupUrl="https://en.fofa.info/"
               badges={['Recon Pipeline', 'Standalone + Uncover']}
               value={settings.fofaApiKey}
@@ -1492,7 +1492,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="AlienVault OTX Key"
-              hint="Open Threat Exchange — threat intelligence pulses, malware indicators, passive DNS, reputation scoring"
+              hint="Open Threat Exchange - threat intelligence pulses, malware indicators, passive DNS, reputation scoring"
               signupUrl="https://otx.alienvault.com/settings"
               badges={['Recon Pipeline']}
               value={settings.otxApiKey}
@@ -1504,7 +1504,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Netlas API Key"
-              hint="Netlas.io — internet-wide scan data with banners, certificates, and WHOIS info"
+              hint="Netlas.io - internet-wide scan data with banners, certificates, and WHOIS info"
               signupUrl="https://app.netlas.io/profile/"
               badges={['Recon Pipeline', 'Standalone + Uncover']}
               value={settings.netlasApiKey}
@@ -1528,7 +1528,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="ZoomEye API Key"
-              hint="ZoomEye cyberspace search — host/device discovery with port, banner, and geo data"
+              hint="ZoomEye cyberspace search - host/device discovery with port, banner, and geo data"
               signupUrl="https://www.zoomeye.ai/profile"
               badges={['Recon Pipeline', 'Standalone + Uncover']}
               value={settings.zoomEyeApiKey}
@@ -1540,7 +1540,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Criminal IP API Key"
-              hint="AI-powered threat intelligence — IP/domain risk scoring, vulnerability detection, proxy/VPN/Tor identification"
+              hint="AI-powered threat intelligence - IP/domain risk scoring, vulnerability detection, proxy/VPN/Tor identification"
               signupUrl="https://search.criminalip.io/mypage/information"
               badges={['Recon Pipeline', 'Standalone + Uncover']}
               value={settings.criminalIpApiKey}
@@ -1559,7 +1559,7 @@ export default function SettingsPage() {
             </div>
             <SecretField
               label="Quake API Key"
-              hint="360 Quake cyberspace search — asset discovery by service, certificate, and banner"
+              hint="360 Quake cyberspace search - asset discovery by service, certificate, and banner"
               signupUrl="https://quake.360.net/quake/#/index"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.quakeApiKey}
@@ -1571,7 +1571,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Hunter API Key"
-              hint="Qianxin Hunter cyberspace search — Chinese threat intelligence platform"
+              hint="Qianxin Hunter cyberspace search - Chinese threat intelligence platform"
               signupUrl="https://hunter.qianxin.com/"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.hunterApiKey}
@@ -1583,7 +1583,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="PublicWWW API Key"
-              hint="Search engine for source code — find websites using specific technologies, scripts, or snippets"
+              hint="Search engine for source code - find websites using specific technologies, scripts, or snippets"
               signupUrl="https://publicwww.com/profile/signup.html"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.publicWwwApiKey}
@@ -1595,7 +1595,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="HunterHow API Key"
-              hint="hunter.how internet search — asset discovery and reconnaissance"
+              hint="hunter.how internet search - asset discovery and reconnaissance"
               signupUrl="https://hunter.how/"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.hunterHowApiKey}
@@ -1607,7 +1607,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Google Custom Search API Key"
-              hint="Google Custom Search JSON API — for Uncover Google search engine (different from SerpAPI)"
+              hint="Google Custom Search JSON API - for Uncover Google search engine (different from SerpAPI)"
               signupUrl="https://developers.google.com/custom-search/v1/introduction"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.googleApiKey}
@@ -1617,7 +1617,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Google Custom Search CX"
-              hint="Programmable Search Engine ID — paired with Google API Key above"
+              hint="Programmable Search Engine ID - paired with Google API Key above"
               signupUrl="https://programmablesearchengine.google.com/controlpanel/create"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.googleApiCx}
@@ -1627,7 +1627,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Onyphe API Key"
-              hint="Onyphe — cyber defense search engine for exposed assets, threat detection, and attack surface management"
+              hint="Onyphe - cyber defense search engine for exposed assets, threat detection, and attack surface management"
               signupUrl="https://search.onyphe.io/signup"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.onypheApiKey}
@@ -1639,7 +1639,7 @@ export default function SettingsPage() {
             />
             <SecretField
               label="Driftnet API Key"
-              hint="Driftnet — fast internet-wide port and service discovery"
+              hint="Driftnet - fast internet-wide port and service discovery"
               signupUrl="https://driftnet.io/auth?state=signup"
               badges={['Uncover', 'Recon Pipeline']}
               value={settings.driftnetApiKey}
@@ -1662,7 +1662,7 @@ export default function SettingsPage() {
           </h2>
         </div>
         <p className={styles.sectionHint}>
-          Configure reverse shell tunneling. Choose ngrok (free, single port) or chisel (requires VPS). Tunnels must be explicitly enabled below and are turned OFF automatically on restart — re-enable them each session (they expose an internet-reachable listener, breaking the LAN-only posture).
+          Configure reverse shell tunneling. Choose ngrok (free, single port) or chisel (requires VPS). Tunnels must be explicitly enabled below and are turned OFF automatically on restart - re-enable them each session (they expose an internet-reachable listener, breaking the LAN-only posture).
         </p>
         {settingsLoading ? (
           <div className={styles.emptyState}><Loader2 size={16} className={styles.spin} /> Loading...</div>
@@ -1705,7 +1705,7 @@ export default function SettingsPage() {
             </div>
             <SecretField
               label="Chisel Auth"
-              hint="user:pass for chisel server authentication (optional — only if your chisel server requires auth)"
+              hint="user:pass for chisel server authentication (optional - only if your chisel server requires auth)"
               value={settings.chiselAuth}
               visible={!!visibleFields.chiselAuth}
               onToggle={() => toggleFieldVisibility('chiselAuth')}
@@ -1781,7 +1781,7 @@ export default function SettingsPage() {
             maxLength={500}
           />
           <span className="formHint">
-            Helps the agent understand when to use this skill. Without a description, the first 500 characters of the markdown are used instead &mdash; a good description improves classification accuracy.
+            Helps the agent understand when to use this skill. Without a description, the first 500 characters of the markdown are used instead - a good description improves classification accuracy.
           </span>
         </div>
       </Modal>
@@ -1823,7 +1823,7 @@ export default function SettingsPage() {
             autoFocus
           />
           <span className="formHint">
-            Helps the agent understand when to use this skill. Without a description, the first 500 characters of the markdown are used instead &mdash; a good description improves classification accuracy.
+            Helps the agent understand when to use this skill. Without a description, the first 500 characters of the markdown are used instead - a good description improves classification accuracy.
           </span>
         </div>
       </Modal>
@@ -1954,7 +1954,7 @@ export default function SettingsPage() {
       <Modal
         isOpen={!!rotationModal}
         onClose={closeRotationModal}
-        title={`Key Rotation — ${rotationModal || ''}`}
+        title={`Key Rotation - ${rotationModal || ''}`}
         size="small"
         footer={
           <>
@@ -2362,7 +2362,7 @@ function SecretField({
         {hint}
         {signupUrl && (
           <>
-            {' — '}
+            {' - '}
             <a href={signupUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }}>
               Get API key
             </a>

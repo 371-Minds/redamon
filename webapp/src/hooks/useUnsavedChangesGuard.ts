@@ -18,7 +18,7 @@ export interface UnsavedChangesGuard {
  *
  * While `isDirty`:
  *  - registers a `beforeunload` listener so browser refresh/close/tab-close
- *    prompts (native dialog only — a browser constraint; the custom modal cannot
+ *    prompts (native dialog only - a browser constraint; the custom modal cannot
  *    be shown for real unloads);
  *  - registers `confirmDiscard` with the NavigationGuardContext so the sidebar
  *    (and any in-app navigator that consults it) prompts before navigating.

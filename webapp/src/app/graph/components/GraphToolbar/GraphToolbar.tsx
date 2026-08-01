@@ -243,7 +243,7 @@ export function GraphToolbar({
       {stealthMode && (
         <>
           <div className={styles.divider} />
-          <div className={styles.stealthBadge} title="Stealth Mode is active — passive/low-noise techniques only">
+          <div className={styles.stealthBadge} title="Stealth Mode is active - passive/low-noise techniques only">
             <StealthIcon size={12} />
             <span>Stealth</span>
           </div>
@@ -253,7 +253,7 @@ export function GraphToolbar({
       {roeEnabled && (
         <>
           <div className={styles.divider} />
-          <div className={styles.roeBadge} title="Rules of Engagement are active — guardrails enforced on recon and agent">
+          <div className={styles.roeBadge} title="Rules of Engagement are active - guardrails enforced on recon and agent">
             <Shield size={12} />
             <span>RoE</span>
           </div>
@@ -278,7 +278,7 @@ export function GraphToolbar({
         className={`${styles.emergencyPauseButton} ${isEmergencyPausing ? styles.emergencyPauseButtonActive : ''}`}
         onClick={onEmergencyPauseAll}
         disabled={!isAnyPipelineRunning && !isEmergencyPausing}
-        title="EMERGENCY PAUSE — Freeze all running containers immediately. Use if scanning or exploiting unwanted targets."
+        title="EMERGENCY PAUSE - Freeze all running containers immediately. Use if scanning or exploiting unwanted targets."
       >
         {isEmergencyPausing ? (
           <Loader2 size={14} className={styles.spinner} />

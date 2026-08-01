@@ -179,14 +179,14 @@ Red team operators performing authorized reconnaissance against targets with act
     nucleiScanAllIps: false,
     nucleiExcludeTags: ['dos', 'fuzz', 'intrusive', 'sqli', 'rce'],
 
-    // --- VHost & SNI: explicitly disabled — 2300+ probes would be both
+    // --- VHost & SNI: explicitly disabled - 2300+ probes would be both
     //     catastrophically slow AND noisy ---
     vhostSniEnabled: false,
 
     // --- Subdomain Takeover: passive DNS-only (subjack), disable active Nuclei templates ---
     subdomainTakeoverEnabled: true,
     subjackEnabled: true,
-    subjackAll: false,           // CNAME-identified only — avoids probing every host
+    subjackAll: false,           // CNAME-identified only - avoids probing every host
     subjackCheckNs: true,        // Pure DNS, safe
     subjackCheckMail: true,      // Pure DNS, safe
     subjackThreads: 3,

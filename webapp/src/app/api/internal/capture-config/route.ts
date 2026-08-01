@@ -4,7 +4,7 @@ import { isInternalRequest } from '@/lib/session'
 
 export const runtime = 'nodejs'
 
-// GET /api/internal/capture-config — internal-only.
+// GET /api/internal/capture-config - internal-only.
 //
 // Returns the GLOBAL TrafficMind capture-proxy config (egress guard + body-storage
 // policy) as the exact JSON shape the capture proxy's config file uses. The DB

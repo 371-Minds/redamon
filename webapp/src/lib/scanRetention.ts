@@ -1,10 +1,10 @@
 /**
- * Scan Timeline — retention / GC (Section 5).
+ * Scan Timeline - retention / GC (Section 5).
  *
  * Snapshots are copies of the graph, so an unbounded timeline grows Postgres
  * without limit. Policy: keep the newest N UNPINNED past versions per project;
  * older unpinned ones are deleted (row + bytes). Pinned versions and the current
- * version are never touched — pinning is the user's explicit "keep this".
+ * version are never touched - pinning is the user's explicit "keep this".
  *
  * Also prunes old FAILED ScanJob rows, which are pure noise in the run history.
  *

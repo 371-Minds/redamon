@@ -11,7 +11,7 @@
  */
 import { BODY_FAMILIES, BODY_RULES_RECOMMENDED } from '@/lib/captureBodyRules'
 
-// Capture settings slice — only the fields the TrafficMind dialog owns. Mirrors
+// Capture settings slice - only the fields the TrafficMind dialog owns. Mirrors
 // the capture* columns on userSettings and the CAPTURE_* env the proxy reads.
 export interface CaptureSettings {
   captureProxyEnabled: boolean
@@ -122,7 +122,7 @@ export function isCaptureDirty(base: CaptureSettings, next: CaptureSettings): bo
 }
 
 /** After a successful save, adopt the server's canonical values for the fields we
- *  submitted — but only where the user hasn't since re-edited that field (so an
+ *  submitted - but only where the user hasn't since re-edited that field (so an
  *  edit made mid-save is never clobbered). `submitted` is the snapshot sent. */
 export function adoptCanonical(
   current: CaptureSettings, submitted: CaptureSettings, canonical: CaptureSettings,

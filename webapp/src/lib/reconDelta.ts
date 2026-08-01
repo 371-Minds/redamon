@@ -1,10 +1,10 @@
 /**
- * Scan Timeline — Recon Delta (Section 6): diff two versions of the recon graph.
+ * Scan Timeline - Recon Delta (Section 6): diff two versions of the recon graph.
  *
  * Both sides arrive as the UI `{nodes, links}` payload, but node ids are NOT
  * comparable across versions (a snapshot's ids are its own export ids; the live
  * graph's are Neo4j internal ids). So the diff is computed over a STABLE IDENTITY
- * KEY per node type — the properties that make an asset that asset (an IP is its
+ * KEY per node type - the properties that make an asset that asset (an IP is its
  * address, a Port is ip+number+proto, a Technology is its name, and so on).
  *
  * The key is used only here, read-only. Nothing writes it back to the graph.
@@ -99,7 +99,7 @@ export function identityKey(node: FormattedNode): string {
     const v = props[k]
     if (v !== undefined && v !== null && v !== '') {
       parts.push(`${k}=${stableString(v)}`)
-      // Generic fallbacks are "first one that exists wins" — an explicit identity
+      // Generic fallbacks are "first one that exists wins" - an explicit identity
       // uses every property it lists.
       if (!IDENTITY_KEYS[type]) break
     }

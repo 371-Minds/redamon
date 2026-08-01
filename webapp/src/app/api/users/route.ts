@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // S2/E2: creating a user (incl. minting an admin via role) requires an
-    // admin SESSION. The internal-key bypass is removed here — no production
+    // admin SESSION. The internal-key bypass is removed here - no production
     // internal caller creates users, and key possession must not mint admins.
     {
       const session = await getSession()

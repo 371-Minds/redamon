@@ -36,15 +36,15 @@ interface ScanScheduleTableProps {
 }
 
 function fmt(iso: string | null): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+  return Number.isNaN(d.getTime()) ? '-' : d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
 }
 
 function duration(job: Job): string {
-  if (!job.startedAt || !job.finishedAt) return '—'
+  if (!job.startedAt || !job.finishedAt) return '-'
   const ms = new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()
-  if (!Number.isFinite(ms) || ms < 0) return '—'
+  if (!Number.isFinite(ms) || ms < 0) return '-'
   const mins = Math.floor(ms / 60000)
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
 }
@@ -56,7 +56,7 @@ function describeSchedule(s: Schedule): string {
 }
 
 /**
- * Scan Timeline — Scan Scheduler (Section 7.1).
+ * Scan Timeline - Scan Scheduler (Section 7.1).
  *
  * Upcoming schedules on top, run history below. The history is the honest record
  * of what the scheduler did: a run that could not start shows up as `failed` or
@@ -85,7 +85,7 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
 
   // Depends on `projectId` ONLY. The alert helpers are rebuilt by their provider
   // whenever an alert opens or closes, so depending on one here would re-run the
-  // effect below on every alert — and reporting a load failure through an alert
+  // effect below on every alert - and reporting a load failure through an alert
   // would then re-trigger the load that failed, in a request storm.
   const load = useCallback(async () => {
     if (!projectId) return
@@ -294,10 +294,10 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
             )}
             {schedules.map(s => (
               <tr key={s.id}>
-                <td>{s.label || '—'}</td>
+                <td>{s.label || '-'}</td>
                 <td>{describeSchedule(s)}</td>
                 <td>{s.scanMode === 'new' ? 'keep as version' : 'overwrite'}</td>
-                <td className={styles.muted}>{s.enabled ? fmt(s.nextRunAt) : '—'}</td>
+                <td className={styles.muted}>{s.enabled ? fmt(s.nextRunAt) : '-'}</td>
                 <td className={styles.muted}>{fmt(s.lastRunAt)}</td>
                 <td>
                   <span className={s.enabled ? styles.badgeOn : styles.badgeOff}>
@@ -370,7 +370,7 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
                   />
                 </td>
                 <td>{j.trigger}</td>
-                <td>{j.mode ?? '—'}</td>
+                <td>{j.mode ?? '-'}</td>
                 <td>
                   <span className={
                     j.status === 'completed' ? styles.statusOk
@@ -381,11 +381,11 @@ export function ScanScheduleTable({ projectId }: ScanScheduleTableProps) {
                     {j.status}
                   </span>
                 </td>
-                <td className={styles.muted}>{j.version ? `v${j.version.seq}` : '—'}</td>
+                <td className={styles.muted}>{j.version ? `v${j.version.seq}` : '-'}</td>
                 <td className={styles.muted}>{fmt(j.startedAt ?? j.createdAt)}</td>
                 <td className={styles.muted}>{duration(j)}</td>
-                <td className={styles.num}>{j.nodeCount ?? '—'}</td>
-                <td className={styles.muted}>{j.ramReason ?? '—'}</td>
+                <td className={styles.num}>{j.nodeCount ?? '-'}</td>
+                <td className={styles.muted}>{j.ramReason ?? '-'}</td>
               </tr>
             ))}
           </tbody>

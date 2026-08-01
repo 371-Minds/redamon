@@ -1,10 +1,10 @@
-/** POST /api/mcp/test — proxy to agent's /mcp/test for live MCP draft validation.
+/** POST /api/mcp/test - proxy to agent's /mcp/test for live MCP draft validation.
  *
  * Body shape: { server: MCPServer, userId: string }.
  * userId is required (and explicit, not relying on middleware headers) so
  * we can restore a masked auth.token from the user's saved DB record. The
  * UI sends it from the same `userId` prop already used by the form's CRUD
- * endpoints — no JWT header juggling.
+ * endpoints - no JWT header juggling.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       if (!userId) {
         return NextResponse.json({
           ok: false,
-          error: 'token is masked but request did not include userId — cannot restore from DB',
+          error: 'token is masked but request did not include userId - cannot restore from DB',
           discovered_tools: [], warnings: [], elapsed_ms: 0,
         }, { status: 400 })
       }
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       } else {
         return NextResponse.json({
           ok: false,
-          error: `token is masked and no saved literal for server '${body.id}' — paste the token again`,
+          error: `token is masked and no saved literal for server '${body.id}' - paste the token again`,
           discovered_tools: [], warnings: [], elapsed_ms: 0,
         }, { status: 400 })
       }

@@ -385,7 +385,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
               }}
             >
               {OPENAI_COMPAT_PRESETS.map(p => (
-                <option key={p.name} value={p.name}>{p.name} — {p.description}</option>
+                <option key={p.name} value={p.name}>{p.name} - {p.description}</option>
               ))}
             </select>
           </div>

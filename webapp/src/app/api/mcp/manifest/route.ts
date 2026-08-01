@@ -1,5 +1,5 @@
 /**
- * GET /api/mcp/manifest — proxy to agent's /mcp/manifest.
+ * GET /api/mcp/manifest - proxy to agent's /mcp/manifest.
  *
  * Returns the merged view (system + user MCP servers) the agent currently
  * has loaded. Used by ToolMatrixSection to render dynamic phase toggles.

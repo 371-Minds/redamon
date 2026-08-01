@@ -216,7 +216,7 @@ export async function GET(request: NextRequest) {
         successCount: toNum(r.get('successCount')),
       }))
 
-    // Q13: Attack execution flow — Target → Tool → FindingType → Severity
+    // Q13: Attack execution flow - Target → Tool → FindingType → Severity
     // Returns individual rows for Sankey visualization of real attack paths
     const flowResult = await session.run(
       `MATCH (s:ChainStep {project_id: $pid})-[:PRODUCED]->(f:ChainFinding)

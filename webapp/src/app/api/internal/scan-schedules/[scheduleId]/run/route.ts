@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — execute a due schedule (Section 7.2). Internal-key only.
+ * Scan Timeline - execute a due schedule (Section 7.2). Internal-key only.
  *
  * Runs the scan through the SAME path a manual scan uses (lib/startFullScan.ts),
  * so a scheduled run inherits, unchanged:
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       console.warn(`[scanScheduler] schedule ${scheduleId} could not start: ${result.error}`)
       // An admission-limit rejection already recorded its own ScanJob. A rejection
       // that happened BEFORE that (the graph was busy: a scan already running, or
-      // an activation that began after the worker's pre-check) did not — so record
+      // an activation that began after the worker's pre-check) did not - so record
       // the skipped occurrence here, otherwise it would leave no trace in the Scan
       // Schedule run history (only a lastRunAt bump + logs).
       let scanJobId = result.scanJobId ?? null

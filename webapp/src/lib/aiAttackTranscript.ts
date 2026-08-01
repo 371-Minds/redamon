@@ -36,12 +36,12 @@ export function resolveTranscriptPath(ref: string | null | undefined): string | 
 // Content-type for the served native report (best-effort by extension).
 // NB: HTML reports (e.g. garak's) can embed model output that itself contains
 // attacker-controlled markup (echoed prompt-injection payloads). We never serve
-// them as renderable text/html same-origin — see transcriptDisposition.
+// them as renderable text/html same-origin - see transcriptDisposition.
 export function transcriptContentType(p: string): string {
   switch (path.extname(p).toLowerCase()) {
     case '.json': return 'application/json'
     case '.csv': return 'text/csv'
-    // .html is deliberately NOT 'text/html' — serve as text so it never renders.
+    // .html is deliberately NOT 'text/html' - serve as text so it never renders.
     default: return 'text/plain'   // jsonl/txt/log/md/html render as inert text
   }
 }

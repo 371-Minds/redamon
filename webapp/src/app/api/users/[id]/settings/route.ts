@@ -203,14 +203,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // STRIDE I19: tunnelsEnabled is a Boolean, so it can't ride the string
-    // `data`/`fields` loop above — handle it separately.
+    // `data`/`fields` loop above - handle it separately.
     const enabledProvided = 'tunnelsEnabled' in body
     const desiredEnabled = enabledProvided
       ? Boolean(body.tunnelsEnabled)
       : (existing?.tunnelsEnabled ?? false)
 
-    // HTTP Traffic Capture (Phase 1) global config. Booleans/ints, so — like
-    // tunnelsEnabled — they cannot ride the string `data` loop above.
+    // HTTP Traffic Capture (Phase 1) global config. Booleans/ints, so - like
+    // tunnelsEnabled - they cannot ride the string `data` loop above.
     const captureBoolFields = ['captureProxyStoreBodies', 'captureProxyRedactSecrets', 'captureProxyPassiveDetect',
       // Granular body-storage direction toggles (Body storage sub-panel).
       'captureProxyStoreReqBodies', 'captureProxyStoreRespBodies',
@@ -223,7 +223,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       'captureProxyMaxStoreMb'] as const
     const captureData: Record<string, boolean | number | string | Record<string, string>> = {}
     for (const f of captureBoolFields) if (f in body) captureData[f] = Boolean(body[f])
-    // Sane lower bounds — a retentionDays <= 0 would make maintenance delete ALL
+    // Sane lower bounds - a retentionDays <= 0 would make maintenance delete ALL
     // traffic; port/maxBodyKb must be positive. maxStoreMb may be 0 (= unlimited).
     const captureIntMin: Record<string, number> = {
       captureProxyPort: 1, captureProxyMaxBodyKb: 1, captureProxyRetentionDays: 1,
@@ -377,7 +377,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
         const keys = extraKeysRaw.split('\n').filter((k: string) => k.trim())
         if (keys.length === 0) {
-          // No extra keys — delete rotation config if exists
+          // No extra keys - delete rotation config if exists
           await prisma.apiKeyRotationConfig.deleteMany({
             where: { userId: id, toolName },
           })

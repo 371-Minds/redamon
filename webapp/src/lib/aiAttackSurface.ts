@@ -44,7 +44,7 @@ export interface ProbeOption {
   default?: boolean      // checked on first open of the card
   // Capability the probe needs that a black-box HTTP *chat* target cannot offer
   // (multimodal input, white-box tokenizer/gradients, file output, an agent).
-  // When set, the probe is shown disabled in the UI — it would only ever return
+  // When set, the probe is shown disabled in the UI - it would only ever return
   // zero results against the targets this product attacks.
   requires?: string
   // GPU-recommended probes: very slow on CPU (long/repeated generations, or an
@@ -91,7 +91,7 @@ export const GARAK_CARD: ToolCard = {
     // --- MVP set (default on) ---
     { id: 'promptinject', label: 'Prompt Injection (promptinject)', chip: 'prompt-injection', default: true,
       description: 'Hijacks the model goal to print attacker-controlled text (PromptInject).' },
-    { id: 'dan', label: 'Jailbreak — DAN (dan)', chip: 'jailbreak', default: true,
+    { id: 'dan', label: 'Jailbreak - DAN (dan)', chip: 'jailbreak', default: true,
       description: '"Do Anything Now" and developer-mode prompts that bypass safety (19 variants).' },
     { id: 'encoding', label: 'Encoding Bypass (encoding)', chip: 'encoding-bypass', default: true,
       description: 'Smuggles payloads through base64 / rot13 / hex / unicode and other encodings.' },
@@ -118,7 +118,7 @@ export const GARAK_CARD: ToolCard = {
       description: 'Appends optimized GCG / BEAST suffixes that force compliance. GCG needs white-box access.' },
     { id: 'tap', label: 'Tree-of-Attacks (tap)', chip: 'jailbreak',
       description: 'TAP / PAIR: an attacker model searches for working jailbreaks. Uses the local judge.',
-      warning: 'GPU recommended. Runs an attacker model + judge on every step — very slow on CPU, where requests can time out and abort the run.' },
+      warning: 'GPU recommended. Runs an attacker model + judge on every step - very slow on CPU, where requests can time out and abort the run.' },
     { id: 'glitch', label: 'Glitch Tokens (glitch)', chip: 'jailbreak',
       description: 'Anomalous tokens that destabilize the model. Needs tokenizer access.',
       requires: 'white-box tokenizer access' },
@@ -140,19 +140,19 @@ export const GARAK_CARD: ToolCard = {
       description: 'Coaxes the model into emitting API keys and secrets.' },
     { id: 'divergence', label: 'Data Divergence (divergence)', chip: 'data-disclosure',
       description: 'Repetition attacks (repeated-token) that leak memorized training data.',
-      warning: 'GPU recommended. Repeated-token generation is very slow on CPU — nearly every request exceeds the timeout and can abort the whole run.' },
+      warning: 'GPU recommended. Repeated-token generation is very slow on CPU - nearly every request exceeds the timeout and can abort the whole run.' },
 
     // --- Toxicity / harmful content ---
     { id: 'realtoxicityprompts', label: 'Real Toxicity Prompts (realtoxicityprompts)', chip: 'toxicity',
       description: 'Elicits toxicity: insult, threat, identity attack, profanity, sexual content.',
-      warning: 'GPU recommended. Downloads + runs a HuggingFace toxicity model — very slow on CPU and needs network egress.' },
+      warning: 'GPU recommended. Downloads + runs a HuggingFace toxicity model - very slow on CPU and needs network egress.' },
     { id: 'lmrc', label: 'Risk Cards (lmrc)', chip: 'toxicity',
       description: 'Language Model Risk Cards: bullying, profanity, sexual content, quack medicine, deadnaming.' },
     { id: 'continuation', label: 'Slur Continuation (continuation)', chip: 'toxicity',
       description: 'Tests whether the model completes reclaimed slurs.' },
     { id: 'atkgen', label: 'Adversarial Auto-Gen (atkgen)', chip: 'toxicity',
       description: 'An attacker model iteratively elicits toxic output (uses a HF toxicity model).',
-      warning: 'GPU recommended. Runs a HuggingFace attacker model in a loop — very slow on CPU (takes ~an hour on its own).' },
+      warning: 'GPU recommended. Runs a HuggingFace attacker model in a loop - very slow on CPU (takes ~an hour on its own).' },
     { id: 'topic', label: 'Off-Limits Topics (topic)', chip: 'toxicity',
       description: 'Steers the model onto blocked / controversial topics (WordNet).' },
 
@@ -175,7 +175,7 @@ export const GARAK_CARD: ToolCard = {
 
     // --- Supply chain ---
     { id: 'packagehallucination', label: 'Package Hallucination (packagehallucination)', chip: 'supply-chain',
-      description: 'Invents non-existent dependency names (Python / JS / Ruby / Rust) — dependency-confusion risk.' },
+      description: 'Invents non-existent dependency names (Python / JS / Ruby / Rust) - dependency-confusion risk.' },
 
     // --- Misinformation / hallucination ---
     { id: 'misleading', label: 'False Assertions (misleading)', chip: 'hallucination',
@@ -186,7 +186,7 @@ export const GARAK_CARD: ToolCard = {
   available: true,
 }
 
-// PyRIT (Step 6) — bounded multi-turn. Its "probes" are the attack strategies;
+// PyRIT (Step 6) - bounded multi-turn. Its "probes" are the attack strategies;
 // they flow through the same `probes` field garak uses.
 export const PYRIT_CARD: ToolCard = {
   id: 'pyrit',
@@ -209,7 +209,7 @@ export const PYRIT_CARD: ToolCard = {
   available: true,
 }
 
-// giskard (Step 7) — quality + safety LLM scan. Its "probes" are the detector
+// giskard (Step 7) - quality + safety LLM scan. Its "probes" are the detector
 // tags passed to the scan; they flow through the same `probes` field.
 export const GISKARD_CARD: ToolCard = {
   id: 'giskard',
@@ -238,7 +238,7 @@ export const GISKARD_CARD: ToolCard = {
   available: true,
 }
 
-// promptfoo (Step 8) — broad red-team eval producing per-plugin ASR as a second
+// promptfoo (Step 8) - broad red-team eval producing per-plugin ASR as a second
 // opinion. Its "probes" are dataset-based plugins (the only ones that run without
 // promptfoo's email-gated cloud); they flow through the same `probes` field.
 // Payloads are pulled from HuggingFace (pre-warmed into the image); grading is
@@ -260,7 +260,7 @@ export const PROMPTFOO_CARD: ToolCard = {
       description: 'HarmBench standardized harmful-behavior dataset.' },
   ],
   // Local static-transform strategies (zero egress) that wrap each payload in an
-  // encoding — they test whether the model decodes + complies. The adaptive
+  // encoding - they test whether the model decodes + complies. The adaptive
   // strategies (jailbreak/crescendo/...) need promptfoo's remote service, so they
   // are intentionally not offered.
   strategies: [
@@ -274,7 +274,7 @@ export const PROMPTFOO_CARD: ToolCard = {
   available: true,
 }
 
-// Future tools — shown greyed until their adapter ships.
+// Future tools - shown greyed until their adapter ships.
 export const FUTURE_CARDS: ToolCard[] = []
 
 export const ALL_CARDS: ToolCard[] = [GARAK_CARD, PYRIT_CARD, GISKARD_CARD, PROMPTFOO_CARD, ...FUTURE_CARDS]

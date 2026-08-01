@@ -62,7 +62,7 @@ export function ApiKeyModal({
           </div>
           <span className="formHint">
             {info.hint}
-            {' — '}
+            {' - '}
             <a href={info.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }}>
               Get API key
             </a>

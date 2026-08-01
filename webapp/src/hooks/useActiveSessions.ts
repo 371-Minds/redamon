@@ -63,7 +63,7 @@ export function useActiveSessions({
       setAgentBusy(data.agent_busy || false)
       setError(null)
     } catch (err) {
-      // Don't clear sessions on transient errors — keep showing last known state
+      // Don't clear sessions on transient errors - keep showing last known state
       setError(err instanceof Error ? err.message : 'Failed to fetch sessions')
     }
   }, [])
@@ -91,7 +91,7 @@ export function useActiveSessions({
     try {
       await fetch(`/api/agent/sessions/${sessionId}/kill`, { method: 'POST' })
     } catch {
-      // Optimistic removal stays — will self-correct if session is still alive
+      // Optimistic removal stays - will self-correct if session is still alive
       killedSessionsRef.current.delete(sessionId)
     }
   }, [])
@@ -103,7 +103,7 @@ export function useActiveSessions({
     try {
       await fetch(`/api/agent/jobs/${jobId}/kill`, { method: 'POST' })
     } catch {
-      // Optimistic removal stays — will self-correct if job is still alive
+      // Optimistic removal stays - will self-correct if job is still alive
       killedJobsRef.current.delete(jobId)
     }
   }, [])

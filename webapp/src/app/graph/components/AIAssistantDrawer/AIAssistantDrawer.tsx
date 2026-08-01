@@ -153,7 +153,7 @@ export function AIAssistantDrawer({
     loadConversation,
   } = useConversations(projectId, userId)
 
-  // ─── handleNewChat (cross-cutting — touches state from multiple hooks) ─────
+  // ─── handleNewChat (cross-cutting - touches state from multiple hooks) ─────
   // Defined before useConversationRestoration via a stable ref pattern
   const handleNewChatRef = useRef<() => void>(() => {})
   const updateConvMetaRef = useRef<(updates: Record<string, any>) => Promise<void>>(async () => {})
@@ -369,7 +369,7 @@ export function AIAssistantDrawer({
       try {
         window.localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(lastWidthRef.current)))
       } catch {
-        // localStorage unavailable — width still applies for the session.
+        // localStorage unavailable - width still applies for the session.
       }
     }
     document.addEventListener('mousemove', handleMouseMove)

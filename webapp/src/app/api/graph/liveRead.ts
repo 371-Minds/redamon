@@ -4,7 +4,7 @@
  * viewing the current version delegates to the live read, past versions come from
  * stored snapshot bytes).
  *
- * Callers own authorization, caching and ETags — this is the raw read.
+ * Callers own authorization, caching and ETags - this is the raw read.
  */
 import prisma from '@/lib/prisma'
 import { getGraphSession } from './neo4j'
@@ -21,7 +21,7 @@ const GRAPH_PERF_DEBUG = true
  * no way to remove them. Here we self-heal on every cache-miss read: delete any
  * AttackChain-family node for the project whose chain_id has no live
  * conversation, BEFORE the main query runs, so orphans are both purged from
- * storage and never returned. Best-effort — a failure must not block the graph.
+ * storage and never returned. Best-effort - a failure must not block the graph.
  */
 export async function reconcileOrphanChains(
   session: ReturnType<typeof getGraphSession>,
@@ -35,7 +35,7 @@ export async function reconcileOrphanChains(
     const liveSessionIds = conversations.map(c => c.sessionId).filter(Boolean)
 
     // NOTE: when liveSessionIds is empty, `NOT chain_id IN []` is true for every
-    // chain node, so all chains for the project are purged — correct, since no
+    // chain node, so all chains for the project are purged - correct, since no
     // live conversation means every chain is an orphan. Nodes with a null
     // chain_id evaluate to null (not true) and are left untouched.
     const res = await session.run(

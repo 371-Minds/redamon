@@ -18,7 +18,7 @@ interface VersionSwitchProps {
 }
 
 function formatCount(n: number | null): string {
-  if (n === null || n === undefined) return '—'
+  if (n === null || n === undefined) return '-'
   return n.toLocaleString()
 }
 
@@ -30,7 +30,7 @@ function formatDate(iso: string): string {
 /**
  * Scan Timeline version picker (Section 4.2).
  *
- * Selecting a past version only changes what is RENDERED — it never touches the
+ * Selecting a past version only changes what is RENDERED - it never touches the
  * live graph. The version the agent and every analytics panel actually work on is
  * the one marked "Active"; making a different one active is a separate, explicit
  * step in the Version Manager.

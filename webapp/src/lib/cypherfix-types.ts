@@ -1,5 +1,5 @@
 // =============================================================================
-// CypherFix — TypeScript Types for WebSocket Messages & Payloads
+// CypherFix - TypeScript Types for WebSocket Messages & Payloads
 // =============================================================================
 
 // ── Triage Agent Messages ────────────────────────────────────────────────────

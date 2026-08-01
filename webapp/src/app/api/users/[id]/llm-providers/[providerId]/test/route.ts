@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let config: Record<string, unknown>
 
     if (providerId === 'unsaved') {
-      // Testing an unsaved config — full config in body
+      // Testing an unsaved config - full config in body
       config = body
     } else {
       // Testing a saved config: start from DB (has full secrets), then
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       config = { ...(provider as unknown as Record<string, unknown>) }
       for (const [key, value] of Object.entries(body)) {
         if (SECRET_FIELDS.has(key) && isMasked(value)) {
-          // Keep DB value — user did not retype the secret
+          // Keep DB value - user did not retype the secret
           continue
         }
         config[key] = value

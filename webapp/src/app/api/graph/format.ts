@@ -36,9 +36,9 @@ export interface FormattedGraphData {
  * Format raw Neo4j records into nodes + links for GraphCanvas.
  *
  * Supports two result shapes:
- *   1. Graph patterns — records contain Neo4j Node / Relationship objects
+ *   1. Graph patterns - records contain Neo4j Node / Relationship objects
  *      (e.g. MATCH (n)-[r]->(m) RETURN n, r, m)
- *   2. Tabular / aggregation — records contain scalar values
+ *   2. Tabular / aggregation - records contain scalar values
  *      (e.g. RETURN s.name, count(i) AS ip_count)
  *
  * For shape 1 we extract nodes and links from every Node and Relationship
@@ -71,7 +71,7 @@ export function formatGraphRecords(records: any[]): FormattedGraphData {
     }
 
     if (hasGraphObjects) {
-      // Shape 1: graph pattern — register all nodes and relationships
+      // Shape 1: graph pattern - register all nodes and relationships
       for (const node of nodes) {
         const id = `${node.identity.low}`
         if (!nodesMap.has(id)) {
@@ -92,7 +92,7 @@ export function formatGraphRecords(records: any[]): FormattedGraphData {
         })
       }
     } else {
-      // Shape 2: tabular / aggregation — build a virtual node from the row
+      // Shape 2: tabular / aggregation - build a virtual node from the row
       const props: Record<string, unknown> = {}
       const nameParts: string[] = []
       for (const key of keys) {

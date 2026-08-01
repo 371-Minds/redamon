@@ -1,5 +1,5 @@
 /**
- * Shared MCP server schema (zod) — used by both client form validation and
+ * Shared MCP server schema (zod) - used by both client form validation and
  * server-side API route validation.
  *
  * Mirrors the agentic/mcp_registry.py pydantic schema. Single source of truth
@@ -14,7 +14,7 @@ export type Phase = (typeof PHASES)[number]
 export const TRANSPORTS = ['sse', 'streamable_http', 'stdio'] as const
 export type Transport = (typeof TRANSPORTS)[number]
 
-/** Tool names reserved by built-in / system tools — user MCP tools must not use these. */
+/** Tool names reserved by built-in / system tools - user MCP tools must not use these. */
 export const BUILTIN_RESERVED_TOOL_NAMES: ReadonlySet<string> = new Set([
   // Built-in (Python) tools
   'query_graph', 'web_search', 'cve_intel', 'shodan', 'google_dork',
@@ -27,7 +27,7 @@ export const BUILTIN_RESERVED_TOOL_NAMES: ReadonlySet<string> = new Set([
   'execute_hydra', 'metasploit_console', 'msf_restart',
 ])
 
-/** Server IDs reserved by system MCP servers — user IDs must not collide. */
+/** Server IDs reserved by system MCP servers - user IDs must not collide. */
 export const SYSTEM_SERVER_IDS: ReadonlySet<string> = new Set([
   'network_recon', 'nmap', 'nuclei', 'metasploit', 'playwright',
 ])

@@ -12,7 +12,7 @@ export interface GroupedRows {
 
 /**
  * Partitions a flat list of TableRows by node.type and computes per-type counts
- * + a sorted type list. Pure — no side effects.
+ * + a sorted type list. Pure - no side effects.
  */
 export function groupRowsByType(rows: readonly TableRow[]): GroupedRows {
   const typeCounts = new Map<string, number>()
@@ -34,7 +34,7 @@ export function groupRowsByType(rows: readonly TableRow[]): GroupedRows {
  * every property key found across the rows, minus HIDDEN_KEYS and the special
  * "name" key (which is always rendered as a fixed column).
  *
- * Pure — no side effects. Result is locale-sorted ascending.
+ * Pure - no side effects. Result is locale-sorted ascending.
  */
 export function deriveDynamicColumnKeys(rows: readonly TableRow[]): string[] {
   const keys = new Set<string>()

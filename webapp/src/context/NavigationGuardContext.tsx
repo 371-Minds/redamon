@@ -77,7 +77,7 @@ export function useNavigationGuard(): NavigationGuardContextValue | null {
  */
 export function useGuardedRouter(): {
   push: (href: string) => Promise<void>
-  /** Navigate without consulting guards — use only after already confirming. */
+  /** Navigate without consulting guards - use only after already confirming. */
   pushUnguarded: (href: string) => void
 } {
   const router = useRouter()

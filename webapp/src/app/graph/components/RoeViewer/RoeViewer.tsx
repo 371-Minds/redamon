@@ -196,14 +196,14 @@ export function RoeViewer({ projectId, project }: RoeViewerProps) {
           )}
         </Section>
 
-        {/* Exclusions — full width */}
+        {/* Exclusions - full width */}
         {excludedHosts.length > 0 && (
           <Section title="Excluded Hosts" icon={<Ban size={15} />} fullWidth>
             {excludedHosts.map((host, i) => (
               <div key={i} className={styles.exclusionRow}>
                 <span className={styles.exclusionHost}>{host}</span>
                 {(project.roeExcludedHostReasons || [])[i] && (
-                  <span className={styles.exclusionReason}>&mdash; {(project.roeExcludedHostReasons || [])[i]}</span>
+                  <span className={styles.exclusionReason}>- {(project.roeExcludedHostReasons || [])[i]}</span>
                 )}
               </div>
             ))}
@@ -329,7 +329,7 @@ export function RoeViewer({ projectId, project }: RoeViewerProps) {
           </Section>
         )}
 
-        {/* Notes — full width */}
+        {/* Notes - full width */}
         {project.roeNotes && (
           <Section title="Additional Notes" icon={<FileText size={15} />} fullWidth>
             <p className={styles.notes}>{project.roeNotes}</p>

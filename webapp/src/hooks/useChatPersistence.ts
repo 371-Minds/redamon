@@ -19,7 +19,7 @@ export function useChatPersistence(conversationId: string | null) {
         body: JSON.stringify({ messages }),
       })
     } catch (err) {
-      // Non-critical — agent backend also persists
+      // Non-critical - agent backend also persists
       console.warn('Chat persistence flush failed:', err)
     }
   }, [conversationId])

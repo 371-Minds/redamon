@@ -1,5 +1,5 @@
 /**
- * Scan Timeline — snapshot capture / storage / load / render.
+ * Scan Timeline - snapshot capture / storage / load / render.
  *
  * THE MODEL: the live Neo4j graph IS the current version. A PAST version is a
  * frozen copy of that graph, serialized in the EXPORT (restore-fidelity) format
@@ -8,7 +8,7 @@
  *
  * Why export fidelity and not the UI render shape: a snapshot must be restorable
  * back into Neo4j (version activation), so it stores full `{labels, properties}`
- * nodes and `{startExportId, endExportId, type, properties}` relationships — the
+ * nodes and `{startExportId, endExportId, type, properties}` relationships - the
  * exact shape `lib/graphRestore.ts` round-trips. The UI `{nodes, links}` shape is
  * DERIVED from it on read (`snapshotToGraphPayload`).
  *
@@ -82,7 +82,7 @@ export async function withSnapshotSlot<T>(fn: () => Promise<T>): Promise<T> {
   const limit = snapshotMaxConcurrency()
   // `while`, not `if`: a caller arriving in the microtask gap between a release
   // and the woken waiter resuming would otherwise take the free slot, and the
-  // waiter would then increment on top of it — two bodies under a cap of one.
+  // waiter would then increment on top of it - two bodies under a cap of one.
   // Re-checking on wake makes the cap hold whatever the arrival interleaving.
   while (running >= limit) {
     await new Promise<void>(resolve => waiters.push(resolve))
@@ -234,7 +234,7 @@ export async function loadSnapshot(scanVersionId: string): Promise<SnapshotPaylo
 }
 
 /**
- * Convert a stored snapshot into the UI `{nodes, links}` payload — the same shape
+ * Convert a stored snapshot into the UI `{nodes, links}` payload - the same shape
  * `formatGraphRecords` produces for the live graph, so the graph canvas, the
  * clustering and the node/link tables render a past version unchanged.
  *
@@ -268,7 +268,7 @@ export function summarizeGraphPayload(data: FormattedGraphData): Record<string, 
 /** Human default label for a newly created version. */
 export function defaultVersionLabel(seq: number, at: Date = new Date()): string {
   const iso = at.toISOString()
-  return `Scan ${seq} — ${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+  return `Scan ${seq} - ${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
 }
 
 export interface ScanVersionRow {

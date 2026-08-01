@@ -11,7 +11,7 @@
  *
  * Scope: primitives, arrays, and plain objects (Record). Handles NaN and the
  * null/undefined distinction explicitly. Not intended for Map/Set/Date/class
- * instances — the form values we compare are JSON-shaped.
+ * instances - the form values we compare are JSON-shaped.
  */
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true

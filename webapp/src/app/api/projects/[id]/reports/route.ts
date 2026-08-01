@@ -13,7 +13,7 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-/** GET /api/projects/{id}/reports — List all reports for a project */
+/** GET /api/projects/{id}/reports - List all reports for a project */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
@@ -47,7 +47,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
-/** POST /api/projects/{id}/reports — Generate a new report */
+/** POST /api/projects/{id}/reports - Generate a new report */
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
@@ -97,7 +97,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const report = await prisma.report.create({
       data: {
         projectId: id,
-        title: `Pentest Report — ${reportData.project.targetDomain || reportData.project.name}`,
+        title: `Pentest Report - ${reportData.project.targetDomain || reportData.project.name}`,
         filename,
         filePath,
         fileSize: htmlBuffer.length,
@@ -258,7 +258,7 @@ function condenseForAgent(data: ReturnType<typeof gatherReportData> extends Prom
         title: f.title,
         severity: f.severity,
         vulnerabilityType: f.vulnerabilityType,
-        source: f.source,   // 'graphql_scan' vs 'graphql_cop' — helps LLM narrate differently
+        source: f.source,   // 'graphql_scan' vs 'graphql_cop' - helps LLM narrate differently
         endpoint: f.endpoint,
       })),
     },
@@ -314,7 +314,7 @@ function condenseForAgent(data: ReturnType<typeof gatherReportData> extends Prom
         promptInjectableParams: f.promptInjectableParams,
       })),
       // CONFIRMED attack findings (garak/pyrit/giskard/promptfoo), corroborated
-      // across tools — the highest-signal AI evidence for the narrative (§9).
+      // across tools - the highest-signal AI evidence for the narrative (§9).
       attackToolsRun: data.aiSurface.attackToolsRun,
       attackFindings: data.aiSurface.attackFindings.slice(0, 25).map(f => ({
         owaspLlmId: f.owaspLlmId,

@@ -207,7 +207,7 @@ export function useCypherFixCodeFixWS({
               const last = prev[lastIdx] as ActivityEntry & { type: 'thinking' }
               return [...prev.slice(0, lastIdx), { ...last, text: last.text + chunk }]
             }
-            // No existing thinking entry — create one
+            // No existing thinking entry - create one
             return [...prev, { id: `log-${++logIdRef.current}`, type: 'thinking' as const, ts: Date.now(), text: chunk }]
           })
           break

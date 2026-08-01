@@ -17,7 +17,7 @@ const SHA_RE = /^[0-9a-f]{64}$/
 // in flight (uncommitted), so the reference query would miss it (TOCTOU).
 const GC_GRACE_MS = 5 * 60 * 1000
 
-/** A sha must be a 64-char lowercase hex string — blocks path traversal. */
+/** A sha must be a 64-char lowercase hex string - blocks path traversal. */
 export function isValidSha(sha: string | null | undefined): sha is string {
   return !!sha && SHA_RE.test(sha)
 }
@@ -80,7 +80,7 @@ export async function gcOrphanBodies(candidateShas?: (string | null | undefined)
       await fs.unlink(blobPath)
       deleted++
     } catch {
-      // already gone / not present — fine
+      // already gone / not present - fine
     }
   }
   return { deleted }

@@ -64,9 +64,9 @@ export function corroborateAttackFindings(rows: RawAttackRow[]): AiAttackFinding
     const maxAsr = group.reduce<number | null>((m, r) =>
       r.asr != null && (m == null || r.asr > m) ? r.asr : m, null)
     out.push({
-      owaspLlmId: rep.owaspLlmId || '—',
+      owaspLlmId: rep.owaspLlmId || '-',
       attackChip: (rep.type || '').replace(/^ai_attack_/, '') || 'unknown',
-      target: rep.target || '—',
+      target: rep.target || '-',
       endpointPath: rep.endpointPath,
       sources: uniq(group.map(r => r.source)),
       severity,

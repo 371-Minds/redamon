@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { requireEffectiveUser } from '@/lib/access'
 
-/** GET /api/reports — List the effective user's reports (scoped by project owner). */
+/** GET /api/reports - List the effective user's reports (scoped by project owner). */
 export async function GET() {
   try {
     const eff = await requireEffectiveUser()

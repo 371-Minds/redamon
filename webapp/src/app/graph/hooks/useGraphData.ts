@@ -51,7 +51,7 @@ async function fetchGraphData(projectId: string, fresh = false): Promise<GraphDa
  * Scan Timeline: render a PAST version from its stored snapshot. Same
  * `{nodes, links}` shape as the live payload, so every downstream consumer
  * (canvas, clustering, node/link tables) is unchanged. Immutable, so no ETag
- * negotiation is needed — react-query's cache is enough.
+ * negotiation is needed - react-query's cache is enough.
  */
 async function fetchVersionGraphData(projectId: string, versionId: string): Promise<GraphData> {
   const response = await fetch(`/api/projects/${projectId}/versions/${versionId}/graph`)
@@ -79,7 +79,7 @@ export function useGraphData(projectId: string | null, versionId?: string | null
       : fetchGraphData(projectId!),
     enabled: !!projectId,
     refetchInterval: false,
-    // A past version is immutable — never re-fetch it.
+    // A past version is immutable - never re-fetch it.
     staleTime: isPastVersion ? Infinity : 30000,
     // Only re-render the component when data or error actually change
     notifyOnChangeProps: ['data', 'error', 'isLoading'],

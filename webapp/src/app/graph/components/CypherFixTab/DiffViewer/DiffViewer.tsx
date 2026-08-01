@@ -96,7 +96,7 @@ export function DiffViewer({
 
       {/* Content */}
       <div className={styles.content}>
-        {/* Idle state — show start button (first time or after stop) */}
+        {/* Idle state - show start button (first time or after stop) */}
         {isIdle && codefix.activityLog.length === 0 && (
           <div className={styles.idleState}>
             <p>Ready to start the CodeFix agent for this remediation.</p>
@@ -106,7 +106,7 @@ export function DiffViewer({
           </div>
         )}
 
-        {/* Activity log — chronological history of all events */}
+        {/* Activity log - chronological history of all events */}
         {codefix.activityLog.length > 0 && (
           <ActivityLog
             entries={codefix.activityLog}
@@ -116,7 +116,7 @@ export function DiffViewer({
           />
         )}
 
-        {/* Restart / Go to Remediations — shown when idle after a previous run */}
+        {/* Restart / Go to Remediations - shown when idle after a previous run */}
         {isIdle && codefix.activityLog.length > 0 && (
           <div className={styles.idleState}>
             <button className={styles.startBtn} onClick={handleStart}>

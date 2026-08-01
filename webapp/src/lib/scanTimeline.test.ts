@@ -42,7 +42,7 @@ import {
 } from './scanTimeline'
 
 const CURRENT = {
-  id: 'vCur', seq: 2, label: 'Scan 2 — 2026-07-01 10:00 UTC',
+  id: 'vCur', seq: 2, label: 'Scan 2 - 2026-07-01 10:00 UTC',
   isCurrent: true, pinned: false, nodeCount: 100, linkCount: 200, createdAt: new Date(),
 }
 
@@ -138,7 +138,7 @@ describe("prepareVersionsForFullScan — mode 'overwrite'", () => {
   test('refreshes an auto-generated label but preserves a user rename', async () => {
     await prepareVersionsForFullScan('p1', 'overwrite', 'u1')
     const autoLabel = prismaMock.scanVersion.update.mock.calls[0][0].data.label
-    expect(autoLabel).toMatch(/^Scan 2 — \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/)
+    expect(autoLabel).toMatch(/^Scan 2 - \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/)
     expect(autoLabel).not.toBe(CURRENT.label)
 
     vi.clearAllMocks()

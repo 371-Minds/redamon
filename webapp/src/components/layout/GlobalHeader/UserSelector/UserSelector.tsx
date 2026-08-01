@@ -31,7 +31,7 @@ export function UserSelector() {
 
   const handleSelectUser = async (user: { id: string; name: string }) => {
     if (user.id !== userId) {
-      // Switching user resets project context and reloads data — confirm first
+      // Switching user resets project context and reloads data - confirm first
       // if a dirty form would lose edits.
       if (guard?.hasGuards() && !(await guard.confirmAllGuards())) return
       setUserId(user.id)
@@ -51,7 +51,7 @@ export function UserSelector() {
   }
 
   const handleLogout = async () => {
-    // Logging out abandons everything — confirm if a dirty form is open.
+    // Logging out abandons everything - confirm if a dirty form is open.
     if (guard?.hasGuards() && !(await guard.confirmAllGuards())) return
     setIsOpen(false)
     logout()

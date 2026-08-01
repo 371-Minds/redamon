@@ -38,7 +38,7 @@ export function VulnAccumulationArea({ data, isLoading }: VulnAccumulationAreaPr
 
     const active = SEVERITY_ORDER.filter(s => sevKeys.has(s))
 
-    // Use raw daily counts — Recharts stackId handles the stacking
+    // Use raw daily counts - Recharts stackId handles the stacking
     const result = data.map(d => {
       const row: Record<string, unknown> = { date: d.date }
       for (const s of active) {

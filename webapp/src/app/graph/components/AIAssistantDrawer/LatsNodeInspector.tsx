@@ -1,7 +1,7 @@
 /**
  * LATS node inspector (Layer 3, §17.3). The trust-builder: shows the exact
  * probe, the score breakdown (why value is what it is), and the UCT breakdown
- * (why the search picked this node over its sibling) — computed client-side from
+ * (why the search picked this node over its sibling) - computed client-side from
  * value/visits + the parent's visits, both already in the snapshot.
  */
 
@@ -65,8 +65,8 @@ export function LatsNodeInspector({ node, snapshot, onClose }: LatsNodeInspector
         <div className={styles.inspectorKV}><span>status</span><span>{node.status}</span></div>
         <div className={styles.inspectorKV}><span>value (subtree max)</span><span>{node.value.toFixed(3)}</span></div>
         <div className={styles.inspectorKV}><span>local value (own)</span><span>{node.local_value.toFixed(3)}</span></div>
-        <div className={styles.inspectorKV}><span>verdict</span><span>{node.verdict || '—'}</span></div>
-        <div className={styles.inspectorKV}><span>error class</span><span>{node.error_class || '—'}</span></div>
+        <div className={styles.inspectorKV}><span>verdict</span><span>{node.verdict || '-'}</span></div>
+        <div className={styles.inspectorKV}><span>error class</span><span>{node.error_class || '-'}</span></div>
         <div className={styles.inspectorKV}><span>finding confidence</span><span>{node.finding_confidence || 0}</span></div>
         <div className={styles.inspectorKV}><span>exploit succeeded</span><span>{node.exploit_succeeded ? 'yes' : 'no'}</span></div>
       </div>

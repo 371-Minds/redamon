@@ -38,7 +38,7 @@ export const getUrlForTypeName = (type: string, name: string | null | undefined)
  * Build a browser-openable URL for an Endpoint node by combining its `baseurl`
  * with its `path` (or using `full_url` directly), or null if it isn't openable.
  *
- * Only GET endpoints are linkable — clicking a link issues a GET, so POST/PUT/etc.
+ * Only GET endpoints are linkable - clicking a link issues a GET, so POST/PUT/etc.
  * endpoints aren't meaningfully reachable from a browser. The method is read from
  * the `method` property, falling back to the leading token of the name ("GET /x").
  */
@@ -119,7 +119,7 @@ export const getNodeColor = (node: GraphNode): string => {
     const severity = getNodeSeverity(node)
     return SEVERITY_COLORS_CVE[severity] || SEVERITY_COLORS_CVE.unknown
   }
-  // Goal ChainFindings get green (active color — canvas overrides for inactive)
+  // Goal ChainFindings get green (active color - canvas overrides for inactive)
   if (isGoalFinding(node)) {
     return GOAL_FINDING_COLORS.active
   }

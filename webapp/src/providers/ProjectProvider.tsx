@@ -158,7 +158,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       return
     }
     // Persist the UI hint immediately; the localStorage value is NOT trusted for
-    // authorization — the server derives the effective user from the signed
+    // authorization - the server derives the effective user from the signed
     // `redamon-act-as` cookie set below (admin-only, verified server-side).
     if (id && id !== authUser?.id) {
       localStorage.setItem(STORAGE_KEY_USER, id)

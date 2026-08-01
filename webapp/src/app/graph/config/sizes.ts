@@ -19,7 +19,7 @@ export const NODE_SIZES: Record<string, number> = {
   TrufflehogFinding: 1,      // Leaf: secret finding
   Secret: 1.2,              // Slightly larger than default leaf nodes
   JsReconFinding: 1,        // Leaf: JS analysis finding
-  ExternalDomain: 1.5,      // Small — informational
+  ExternalDomain: 1.5,      // Small - informational
   // Attack Chain nodes (30% smaller than base)
   AttackChain: 1.4,            // Chain root
   ChainStep: 0.5,             // Individual steps (was 0.7)

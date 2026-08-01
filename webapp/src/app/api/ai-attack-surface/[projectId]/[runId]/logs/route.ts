@@ -8,7 +8,7 @@ interface RouteParams {
   params: Promise<{ projectId: string; runId: string }>
 }
 
-// GET /api/ai-attack-surface/{projectId}/{runId}/logs — proxy the SSE stream.
+// GET /api/ai-attack-surface/{projectId}/{runId}/logs - proxy the SSE stream.
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { projectId, runId } = await params
   const __denied = await guardProject(projectId)

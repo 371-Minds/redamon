@@ -37,7 +37,7 @@ export function InjectableParamGauge({ data, isLoading }: InjectableParamGaugePr
 
   const pct = Math.round(ratio * 100)
 
-  // SVG semicircle gauge — pad viewBox to prevent stroke clipping
+  // SVG semicircle gauge - pad viewBox to prevent stroke clipping
   const pad = 10
   const r = 60
   const svgW = 2 * (r + pad)

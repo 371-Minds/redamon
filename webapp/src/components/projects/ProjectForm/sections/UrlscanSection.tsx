@@ -80,14 +80,14 @@ export function UrlscanSection({ data, updateField, onRun }: UrlscanSectionProps
           <p className={styles.sectionDescription}>
             Passive OSINT enrichment using URLScan.io historical scan data. Discovers additional
             subdomains, IPs, ASN info, domain age, TLS certificates, server technologies, and
-            screenshots — all without touching the target directly. Runs after domain discovery,
+            screenshots - all without touching the target directly. Runs after domain discovery,
             before port scanning.
           </p>
 
           <div className={styles.shodanWarning} style={{ borderColor: 'var(--color-info, #3b82f6)' }}>
             <Info size={14} />
             {hasApiKey
-              ? 'URLScan API key configured — higher rate limits enabled.'
+              ? 'URLScan API key configured - higher rate limits enabled.'
               : 'Works without API key (public results only). Add a key in Global Settings for higher rate limits.'}
           </div>
 

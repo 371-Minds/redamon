@@ -264,7 +264,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                       {canUpload && customWordlists.length === 0 && (
                         <optgroup label="Your custom lists">
                           <option disabled value="__ffuf_no_custom_yet__">
-                            (None yet — use Upload .txt →)
+                            (None yet - use Upload .txt →)
                           </option>
                         </optgroup>
                       )}
@@ -305,7 +305,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                     title={
                       !canUpload
                         ? 'Save the project first to upload custom wordlists'
-                        : 'Upload a .txt wordlist — it will appear under “Your custom lists” in the menu'
+                        : 'Upload a .txt wordlist - it will appear under “Your custom lists” in the menu'
                     }
                   >
                     {isUploading ? <Loader2 size={14} className={styles.spinner} /> : <Upload size={14} />}

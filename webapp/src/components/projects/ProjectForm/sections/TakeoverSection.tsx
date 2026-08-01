@@ -16,7 +16,7 @@ interface TakeoverSectionProps {
   onRun?: () => void
 }
 
-// Inline code-snippet style — keeps monospace snippets smaller than surrounding text
+// Inline code-snippet style - keeps monospace snippets smaller than surrounding text
 const codeStyle: CSSProperties = {
   fontSize: '0.85em',
   padding: '1px 4px',
@@ -352,7 +352,7 @@ export function TakeoverSection({ data, updateField, onRun }: TakeoverSectionPro
                     min={1}
                     max={100}
                   />
-                  <span className={styles.fieldHint}>Parallel DNS probes. Safe to raise — no target-facing HTTP load.</span>
+                  <span className={styles.fieldHint}>Parallel DNS probes. Safe to raise - no target-facing HTTP load.</span>
                 </div>
               </div>
 

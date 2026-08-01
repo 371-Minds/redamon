@@ -174,7 +174,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // 6. Create ZIP archive
     const archive = archiver('zip', { zlib: { level: 6 } })
 
-    // Separate binary RoE document from project JSON — Bytes can't survive JSON.stringify
+    // Separate binary RoE document from project JSON - Bytes can't survive JSON.stringify
     let roeDocumentBase64: string | null = null
     if (project.roeDocumentData) {
       roeDocumentBase64 = Buffer.from(project.roeDocumentData).toString('base64')

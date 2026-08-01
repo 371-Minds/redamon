@@ -518,6 +518,18 @@ def build_attack_path_behavior(attack_path_type):
             "execute_curl/execute_httpx normalize the request and cannot reproduce a desync.** Detect "
             "the desync with safe timing/differential probes before weaponizing."
         )
+    elif attack_path_type == "xxe":
+        return (
+            "In informational phase: enumerate the XML attack surface. Probe endpoints that accept or "
+            "return XML (SOAP / XML-RPC / REST-that-takes-XML, `.wsdl`), and uploads that take XML-backed "
+            "formats (SVG / DOCX / XLSX / SAML). POST a minimal well-formed XML document to each candidate "
+            "and read the response/error to confirm which endpoint parses XML, then act.\n"
+            "In exploitation: follow the XXE workflow. Send a CONTROL internal entity to prove entity "
+            "substitution, then escalate to an external SYSTEM entity in a reflected field (in-band read). "
+            "If nothing reflects, use error-based (external or local system DTD) before out-of-band "
+            "exfiltration, and prefer in-band/error-based since OOB sends data off-target. Discover the "
+            "endpoint, schema, and objective file from the live target; then action='complete' after proof."
+        )
     elif attack_path_type.startswith("user_skill:"):
         return (
             "Follow the attack skill workflow guidance provided in the Available Tools section.\n"

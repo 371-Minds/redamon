@@ -1,13 +1,13 @@
 import { GraphLink, GraphNode } from '../types'
 import { LINK_COLORS, LINK_SIZES, CHAIN_SESSION_COLORS } from '../config'
 
-/** Sequential flow links — animated directional particles */
+/** Sequential flow links - animated directional particles */
 const CHAIN_FLOW_TYPES = new Set([
   'HAS_STEP', 'NEXT_STEP', 'PRODUCED', 'FAILED_WITH', 'LED_TO', 'DECISION_PRECEDED',
   'CHAIN_TARGETS',
 ])
 
-/** Bridge links to recon graph — static, no animation */
+/** Bridge links to recon graph - static, no animation */
 const CHAIN_BRIDGE_TYPES = new Set([
   'STEP_TARGETED', 'STEP_EXPLOITED', 'STEP_IDENTIFIED',
   'FOUND_ON', 'FINDING_RELATES_CVE', 'CREDENTIAL_FOR',
@@ -97,7 +97,7 @@ export const getParticleCount = (link: GraphLink, selectedNodeId?: string): numb
 }
 
 /**
- * Get particle speed — faster for chain flow links
+ * Get particle speed - faster for chain flow links
  */
 export const getParticleSpeed = (link: GraphLink): number => {
   return isChainFlowLink(link) ? 0.012 : 0.004
@@ -114,7 +114,7 @@ const isLinkInActiveChain = (link: GraphLink, activeChainId?: string): boolean =
 }
 
 /**
- * Get particle color — bright grey for active chain, dark grey for inactive, blue for selection highlights
+ * Get particle color - bright grey for active chain, dark grey for inactive, blue for selection highlights
  */
 export const getParticleColor = (link: GraphLink, activeChainId?: string): string => {
   if (isChainFlowLink(link)) {

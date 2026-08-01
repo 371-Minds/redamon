@@ -5,7 +5,7 @@
  * exclusive with the three things that write it:
  *   - a full recon scan          (orchestrator recon status)
  *   - a partial recon run        (orchestrator partial-run list)
- *   - an agent / LATS session    (Conversation.agentRunning — the agent writes
+ *   - an agent / LATS session    (Conversation.agentRunning - the agent writes
  *                                 AttackChain-family nodes and reasons over the
  *                                 graph; swapping it mid-run changes its world)
  *

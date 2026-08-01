@@ -68,7 +68,7 @@ export async function startFullScan(input: StartFullScanInput): Promise<StartFul
       ok: false,
       status: 409,
       activationInProgress: true,
-      error: 'A version activation is in progress for this project — the graph is being swapped. ' +
+      error: 'A version activation is in progress for this project - the graph is being swapped. ' +
         'Try again once it finishes.',
     }
   }
@@ -121,7 +121,7 @@ export async function startFullScan(input: StartFullScanInput): Promise<StartFul
       project_id: projectId,
       user_id: project.userId,
       webapp_api_url: WEBAPP_URL,
-      // Telemetry/history only — the pipeline behaves identically either way.
+      // Telemetry/history only - the pipeline behaves identically either way.
       mode,
     }),
   })
@@ -132,8 +132,8 @@ export async function startFullScan(input: StartFullScanInput): Promise<StartFul
     const isLimit = detail && typeof detail === 'object' && detail.limitType
     const message = isLimit
       ? detail.limitType === 'hard'
-        ? `${detail.detail || 'Configured limit reached'}. This is a configured limit, not a memory issue${detail.settingName ? ` — increase ${detail.settingName} and restart` : ''}.`
-        : `${detail.detail || 'Not enough memory to start this scan now'}. This is a RAM limit — please retry once memory frees (finish or stop other running scans, or lower parallelism).`
+        ? `${detail.detail || 'Configured limit reached'}. This is a configured limit, not a memory issue${detail.settingName ? ` - increase ${detail.settingName} and restart` : ''}.`
+        : `${detail.detail || 'Not enough memory to start this scan now'}. This is a RAM limit - please retry once memory frees (finish or stop other running scans, or lower parallelism).`
       : (typeof detail === 'string' ? detail : null) || 'Failed to start recon'
 
     // Record the attempt so the timeline shows why it did not run.

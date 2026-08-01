@@ -91,7 +91,7 @@ export function GraphCanvas2D({
 
   // Reheat on structural changes (new/removed nodes or links). Deferred via
   // setTimeout so graphRef.current is attached on first mount (ForceGraph2D is
-  // next/dynamic-loaded — forwardRef isn't committed on the first render pass).
+  // next/dynamic-loaded - forwardRef isn't committed on the first render pass).
   const prevLinkCountRef = useRef<number>(0)
   useEffect(() => {
     const prevNodeCount = prevNodeCountRef.current

@@ -13,7 +13,7 @@ import { GraphData, GraphNode, GraphLink } from '../types'
  * 2. "Edges to the void" on incremental updates: react-force-graph expects links to
  *    reference node objects (so link.source.x exists during canvas paint). Fresh
  *    fetches deliver links with string ids, and there is a frame where the library
- *    has not yet resolved them — during that frame, link endpoints read as
+ *    has not yet resolved them - during that frame, link endpoints read as
  *    undefined and the edge is drawn to NaN coords. Pre-resolving here eliminates
  *    the race entirely.
  *

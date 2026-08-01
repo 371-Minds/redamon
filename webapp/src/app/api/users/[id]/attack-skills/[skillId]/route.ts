@@ -7,7 +7,7 @@ interface RouteParams {
   params: Promise<{ id: string; skillId: string }>
 }
 
-// GET /api/users/[id]/attack-skills/[skillId] — Full skill with content (for download)
+// GET /api/users/[id]/attack-skills/[skillId] - Full skill with content (for download)
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id, skillId } = await params
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT /api/users/[id]/attack-skills/[skillId] — Update name or content
+// PUT /api/users/[id]/attack-skills/[skillId] - Update name or content
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id, skillId } = await params
@@ -92,7 +92,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/users/[id]/attack-skills/[skillId] — Delete + cascade cleanup
+// DELETE /api/users/[id]/attack-skills/[skillId] - Delete + cascade cleanup
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id, skillId } = await params

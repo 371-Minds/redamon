@@ -1,5 +1,5 @@
 /**
- * LATS Search Card (Layer 1) — the in-chat live view of an exploit-path search.
+ * LATS Search Card (Layer 1) - the in-chat live view of an exploit-path search.
  *
  * One card that mutates in place as the search runs: a HUD row (rollouts,
  * probe budget, depth, phase, observe-only badge in shadow mode), the tree as a

@@ -92,7 +92,7 @@ export function ReconLogsDrawer({
         if (!currentPhase) return 'Paused'
         return hidePhaseProgress
           ? `Paused: ${currentPhase}`
-          : `Paused — Phase ${currentPhaseNumber}/${totalPhases}: ${currentPhase}`
+          : `Paused - Phase ${currentPhaseNumber}/${totalPhases}: ${currentPhase}`
       case 'completed':
         return 'Completed'
       case 'error':

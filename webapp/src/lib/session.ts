@@ -109,7 +109,7 @@ export function isScannerRequest(request: NextRequest): boolean {
  * other caller must have a session and either own `targetUserId` or be an admin.
  *
  * Enforcement is IMMEDIATE (not the log-only ACCESS_ENFORCE path) because these
- * routes expose or mutate a user's plaintext secrets — this is the closure of
+ * routes expose or mutate a user's plaintext secrets - this is the closure of
  * STRIDE I1 for the single-item routes the list-route fix missed. Returns null
  * when allowed, or a 401/403 NextResponse the caller must return.
  *

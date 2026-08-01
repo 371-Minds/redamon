@@ -3,7 +3,7 @@
  *
  * Extracted verbatim from `api/projects/[id]/export/route.ts` so the project
  * exporter and the Scan Timeline snapshot capture (`lib/scanSnapshot.ts`) produce
- * byte-identical payloads — that is what makes a snapshot restorable back into
+ * byte-identical payloads - that is what makes a snapshot restorable back into
  * Neo4j by the shared restore path (`lib/graphRestore.ts`).
  *
  * Unlike `api/graph/format.ts:serializeProperties` (render shape, integers only)

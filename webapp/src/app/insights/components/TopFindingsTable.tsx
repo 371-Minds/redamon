@@ -41,10 +41,10 @@ export function TopFindingsTable({ data, isLoading }: TopFindingsTableProps) {
                 </td>
                 <td className={styles.titleCell} title={f.title}>{f.title}</td>
                 <td className={styles.typeCell}>{formatType(f.findingType)}</td>
-                <td className={styles.mono}>{f.targetHost || '—'}</td>
-                <td className={styles.phaseCell}>{f.phase ? formatType(f.phase) : '—'}</td>
+                <td className={styles.mono}>{f.targetHost || '-'}</td>
+                <td className={styles.phaseCell}>{f.phase ? formatType(f.phase) : '-'}</td>
                 <td className={styles.evidenceCell} title={f.evidence || undefined}>
-                  {f.evidence ? (f.evidence.slice(0, 80) + (f.evidence.length > 80 ? '...' : '')) : '—'}
+                  {f.evidence ? (f.evidence.slice(0, 80) + (f.evidence.length > 80 ? '...' : '')) : '-'}
                 </td>
               </tr>
             ))}

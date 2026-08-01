@@ -12,7 +12,7 @@ const CAPEC_RE = /^CAPEC-(\d+)$/i
 const GITHUB_SLUG_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
 const HOST_PORT_RE = /^(.+):(\d{1,5})$/
 
-// Common file/code extensions that look like TLDs but aren't — used by resolveLinkable
+// Common file/code extensions that look like TLDs but aren't - used by resolveLinkable
 // to avoid auto-linkifying things like "config.xml" or "package.json".
 const NON_DOMAIN_TLDS = new Set([
   'json', 'xml', 'html', 'htm', 'css', 'js', 'ts', 'tsx', 'jsx', 'mjs', 'cjs',
@@ -85,7 +85,7 @@ export function hostPortToUrl(host: string, port: number): string {
   const h = host.replace(/\.$/, '')
   if (port === 443) return `https://${h}`
   if (port === 80) return `http://${h}`
-  // Default to http for non-standard ports — the more common case for recon targets
+  // Default to http for non-standard ports - the more common case for recon targets
   return `http://${h}:${port}`
 }
 
@@ -127,7 +127,7 @@ function tldOf(host: string): string {
  */
 export function resolveLinkable(value: unknown): string | null {
   if (typeof value !== 'string') return null
-  // Strip a single trailing dot — DNS records sometimes carry one (e.g. "example.com.").
+  // Strip a single trailing dot - DNS records sometimes carry one (e.g. "example.com.").
   const v = value.trim().replace(/\.$/, '')
   if (!v) return null
   if (isHttpUrl(v)) return v

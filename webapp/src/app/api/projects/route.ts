@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Hard guardrail: deterministic, non-disableable — always blocks government/public domains
+    // Hard guardrail: deterministic, non-disableable - always blocks government/public domains
     if (!ipMode && targetDomain) {
       const { isHardBlockedDomain } = await import('@/lib/hard-guardrail')
       const hardCheck = isHardBlockedDomain(targetDomain)
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       optionalParams.roeDocumentMimeType = roeFileMimeType
     }
 
-    // Sanitize array fields — LLM parsing may return strings instead of arrays
+    // Sanitize array fields - LLM parsing may return strings instead of arrays
     // String[] fields: split comma-separated strings into arrays
     const STRING_ARRAY_FIELDS = [
       'subdomainList', 'targetIps', 'scanModules', 'nucleiSeverity',
